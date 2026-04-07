@@ -1,0 +1,25 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.python-version
+
+# Virtual environments
+.venv
+.env
+
+# Output files
+output/
+audio/
+all_audio/
+extracted/
+
+# Mac
+.DS_Store
+
+$ local workflow
+kamma/
+AGENTS.md
