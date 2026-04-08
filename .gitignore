@@ -21,5 +21,7 @@ audio/
 $ local workflow
 kamma/
 AGENTS.md
+CLAUDE.md
+GEMINI.md
 .claude/
 .kilo/
