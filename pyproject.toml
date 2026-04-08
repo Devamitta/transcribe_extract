@@ -10,7 +10,16 @@ dependencies = [
     "mlx-whisper>=0.4.3",
     "python-dotenv>=1.0.1",
     "tenacity>=9.1.2",
+    "requests>=2.31.0",
 ]
+
+[project.scripts]
+correct-pali = "scripts.correct_pali:main"
+extract-dhamma = "scripts.extract_dhamma:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tools*"]
 
 [dependency-groups]
 dev = [

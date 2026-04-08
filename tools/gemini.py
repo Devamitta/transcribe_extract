@@ -12,9 +12,8 @@ from tenacity import (
 
 load_dotenv()
 
-MODEL = "gemini-2.5-flash"
 RPM_LIMIT = 5
-MIN_REQUEST_INTERVAL = 30
+MIN_REQUEST_INTERVAL = 12
 HOURS_TO_RESET = 24
 
 API_KEYS: list[tuple[str, str]] = []
@@ -44,15 +43,11 @@ class KeyManager:
         self.failed_keys: dict[int, float] = {}
         self.last_request_time = 0.0
 
-    @property
-    def current_model(self) -> str:
-        return MODEL
-
-    def test_current_key(self) -> bool:
+    def test_current_key(self, model: str) -> bool:
         try:
             print(f"Testing key {self.current_key_name}...", flush=True)
             response = self.client.models.generate_content(
-                model=self.current_model,
+                model=model,
                 contents="hi",
                 config=types.GenerateContentConfig(
                     max_output_tokens=5, temperature=0.0
@@ -110,10 +105,10 @@ class KeyManager:
 key_manager = KeyManager(API_KEYS)
 
 
-def get_working_key() -> bool:
+def get_working_key(model: str = "gemini-2.5-flash") -> bool:
     """Test and find a working API key."""
     for _ in range(len(key_manager.keys)):
-        if key_manager.test_current_key():
+        if key_manager.test_current_key(model):
             return True
         if not key_manager.switch_to_next_key():
             break
@@ -128,6 +123,7 @@ def get_working_key() -> bool:
 def generate_content(
     contents: str,
     system_instruction: str,
+    model: str,
     max_output_tokens: int = 32768,
     temperature: float = 0.1,
 ) -> str:
@@ -137,7 +133,7 @@ def generate_content(
 
     try:
         response = key_manager.client.models.generate_content(
-            model=key_manager.current_model,
+            model=model,
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
@@ -153,3 +149,21 @@ def generate_content(
     if response.text is None:
         raise ValueError("Empty response from Gemini API")
     return response.text
+
+
+def list_models() -> list[str]:
+    """List all available Gemini models for the current key."""
+    client = genai.Client(api_key=API_KEYS[0][1])
+    models = [model.name for model in client.models.list() if model.name]
+    return sorted(models)
+
+
+if __name__ == "__main__":
+    import sys
+
+    show_all = "--all" in sys.argv or "-a" in sys.argv
+    models = list_models()
+
+    print(f"=== GEMINI MODELS ({len(models)}) ===")
+    for m in models:
+        print(f"  {m}")
