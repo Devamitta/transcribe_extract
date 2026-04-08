@@ -60,15 +60,25 @@ uv run python scripts/extract_dhamma.py output/corrected_pali/test_3500.md
 
 ## Test Mode
 
-Use `--test` or `-t` flag to use test models (cheaper/lighter):
+Use `--test` or `-t` flag to verify the pipeline runs without errors (smoke test only):
 
 ```bash
-# Test mode - uses lighter models, processes max 3 chunks
-uv run python scripts/correct_pali.py --test <filename>
-uv run python scripts/extract_dhamma.py --test <filename>
+# Smoke test - uses a lighter/cheaper model, processes max 3 chunks
+# Purpose: confirm the script runs end-to-end, NOT to evaluate output quality
+uv run python scripts/correct_pali.py --test <filename (only name, not path)>
+uv run python scripts/extract_dhamma.py --test <filename (only name, not path)>
+```
 
-# Example
-uv run python scripts/extract_dhamma.py --test test_3500.md
+**Do not use `--test` to evaluate output quality.** The lighter model produces degraded
+results and is only useful for confirming the pipeline is functional (imports work,
+API calls succeed, files are written).
+
+To evaluate output quality, run the full model on one of the test files:
+
+```bash
+# Quality test - uses the full production model on a known test file <filename (only name, not path)>
+uv run python scripts/extract_dhamma.py test_3500.md
+uv run python scripts/extract_dhamma.py test_another_3500.md
 ```
 
 ## Model Configuration

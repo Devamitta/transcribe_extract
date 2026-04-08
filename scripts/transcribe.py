@@ -2,21 +2,39 @@ import mlx_whisper
 from pathlib import Path
 import time
 from typing import Any
+import argparse
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Transcribe audio files using MLX Whisper."
+    )
+    parser.add_argument(
+        "--input-dir",
+        type=str,
+        default="audio",
+        help="Directory containing MP3 files to transcribe (default: audio)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="output/transcribed",
+        help="Directory to save transcription markdown files (default: output/transcribed)",
+    )
+    args = parser.parse_args()
+
     # Define paths
-    audio_dir = Path("audio")
-    output_dir = Path("output/transcribed")
+    audio_dir = Path(args.input_dir)
+    output_dir = Path(args.output_dir)
 
     # Ensure output directory exists
-    output_dir.mkdir(exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Find all MP3 files in audio/ but exclude subdirectories
-    audio_files = [f for f in audio_dir.glob("*.mp3") if f.parent == audio_dir]
+    # Find all MP3 files in audio_dir but exclude subdirectories
+    audio_files = sorted([f for f in audio_dir.glob("*.mp3") if f.parent == audio_dir])
 
     if not audio_files:
-        print("Error: No MP3 files found in the 'audio/' directory.")
+        print(f"Error: No MP3 files found in the '{audio_dir}' directory.")
         return
 
     # Set thermal cooldown in seconds (adjust this based on your preference)

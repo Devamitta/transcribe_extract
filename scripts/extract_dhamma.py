@@ -11,29 +11,27 @@ from tools.provider import generate_content, get_working_key
 CHUNK_SIZE = 2000
 CHUNK_OVERLAP = 500
 
-SYSTEM_INSTRUCTION = (
-    "You are a strict text editor preparing a raw transcript for a database. Your task is selective redaction, not summarization.\n"
-    "\n"
-    "Read the provided chunk of a teacher-student dialog.\n"
-    "\n"
-    "DELETE all casual pleasantries, logistical planning, personal background information, and off-topic deviations.\n"
-    "\n"
-    "RETAIN all Dhamma discussions, philosophical points, examples, metaphors, and specific student questions followed by teacher answers.\n"
-    "\n"
-    "DO NOT SUMMARIZE. You must preserve the detailed explanations, analogies, and original phrasing of the Dhamma concepts exactly as they were spoken.\n"
-    "\n"
-    "If a student makes an incorrect claim that is corrected by the teacher, keep both the question and the correction to preserve the context of the learning.\n"
-    "\n"
-    "Output the cleaned text in readable paragraphs. If the entire chunk is off-topic personal logistics, output exactly 'NO_DHAMMA'.\n"
-    "\n"
-    "CRITICAL: Do not use the words 'extract' or 'summarize' in your output.\n"
-    "\n"
-    "Now output as a clean Markdown bulleted list. Each bullet point MUST include a topic tag in brackets at the start,\n"
-    "   e.g. '[kamma] The law of kamma explains that actions have consequences...'\n"
-    "Use these tags when relevant: [kamma], [satipaṭṭhāna], [jhāna], [mettā], [dukkha], [nibbāna], [sīla], [samādhi], [paññā], [four-noble-truths], [noble-eightfold-path], [seven-factors], [brahmavihāra], [anattā], [khandha], [upekkhā], [asubha].\n"
-    "If a point doesn't fit any specific tag, use [general].\n"
-    "If no Dhamma points exist in this transcript, output exactly 'NO_POINTS'."
-)
+SYSTEM_INSTRUCTION = """You are extracting Dhamma teachings from a teacher-student conversation transcript.
+
+TASK: Clean and preserve the Dhamma dialogue. Remove ONLY: social pleasantries, logistics,
+and repeated filler words ("um", "uh", false starts). Keep EVERYTHING else — questions,
+answers, corrections, clarifications, analogies, examples, and the teacher's full reasoning.
+
+OUTPUT FORMAT:
+- Use Markdown section headers (## [topic-tag]) to mark the start of a new topic
+  - Use standard Pāli topic tags: [khandha], [rūpa], [vedanā], [saññā], [saṅkhāra],
+    [viññāṇa], [satipaṭṭhāna], [kamma], [jhāna], [paññā], [dukkha], [nibbāna], etc.
+  - Multiple tags per section are fine: ## [khandha] [rūpa]
+- Under each header, preserve the dialogue as a cleaned Q&A exchange:
+  - **Q:** student question (condense only if the student is rambling; keep the meaning)
+  - **A:** teacher's full answer — preserve their exact reasoning, examples, and
+    distinctions; do NOT summarize; do NOT compress multi-sentence explanations
+- When the teacher speaks multiple paragraphs, keep ALL paragraphs
+- When a concept is corrected or refined mid-dialogue, keep the full correction exchange
+- Multiple related questions can fall under one section header
+
+DO NOT: summarize, paraphrase into a shorter form, or drop examples and analogies.
+The goal is a cleaned transcript of the teaching, not an abstract or bullet summary."""
 
 
 def chunk_text(
