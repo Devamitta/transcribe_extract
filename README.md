@@ -9,6 +9,34 @@ A local pipeline that converts MP3 Dhamma talks into Markdown transcripts using 
 - `/output/corrected_pali` - Pāli-corrected transcripts
 - `/output/extracted` - Final extracted Dhamma points (Markdown with tags)
 
+## CLI Usage — Run `transcribe` From Anywhere
+
+Add the `scripts/cl` directory to your `PATH` so you can run `transcribe` from any terminal:
+
+### 1. Install `uv`
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+### 2. Add `scripts/cl` to Your PATH
+
+Add this line to your `~/.zshrc` (or `~/.bashrc`):
+
+```bash
+export PATH="/Users/deva/Documents/dps/transcribe_extract/scripts/cl:$PATH"
+```
+
+Then reload your shell: `source ~/.zshrc`
+
+### 3. Run Transcription From Anywhere
+
+```bash
+transcribe
+```
+
+This resolves the project root automatically and runs the transcription pipeline.
+
 ## Quick Start
 
 ```bash
