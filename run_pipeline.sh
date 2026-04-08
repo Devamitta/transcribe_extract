@@ -15,7 +15,7 @@ fi
 echo ""
 echo ">>> STEP 1: Audio Transcription (MLX Whisper) <<<"
 # Uses caffeinate to prevent sleep and nice to lower CPU priority
-caffeinate -i nice -n 10 uv run python transcribe.py
+caffeinate -i nice -n 10 uv run python scripts/transcribe.py
 if [ $? -ne 0 ]; then
     echo "Error during transcription. Pipeline aborted."
     exit 1
@@ -24,7 +24,7 @@ fi
 # 3. Correction Phase (Gemini API Pass 1)
 echo ""
 echo ">>> STEP 2: Pāli Phonetic Correction <<<"
-uv run python correct_pali.py
+uv run python scripts/correct_pali.py
 if [ $? -ne 0 ]; then
     echo "Error during Pāli correction. Pipeline aborted."
     exit 1
@@ -33,7 +33,7 @@ fi
 # 4. Extraction Phase (Gemini API Pass 2)
 echo ""
 echo ">>> STEP 3: Dhamma Point Extraction <<<"
-uv run python extract_dhamma.py
+uv run python scripts/extract_dhamma.py
 if [ $? -ne 0 ]; then
     echo "Error during point extraction. Pipeline aborted."
     exit 1
@@ -42,7 +42,7 @@ fi
 # 5. Consolidation Phase
 echo ""
 echo ">>> STEP 4: Database Consolidation <<<"
-uv run python consolidate.py
+uv run python scripts/consolidate.py
 if [ $? -ne 0 ]; then
     echo "Error during consolidation. Pipeline aborted."
     exit 1

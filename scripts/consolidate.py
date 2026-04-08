@@ -1,7 +1,8 @@
 from pathlib import Path
 
+
 def main():
-    extracted_dir = Path("extracted")
+    extracted_dir = Path("output/extracted")
     master_file = Path("master_dhamma_database.md")
 
     if not extracted_dir.exists():
@@ -17,7 +18,7 @@ def main():
 
     with open(master_file, "w", encoding="utf-8") as outfile:
         outfile.write("# Master Dhamma Points Database\n\n")
-        
+
         # Sort alphabetically to keep chronological order if files are numbered
         for file_path in sorted(md_files):
             outfile.write(f"## Source: {file_path.name}\n\n")
@@ -27,5 +28,9 @@ def main():
 
     print(f"Success! Master database created/updated at '{master_file.name}'")
 
+
 if __name__ == "__main__":
     main()
+
+
+#! TODO: we need sort data according to tags

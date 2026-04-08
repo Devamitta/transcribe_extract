@@ -14,8 +14,6 @@ wheels/
 # Output files
 output/
 audio/
-all_audio/
-extracted/
 
 # Mac
 .DS_Store

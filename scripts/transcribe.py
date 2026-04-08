@@ -7,13 +7,13 @@ from typing import Any
 def main():
     # Define paths
     audio_dir = Path("audio")
-    output_dir = Path("output")
+    output_dir = Path("output/transcribed")
 
     # Ensure output directory exists
     output_dir.mkdir(exist_ok=True)
 
-    # Find all MP3 files
-    audio_files = list(audio_dir.glob("*.mp3"))
+    # Find all MP3 files in audio/ but exclude subdirectories
+    audio_files = [f for f in audio_dir.glob("*.mp3") if f.parent == audio_dir]
 
     if not audio_files:
         print("Error: No MP3 files found in the 'audio/' directory.")
