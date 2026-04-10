@@ -1,3 +1,5 @@
+# Unified API provider abstraction that routes requests to either Gemini or OpenRouter based on configuration.
+
 import os
 import sys
 from dotenv import load_dotenv

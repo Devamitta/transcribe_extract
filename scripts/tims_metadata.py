@@ -1,9 +1,9 @@
-import sys
+#!/usr/bin/env python3
+"""Generates YouTube metadata suggestions (title and description) for Tims Dhamma talks using Gemini API."""
+
 from pathlib import Path
 import time
 import argparse
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from tools.provider import generate_content, get_working_key
 
@@ -50,7 +50,8 @@ def main():
         help="Process only this specific file (test mode)",
     )
     parser.add_argument(
-        "--test", "-t",
+        "--test",
+        "-t",
         action="store_true",
         help="Use test models (handled by provider)",
     )

@@ -1,8 +1,5 @@
 #!/bin/bash
-
-echo "=========================================="
-echo "  Dhamma Extraction Pipeline Initialized  "
-echo "=========================================="
+# Runs the full Dhamma extraction pipeline: transcription, Pāli correction, Dhamma point extraction, and database consolidation.
 
 # 1. Environment Safety Check
 if [ ! -f ".env" ]; then

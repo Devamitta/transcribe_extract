@@ -1,4 +1,5 @@
-"""List all available models for each API key."""
+#!/usr/bin/env python3
+"""Lists available Gemini API keys and tests them to verify they work."""
 
 import os
 from dotenv import load_dotenv

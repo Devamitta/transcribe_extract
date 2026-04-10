@@ -1,8 +1,7 @@
+#!/usr/bin/env python3
+"""Extracts core Dhamma teachings from corrected transcripts into structured Q&A format with Pāli topic tags."""
+
 import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from pathlib import Path
 import time
 

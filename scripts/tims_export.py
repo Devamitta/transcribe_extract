@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+"""Exports approved Tims Dhamma talk metadata into individual markdown files for YouTube upload descriptions."""
+
 from pathlib import Path
 import re
 import argparse

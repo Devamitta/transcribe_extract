@@ -1,10 +1,9 @@
+#!/usr/bin/env python3
+"""Corrects Pāli phonetic spellings in transcribed text using Gemini API and a Pāli glossary."""
+
 import sys
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 import time
-from pathlib import Path
 
 from tools.provider import generate_content, get_working_key, TEST_MODE
 

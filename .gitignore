@@ -14,13 +14,13 @@ wheels/
 # Output files
 output/
 audio/
+audio_processed/
 
 # Mac
 .DS_Store
 
 $ local workflow
-kamma/
-AGENTS.md
+archive
 CLAUDE.md
 GEMINI.md
 .claude/

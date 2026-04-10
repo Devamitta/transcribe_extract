@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+"""Consolidates all extracted Dhamma point files into a single master database markdown file."""
+
 from pathlib import Path
 
 

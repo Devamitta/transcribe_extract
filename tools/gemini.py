@@ -1,3 +1,5 @@
+# Gemini API client with multi-key rotation, rate limiting, and retry logic.
+
 import os
 import time
 from dotenv import load_dotenv

@@ -1,3 +1,5 @@
+# OpenRouter API client for accessing various LLM models with rate limiting and retry logic.
+
 import os
 import time
 from dotenv import load_dotenv
