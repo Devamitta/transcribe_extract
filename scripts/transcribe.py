@@ -40,18 +40,26 @@ def main():
         default="interview",
         help="Select the Pali vocabulary context.",
     )
+    parser.add_argument(
+        "--test-run",
+        action="store_true",
+        help="If active, only transcribe the first file found (for testing).",
+    )
     args = parser.parse_args()
 
     audio_dir = Path(args.input_dir)
     output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Scans for raw MP3s directly
-    audio_files = sorted([f for f in audio_dir.glob("*.mp3") if f.parent == audio_dir])
+    # Scans recursively for raw MP3s
+    audio_files = sorted(list(audio_dir.rglob("*.mp3")))
 
     if not audio_files:
         print(f"Error: No MP3 files found in '{audio_dir}'.")
         return
+
+    if args.test_run:
+        print("--- TEST RUN: Processing only the first file found ---")
+        audio_files = audio_files[:1]
 
     cooldown_seconds = 180
     prompt_context = VOCAB_PROMPTS[args.context]
@@ -60,7 +68,16 @@ def main():
     print(f"Using Context: {args.context.upper()}")
 
     for index, audio_path in enumerate(audio_files):
-        output_path = output_dir / audio_path.with_suffix(".md").name
+        # Mirror subfolder structure relative to 'audio' directory if present
+        parts = audio_path.parts
+        if "audio" in parts:
+            audio_idx = parts.index("audio")
+            relative_path = Path(*parts[audio_idx + 1 :])
+        else:
+            relative_path = audio_path.relative_to(audio_dir)
+
+        output_path = output_dir / relative_path.with_suffix(".md")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
         if output_path.exists():
             print(f"Skipping '{audio_path.name}' (already exists).")
@@ -85,16 +102,46 @@ def main():
         for segment in result["segments"]:
             start_time = segment["start"]
             end_time = segment["end"]
-            text = segment["text"].strip()
+            text = segment["text"]
 
             # --- Dynamic Hallucination Filter ---
-            if not text or "" in text:
+            # 1. Compress excessive whitespace gaps
+            text = re.sub(r"\s{2,}", " ", text).strip()
+
+            if not text or "\x00" in text:
                 continue
-            # Catches repetitive loops (e.g., "word word word word")
-            if re.search(r"\b(\w+)( \1){3,}\b", text, re.IGNORECASE):
+
+            # 2. Punctuation-agnostic Word Loops (4+ repetitions)
+            # Strip punctuation for word loop check (e.g., "Valuable. Valuable. Valuable.")
+            clean_text_only = re.sub(r"[^\w\s]", "", text).strip()
+            if re.search(r"\b(\w+)( \1){3,}\b", clean_text_only, re.IGNORECASE):
                 continue
-            # Catches low-entropy character spam
+
+            # 3. Context-Aware Sentence/Phrase Loops (checks if segment repeats previous context)
+            combined_context = (current_paragraph + " " + text).strip()
+            if re.search(r"(.{15,})\1{1,}", combined_context, re.IGNORECASE):
+                continue
+
+            # 4. Catches low-entropy character spam
             if len(text) > 20 and len(set(text)) < 5:
+                continue
+
+            # 5. Drop suspiciously short, isolated segments (expanded silence hallucinations)
+            if len(text) < 15 and text.lower().strip(".!?,\"' ") in [
+                "help",
+                "so",
+                "yeah",
+                "a",
+                "okay",
+                "you know",
+                "i mean",
+                "what",
+                "no",
+                "yes",
+                "promise",
+                "exactly",
+                "right",
+            ]:
                 continue
 
             if paragraph_start_time is None:

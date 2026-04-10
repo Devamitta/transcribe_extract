@@ -4,6 +4,7 @@
 import argparse
 import re
 from pathlib import Path
+from datetime import datetime
 
 # Regex definitions for Whisper failure modes
 REPEATED_WORDS_PATTERN = re.compile(r"\b(\w+)(?:\s+\1){3,}\b", re.IGNORECASE)
@@ -12,6 +13,10 @@ PUNCTUATION_SPAM_PATTERN = re.compile(r"[.,!?\-_]{6,}")
 
 def identify_anomaly(text: str) -> str | None:
     """Evaluates a text block and returns the error type if a threshold is met."""
+    # Check for large whitespace gaps before cleaning
+    if re.search(r"\s{5,}", text):
+        return "Large Whitespace Gap"
+
     # Strip the timestamp (e.g., "[12.3]") to prevent false entropy readings
     clean_text = re.sub(r"^\[\d+\.\d+\]\s*", "", text.strip())
 
@@ -21,12 +26,44 @@ def identify_anomaly(text: str) -> str | None:
     if PUNCTUATION_SPAM_PATTERN.search(clean_text):
         return "Punctuation/Symbol Spam"
 
-    if REPEATED_WORDS_PATTERN.search(clean_text):
+    # Punctuation-agnostic Word Loop Hallucination (e.g. "word, word, word, word")
+    clean_text_only = re.sub(r"[^\w\s]", "", clean_text).strip()
+    if re.search(r"\b(\w+)( \1){3,}\b", clean_text_only, re.IGNORECASE):
         return "Word Loop Hallucination"
+
+    # Catches sentence-level loops
+    if re.search(r"(.{15,})\1{1,}", clean_text, re.IGNORECASE):
+        return "Sentence Loop Hallucination"
 
     # Low entropy check: strings > 30 chars with fewer than 6 unique characters
     if len(clean_text) > 30 and len(set(clean_text)) < 6:
         return "Low Entropy Character Spam"
+
+    # Flag suspiciously short or isolated lines (expanded silence hallucinations)
+    if len(clean_text) < 15 and (
+        not re.search(r"[.!?,]", clean_text)
+        or clean_text.lower().strip(".!?,\"' ")
+        in [
+            "help",
+            "so",
+            "yeah",
+            "a",
+            "okay",
+            "you know",
+            "i mean",
+            "what",
+            "no",
+            "yes",
+            "promise",
+            "exactly",
+            "right",
+        ]
+    ):
+        return "Isolated Short Line (Silence Hallucination?)"
+
+    # Check for suspicious null characters
+    if "\x00" in clean_text:
+        return "Suspicious Characters"
 
     return None
 
@@ -44,7 +81,7 @@ def main():
     parser.add_argument(
         "--output-file",
         type=str,
-        default="error_report.md",
+        default=f"log/error_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
         help="Path to save the generated report",
     )
     parser.add_argument(
@@ -56,7 +93,7 @@ def main():
     args = parser.parse_args()
 
     input_path = Path(args.input_dir)
-    md_files = list(input_path.glob("*.md"))
+    md_files = sorted(list(input_path.rglob("*.md")))
 
     if not md_files:
         print(f"Error: No .md files found in {args.input_dir}")

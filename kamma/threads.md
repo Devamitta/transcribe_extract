@@ -19,3 +19,15 @@ Status: **Awaiting user review**
 
 ## [~] Thread: Process Tims audio recordings with folder-aware transcription, upload-title and YouTube upload-description suggestions, and reviewed export packaging
 *Link: [./kamma/threads/20260408_tims_audio_pipeline/](./kamma/threads/20260408_tims_audio_pipeline/)*
+
+
+---
+
+## [~] Thread: Ongoing Transcription Quality Feedback Loop
+*Link: [./kamma/threads/ongoing_transcription_feedback/](./kamma/threads/ongoing_transcription_feedback/)*
+
+Status: **Active - Monitoring New Transcripts**
+- Iterative loop for analyzing manual transcriptions and improving automated filters.
+- Uses existing infrastructure tools to detect anomalies and generate diff reports.
+- Proposes filter/script improvements based on AI analysis of recurring errors.
+
