@@ -2,143 +2,144 @@
 
 A local pipeline that converts MP3 Dhamma talks into Markdown transcripts using MLX Whisper (Apple Silicon), then extracts core Dhamma points using Google Gemini API or OpenRouter.
 
-## Directory Structure
+The repository primarily functions as a transcription engine followed by extraction of Dhamma-Vinaya content.
 
-- `/audio` - Place raw `.mp3` files here to transcribe
-- `/output/transcribed` - Raw Whisper transcripts (Markdown)
-- `/output/corrected_pali` - Pāli-corrected transcripts
-- `/output/extracted` - Final extracted Dhamma points (Markdown with tags)
+---
 
-## CLI Usage — Run `transcribe` From Anywhere
+## 0. Prerequisites & Installation
 
-Add the `scripts/cl` directory to your `PATH` so you can run `transcribe` from any terminal:
+Before running the pipeline, ensure you have the following installed on your macOS (Apple Silicon recommended):
 
-### 1. Install `uv`
+### 1. Install Homebrew
+If you don't have Homebrew, install it first:
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
 
+### 2. Install System Dependencies
+Transcription requires `ffmpeg` for audio processing:
+```bash
+brew install ffmpeg
+```
+
+### 3. Install `uv`
+We use `uv` for fast Python dependency management:
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### 2. Add `scripts/cl` to Your PATH
-
-Add this line to your `~/.zshrc` (or `~/.bashrc`):
-
+### 4. Setup Project & Dependencies
+Once `uv` is installed, run the following command in the project root to install the correct Python version and all dependencies:
 ```bash
-export PATH="/Users/deva/Documents/dps/transcribe_extract/scripts/cl:$PATH"
-```
-
-Then reload your shell: `source ~/.zshrc`
-
-### 3. Run Transcription From Anywhere
-
-```bash
-transcribe
-```
-
-This resolves the project root automatically and runs the transcription pipeline.
-
-## Quick Start
-
-```bash
-# Install dependencies
 uv sync
-
-# Transcription (MLX Whisper)
-caffeinate -i nice -n 10 uv run python scripts/transcribe.py
-
-# Pāli Correction
-uv run python scripts/correct_pali.py
-
-# Dhamma Extraction
-uv run python scripts/extract_dhamma.py
 ```
+*Note: Run `uv sync` whenever you pull new changes to ensure your environment is up to date.*
 
-## Environment Variables
+---
 
-Create a `.env` file with:
+## 1. Transcription
+
+The transcription phase converts raw audio into Markdown format, using context-specific Pali glossaries to improve accuracy.
+
+### Transcription Options
+
+You can run transcription for specific contexts or as a batch:
+
+| Scope | Command | Input Directory | Output Directory |
+| :--- | :--- | :--- | :--- |
+| **All** | `./transcribe.sh` | `audio/sangha/` & `audio/interview/` | `output/transcribed/` |
+| **Saṅgha** | `./transcribe-sangha.sh` | `audio/sangha/` | `output/transcribed/sangha/` |
+| **Interview** | `./transcribe-interview.sh` | `audio/interview/` | `output/transcribed/interview/` |
+
+### Manual Execution (`scripts/transcribe.py`)
+
+For more control, you can run the Python script directly:
 
 ```bash
-# Google Gemini (free tier - supports multiple keys for rotation)
+uv run python scripts/transcribe.py --input-dir <dir> --output-dir <dir> --context <context>
+```
+
+**Options:**
+- `--input-dir`: Directory containing raw `.mp3` files.
+- `--output-dir`: Where to save the generated `.md` files.
+- `--context`: Select vocabulary context: `sangha`, `dhamma`, `vinaya`, or `interview`.
+- `--test-run`: Transcribe only the first file found (for quick testing).
+
+*Note: It is recommended to use `caffeinate -i nice -n 10` before the command on macOS to prevent sleep and manage CPU priority.*
+
+---
+
+## 2. Transcription Quality Implementation Loop
+
+To maintain and improve transcription quality, we use an iterative feedback loop to identify and filter "fuzzies" (Whisper hallucinations, phrase loops, and anomalies).
+
+Detailed logs and progress of this loop are tracked in: `kamma/threads/ongoing_transcription_feedback/`
+
+### How to Run the Quality Loop
+
+The loop consists of identifying anomalies in the latest output and refining the filters.
+
+#### Step 1: Extract Anomalies (Fuzzies)
+Run the error extraction tool on your latest transcription output to find potential hallucinations or loops.
+
+```bash
+uv run python scripts/extract_errors.py --input-dir output/transcribed/sangha/
+```
+This generates a report (usually in `log/`) detailing repeated phrases and suspicious sequences with their surrounding context.
+
+#### Step 2: Compare with Baselines
+If you have made changes to the filters in `scripts/transcribe.py`, compare the new report with a previous one to verify improvements.
+
+```bash
+uv run python scripts/diff_reports.py log/old_report.md log/new_report.md
+```
+
+#### Step 3: Manual Verification
+To manually verify if an anomaly is a real hallucination or just a natural stutter, you can extract the specific audio snippet:
+
+```bash
+uv run python scripts/extract_snippets.py log/report_20260411.md
+```
+This saves short audio clips corresponding to each anomaly in the report for easy listening.
+
+#### Step 4: Refine Filters
+Based on the reports, update the hallucination filters in `scripts/transcribe.py`. We use punctuation-agnostic checks and tiered repetition detection to distinguish between natural speech stutters and Whisper glitches.
+
+#### Step 5: Verify
+Rerun the transcription on the problematic files to ensure the "fuzzies" are now correctly skipped or handled.
+
+---
+
+## 3. Draft Functionality (Ongoing Development)
+
+The following features are currently under development and should be considered drafts.
+
+### Pāli Correction
+Refines the spelling of Pali terms in the transcripts using AI.
+```bash
+uv run python scripts/correct_pali.py <filename>
+```
+
+### Dhamma Extraction
+Extracts core Dhamma points, metadata, and tags from the corrected transcripts.
+```bash
+uv run python scripts/extract_dhamma.py <filename>
+```
+
+### Environment Setup
+Create a `.env` file with your API keys:
+```bash
+# Google Gemini
 GEMINI_API_KEY_1=your_key_here
-GEMINI_API_KEY_2=your_key_here
-# ... add more keys for rotation
-
-# Or OpenRouter (paid)
-OPENROUTER_API_KEY=your_key_here
-
-# Which provider to use (google or openrouter)
 PROVIDER=google
 ```
 
-## Running on Specific Files
+---
 
-Process a single file instead of all files:
+## Project Structure
 
-```bash
-# Correct Pāli on specific file
-uv run python scripts/correct_pali.py <filename>
-
-# Extract Dhamma on specific file
-uv run python scripts/extract_dhamma.py <filename>
-
-# Examples
-uv run python scripts/correct_pali.py test_3500.md
-uv run python scripts/extract_dhamma.py output/corrected_pali/test_3500.md
-```
-
-## Test Mode
-
-Use `--test` or `-t` flag to verify the pipeline runs without errors (smoke test only):
-
-```bash
-# Smoke test - uses a lighter/cheaper model, processes max 3 chunks
-# Purpose: confirm the script runs end-to-end, NOT to evaluate output quality
-uv run python scripts/correct_pali.py --test <filename (only name, not path)>
-uv run python scripts/extract_dhamma.py --test <filename (only name, not path)>
-```
-
-**Do not use `--test` to evaluate output quality.** The lighter model produces degraded
-results and is only useful for confirming the pipeline is functional (imports work,
-API calls succeed, files are written).
-
-To evaluate output quality, run the full model on one of the test files:
-
-```bash
-# Quality test - uses the full production model on a known test file <filename (only name, not path)>
-uv run python scripts/extract_dhamma.py test_3500.md
-uv run python scripts/extract_dhamma.py test_another_3500.md
-```
-
-## Model Configuration
-
-Model lists are defined in `tools/provider.py`:
-
-- **Gemini work models**: `gemini-2.5-flash`
-- **Gemini test models**: `gemini-3.1-flash-lite-preview`
-- **OpenRouter work models**: Free models (auto-rotates on failure)
-- **OpenRouter test models**: Cheapest available
-
-## List Available Models
-
-```bash
-# List Gemini models
-uv run python tools/gemini.py
-
-# List OpenRouter models (free only)
-uv run python tools/openrouter.py
-
-# List all OpenRouter models
-uv run python tools/openrouter.py --all
-```
-
-## Scripts
-
-- `scripts/transcribe.py` - Transcribe MP3 to Markdown using MLX Whisper
-- `scripts/correct_pali.py` - Correct Pāli spellings using AI
-- `scripts/extract_dhamma.py` - Extract Dhamma points with tagging
-
-## Tools
-
-- `tools/gemini.py` - Google Gemini API wrapper
-- `tools/openrouter.py` - OpenRouter API wrapper  
-- `tools/provider.py` - Unified provider hub (routes to correct API)
+- `/audio` - Raw audio files (categorized by subfolders like `sangha/`, `interview/`)
+- `/output/transcribed` - Raw Markdown transcripts
+- `/output/extracted` - Final extracted Dhamma points (Draft)
+- `/scripts` - Core pipeline scripts
+- `/kamma` - Project management, thread plans, and quality loop tracking

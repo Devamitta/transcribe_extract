@@ -68,14 +68,8 @@ def main():
     print(f"Using Context: {args.context.upper()}")
 
     for index, audio_path in enumerate(audio_files):
-        # Mirror subfolder structure relative to 'audio' directory if present
-        parts = audio_path.parts
-        if "audio" in parts:
-            audio_idx = parts.index("audio")
-            relative_path = Path(*parts[audio_idx + 1 :])
-        else:
-            relative_path = audio_path.relative_to(audio_dir)
-
+        # Mirror subfolder structure relative to input directory
+        relative_path = audio_path.relative_to(audio_dir)
         output_path = output_dir / relative_path.with_suffix(".md")
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -105,60 +99,87 @@ def main():
             text = segment["text"]
 
             # --- Dynamic Hallucination Filter ---
+            skip_segment = False
+
             # 1. Compress excessive whitespace gaps
             text = re.sub(r"\s{2,}", " ", text).strip()
 
             if not text or "\x00" in text:
-                continue
+                skip_segment = True
 
             # 2. Punctuation-agnostic Word Loops (4+ repetitions)
             # Strip punctuation for word loop check (e.g., "Valuable. Valuable. Valuable.")
-            clean_text_only = re.sub(r"[^\w\s]", "", text).strip()
-            if re.search(r"\b(\w+)( \1){3,}\b", clean_text_only, re.IGNORECASE):
-                continue
+            if not skip_segment:
+                clean_text_only = re.sub(r"[^\w\s]", "", text).strip()
+                if re.search(r"\b(\w+)( \1){3,}\b", clean_text_only, re.IGNORECASE):
+                    skip_segment = True
 
-            # 3. Context-Aware Sentence/Phrase Loops (checks if segment repeats previous context)
-            combined_context = (current_paragraph + " " + text).strip()
-            if re.search(r"(.{15,})\1{1,}", combined_context, re.IGNORECASE):
-                continue
+            # 3. Context-Aware Sentence/Phrase Loops
+            # Only check if the new text is a substantial repetition of what's already in the paragraph
+            if not skip_segment:
+                # Clean punctuation for robust matching
+                clean_text = re.sub(r"[^\w\s]", " ", text.lower())
+                clean_text = re.sub(r"\s+", " ", clean_text).strip()
+
+                clean_para = re.sub(r"[^\w\s]", " ", current_paragraph.lower())
+                clean_para = re.sub(r"\s+", " ", clean_para).strip()
+
+                if len(clean_text) > 15 and clean_text in clean_para:
+                    skip_segment = True
+                elif clean_text:
+                    # Check for internal phrase loops
+                    # 1. Any short phrase (5+ chars) repeated 3+ times
+                    if re.search(r"\b(.{5,}?)( \1){2,}\b", clean_text):
+                        skip_segment = True
+                    # 2. Any long phrase (15+ chars) repeated 2+ times
+                    elif re.search(r"\b(.{15,}?)( \1){1,}\b", clean_text):
+                        skip_segment = True
 
             # 4. Catches low-entropy character spam
-            if len(text) > 20 and len(set(text)) < 5:
-                continue
+            if not skip_segment:
+                if len(text) > 20 and len(set(text)) < 5:
+                    skip_segment = True
 
             # 5. Drop suspiciously short, isolated segments (expanded silence hallucinations)
-            if len(text) < 15 and text.lower().strip(".!?,\"' ") in [
-                "help",
-                "so",
-                "yeah",
-                "a",
-                "okay",
-                "you know",
-                "i mean",
-                "what",
-                "no",
-                "yes",
-                "promise",
-                "exactly",
-                "right",
-            ]:
-                continue
+            if not skip_segment:
+                if len(text) < 15 and text.lower().strip(".!?,\"' ") in [
+                    "help",
+                    "so",
+                    "yeah",
+                    "a",
+                    "okay",
+                    "you know",
+                    "i mean",
+                    "what",
+                    "no",
+                    "yes",
+                    "promise",
+                    "exactly",
+                    "right",
+                ]:
+                    skip_segment = True
 
-            if paragraph_start_time is None:
-                paragraph_start_time = start_time
-
-            current_paragraph += text + " "
+            if not skip_segment:
+                if paragraph_start_time is None:
+                    paragraph_start_time = start_time
+                current_paragraph += text + " "
+                is_terminal = text.endswith((".", "?", "!", "”", '"'))
+            else:
+                # If we skipped the segment, evaluate is_terminal based on the existing paragraph
+                is_terminal = current_paragraph.strip().endswith(
+                    (".", "?", "!", "”", '"')
+                )
 
             # --- Syntactic Chunking Logic ---
             # Wait for both 60 seconds to pass AND a logical sentence termination
-            is_terminal = text.endswith((".", "?", "!", "”", '"'))
-            if (end_time - paragraph_start_time >= 60.0) and is_terminal:
-                timestamp_mins = paragraph_start_time / 60.0
-                formatted_transcript += (
-                    f"[{timestamp_mins:.1f}] {current_paragraph.strip()}\n\n"
-                )
-                current_paragraph = ""
-                paragraph_start_time = None
+            if paragraph_start_time is not None:
+                if (end_time - paragraph_start_time >= 60.0) and is_terminal:
+                    timestamp_mins = paragraph_start_time / 60.0
+                    formatted_transcript += (
+                        f"[{timestamp_mins:.1f}] {current_paragraph.strip()}\n\n"
+                    )
+                    current_paragraph = ""
+                    paragraph_start_time = None
 
         # Flush remainder
         if current_paragraph:

@@ -31,8 +31,12 @@ def identify_anomaly(text: str) -> str | None:
     if re.search(r"\b(\w+)( \1){3,}\b", clean_text_only, re.IGNORECASE):
         return "Word Loop Hallucination"
 
-    # Catches sentence-level loops
-    if re.search(r"(.{15,})\1{1,}", clean_text, re.IGNORECASE):
+    # Catches sentence-level loops (Tiered approach to reduce false positives from stutters)
+    # 1. Long phrases (>30 chars) repeating once
+    if re.search(r"(.{30,})\1{1,}", clean_text, re.IGNORECASE):
+        return "Sentence Loop Hallucination"
+    # 2. Medium phrases (15-30 chars) repeating twice (appears 3 times)
+    if re.search(r"(.{15,30})\1{2,}", clean_text, re.IGNORECASE):
         return "Sentence Loop Hallucination"
 
     # Low entropy check: strings > 30 chars with fewer than 6 unique characters

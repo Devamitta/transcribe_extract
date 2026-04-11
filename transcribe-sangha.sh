@@ -4,7 +4,7 @@
 echo ""
 echo ">>> Audio Transcription (Sangha Context) <<<"
 # Uses caffeinate to prevent sleep and nice to lower CPU priority
-caffeinate -i nice -n 10 uv run python scripts/transcribe.py --input-dir audio/sangha --context sangha "$@"
+caffeinate -i nice -n 10 uv run python scripts/transcribe.py --input-dir audio/sangha --output-dir output/transcribed/sangha --context sangha "$@"
 if [ $? -ne 0 ]; then
     echo "Error during Sangha transcription."
     exit 1

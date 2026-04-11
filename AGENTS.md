@@ -28,3 +28,9 @@ Dhamma Transcriber & Extractor - A local pipeline that converts MP3 Dhamma talks
 
 ## Code Quality
 - All changed Python files MUST pass `uv run ruff check --fix` and `uv run ruff format` before task completion.
+
+## Temporary Files & Testing
+- Use the `temp/` directory for all temporary files, scratchpad scripts, or one-off test files.
+- The `temp/` directory is gitignored; do not commit files from this folder.
+- Clean up temporary files in `temp/` once they are no longer needed for the current task.
+- Do NOT create temporary or test files in the project root.

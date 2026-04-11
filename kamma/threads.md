@@ -26,8 +26,10 @@ Status: **Awaiting user review**
 ## [~] Thread: Ongoing Transcription Quality Feedback Loop
 *Link: [./kamma/threads/ongoing_transcription_feedback/](./kamma/threads/ongoing_transcription_feedback/)*
 
-Status: **Active - Monitoring New Transcripts**
-- Iterative loop for analyzing manual transcriptions and improving automated filters.
-- Uses existing infrastructure tools to detect anomalies and generate diff reports.
-- Proposes filter/script improvements based on AI analysis of recurring errors.
+Status: **In Progress - Iteration 3: Refined Error Reporting & Hallucination Filter**
+- Resolved "poisoned context" bug in scripts/transcribe.py causing silent truncation of long files.
+- **New Fix (2026-04-11)**: Updated `scripts/extract_errors.py` with a tiered repetition check to eliminate false positives from natural speech stutters.
+- **Improved Filter**: Enhanced Phrase Loop Filter in `scripts/transcribe.py` to catch punctuation-agnostic repetitions (e.g. "It's possible. It's possible.").
+- **Latest Finding**: Verified transcription quality of recent Saṅgha meetings; current real anomaly count reduced to 1 (detected correctly as a triple repetition loop).
+- **Awaiting User Review**: Confirming if the refined error report accurately reflects the current state of transcription quality.
 
