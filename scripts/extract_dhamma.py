@@ -5,6 +5,9 @@ import sys
 from pathlib import Path
 import time
 
+# Add project root to sys.path
+sys.path.append(str(Path(__file__).parent.parent))
+
 from tools.provider import generate_content, get_working_key
 
 CHUNK_SIZE = 2000

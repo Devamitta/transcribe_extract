@@ -14,6 +14,7 @@ A local pipeline that converts MP3 Dhamma (Buddhist discourse) talks into raw Ma
 ## What It Will Produce
 - Raw Whisper transcripts in `/output/` (Markdown)
 - Extracted Dhamma points in `/extracted/` (Markdown with metadata like tags, categories)
+- Reports and evaluation logs in `/reports/` (Markdown)
 - Structured output with categorization and linking between related points
 
 ## How You'll Know It Worked

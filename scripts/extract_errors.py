@@ -28,8 +28,34 @@ def identify_anomaly(text: str) -> str | None:
 
     # Punctuation-agnostic Word Loop Hallucination (e.g. "word, word, word, word")
     clean_text_only = re.sub(r"[^\w\s]", "", clean_text).strip()
-    if re.search(r"\b(\w+)( \1){3,}\b", clean_text_only, re.IGNORECASE):
-        return "Word Loop Hallucination"
+    match = re.search(r"\b(\w+)( \1){3,}\b", clean_text_only, re.IGNORECASE)
+    if match:
+        word = match.group(1).lower()
+        # Whitelist filler words that are common in natural stutters.
+        # Allow up to 5 repetitions (word + 4 repeats). Filter if 6 or more (word + 5 repeats).
+        filler_whitelist = [
+            "yeah",
+            "no",
+            "okay",
+            "so",
+            "right",
+            "hmm",
+            "mhmm",
+            "for",
+            "and",
+            "but",
+            "like",
+            "i",
+            "it",
+            "they",
+            "we",
+            "you",
+        ]
+        if word in filler_whitelist:
+            if re.search(r"\b(\w+)( \1){5,}\b", clean_text_only, re.IGNORECASE):
+                return "Word Loop Hallucination"
+        else:
+            return "Word Loop Hallucination"
 
     # Catches sentence-level loops (Tiered approach to reduce false positives from stutters)
     # 1. Long phrases (>30 chars) repeating once
@@ -85,7 +111,7 @@ def main():
     parser.add_argument(
         "--output-file",
         type=str,
-        default=f"log/error_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+        default=f"reports/error_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
         help="Path to save the generated report",
     )
     parser.add_argument(
@@ -153,7 +179,9 @@ def main():
                 report_lines.append(f"--- Context After  ---\n{anom['after']}")
                 report_lines.append("```\n")
 
-    with open(args.output_file, "w", encoding="utf-8") as f:
+    output_path = Path(args.output_file)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n".join(report_lines))
 
     print(

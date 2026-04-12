@@ -85,7 +85,7 @@ Run the error extraction tool on your latest transcription output to find potent
 ```bash
 uv run python scripts/extract_errors.py --input-dir output/transcribed/sangha/
 ```
-This generates a report (usually in `log/`) detailing repeated phrases and suspicious sequences with their surrounding context.
+This generates a report (usually in `reports/`) detailing repeated phrases and suspicious sequences with their surrounding context.
 
 #### Step 2: Compare with Baselines
 If you have made changes to the filters in `scripts/transcribe.py`, compare the new report with a previous one to verify improvements.
@@ -110,20 +110,37 @@ Rerun the transcription on the problematic files to ensure the "fuzzies" are now
 
 ---
 
-## 3. Draft Functionality (Ongoing Development)
+## 3. Pali Spelling Correction
 
-The following features are currently under development and should be considered drafts.
+The `scripts/correct_pali.py` tool refines the spelling of Pāli terms in the transcripts using a consolidated glossary of ~155 terms synchronized with the transcription engine's vocabulary.
 
-### Pāli Correction
-Refines the spelling of Pali terms in the transcripts using AI.
+### Features
+- **Phonetic Correction:** Fixes common phonetic misspellings (e.g., "sangha" -> "Saṅgha", "nibbana" -> "nibbāna").
+- **Recursive Processing:** By default, scans `output/transcribed/` recursively and preserves the subfolder structure in the output.
+- **Constrained AI Engine:** Uses a highly optimized prompt to ensure only Pāli terms are corrected while surrounding English text, punctuation, and formatting remain 100% unchanged.
+
+### Usage
+
+**Process all transcripts:**
 ```bash
-uv run python scripts/correct_pali.py <filename>
+PYTHONPATH=. uv run python scripts/correct_pali.py
 ```
 
-### Dhamma Extraction
-Extracts core Dhamma points, metadata, and tags from the corrected transcripts.
+**Process a specific file or folder:**
 ```bash
-uv run python scripts/extract_dhamma.py <filename>
+PYTHONPATH=. uv run python scripts/correct_pali.py <filename_or_path>
+```
+
+The corrected files will be saved in `output/corrected_pali/`, mirroring the input directory structure.
+
+---
+
+## 4. Dhamma Extraction (Draft)
+
+Extracts core Dhamma points, metadata, and tags from the corrected transcripts.
+
+```bash
+PYTHONPATH=. uv run python scripts/extract_dhamma.py <filename>
 ```
 
 ### Environment Setup

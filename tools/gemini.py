@@ -2,14 +2,15 @@
 
 import os
 import time
+
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from tenacity import (
     retry,
-    wait_exponential,
-    stop_after_attempt,
     retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
 )
 
 load_dotenv()
@@ -107,7 +108,7 @@ class KeyManager:
 key_manager = KeyManager(API_KEYS)
 
 
-def get_working_key(model: str = "gemini-2.5-flash") -> bool:
+def get_working_key(model: str = "gemini-3.1-flash-lite-preview") -> bool:
     """Test and find a working API key."""
     for _ in range(len(key_manager.keys)):
         if key_manager.test_current_key(model):

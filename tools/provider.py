@@ -2,6 +2,7 @@
 
 import os
 import sys
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -13,7 +14,7 @@ GEMINI_WORK_MODELS = ["gemini-2.5-flash"]
 GEMINI_TEST_MODELS = ["gemini-3.1-flash-lite-preview"]
 
 OPENROUTER_WORK_MODELS = [
-    "deepseek/deepseek-chat",
+    "deepseek/deepseek-v3.2",
     "qwen/qwen-2.5-72b-instruct",
     "meta-llama/llama-3.3-70b-instruct",
 ]
@@ -22,6 +23,8 @@ OPENROUTER_TEST_MODELS = ["minimax/minimax-m2.5:free"]
 if PROVIDER == "openrouter":
     from tools.openrouter import (
         generate_content as or_generate_content,
+    )
+    from tools.openrouter import (
         get_working_key as or_get_working_key,
     )
 
@@ -53,6 +56,8 @@ if PROVIDER == "openrouter":
 elif PROVIDER == "google":
     from tools.gemini import (
         generate_content as gemini_generate_content,
+    )
+    from tools.gemini import (
         get_working_key as gemini_get_working_key,
     )
 

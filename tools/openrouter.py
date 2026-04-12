@@ -2,13 +2,14 @@
 
 import os
 import time
-from dotenv import load_dotenv
+
 import requests
+from dotenv import load_dotenv
 from tenacity import (
     retry,
-    wait_exponential,
-    stop_after_attempt,
     retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
 )
 
 load_dotenv()
@@ -20,7 +21,7 @@ if not API_KEY:
 
 print("Loaded OPENROUTER_API_KEY", flush=True)
 
-MIN_REQUEST_INTERVAL = 30
+MIN_REQUEST_INTERVAL = 1
 HOURS_TO_RESET = 24
 
 
@@ -60,7 +61,7 @@ def get_working_key() -> bool:
                 "Content-Type": "application/json",
             },
             json={
-                "model": "openai/gpt-4o-mini",
+                "model": "minimax/minimax-m2.5:free",
                 "messages": [{"role": "user", "content": "hi"}],
                 "max_tokens": 5,
             },

@@ -24,4 +24,5 @@
 ## What the Output Looks Like
 - **Transcripts:** Raw markdown in `/output/`
 - **Extracted Points:** Structured markdown with tags/categories in `/extracted/`
-- **File Format:** Markdown (.md)
+- **Reports:** Evaluation and error reports in `/reports/`
+- **File Format:** Markdown (.md)at:** Markdown (.md)

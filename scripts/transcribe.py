@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
 """Transcribes MP3 audio files to markdown using MLX Whisper with context-specific Pali vocabulary prompts."""
 
-import mlx_whisper
-from pathlib import Path
-import time
-from typing import Any
 import argparse
 import re
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+import mlx_whisper
+
+# Add project root to sys.path
+sys.path.append(str(Path(__file__).parent.parent))
+
+from scripts.glossary import DHAMMA, SANGHA, VINAYA
 
 VOCAB_PROMPTS = {
-    "sangha": "Buddhist Saṅgha discussion. Pali terms: Saṅgha, Dhamma, kamma, bhikkhu, sāmaṇera, upāsaka, vihāra, dāna, sīla, bhante, āyasmā, thera, mahāthera, puñña, vinaya, pāṭimokkha, uposatha, vassa, kaṭhina, nissaya, pavāraṇā, kappiya, kamma, apalokana, ñatti, kammavācā, sīmā, kuṭi, piṇḍacāra, cīvara, dāna, upajjhāya, ācariya, saddhā.",
-    "dhamma": "Buddhist Dhamma class. Pali terms: Saṅgha, Dhamma, sutta, nikāya, āgama, abhidhamma, pāli, khandha, rupa, vedanā, saññā, saṅkhāra, viññāṇa, anicca, anatta, dukkha, paṭiccasamuppāda, avijjā, taṇhā, upādāna, kamma, nibbāna, magga, ariya, sacca, kilesa, āsava, nīvaraṇa, lobha, dosa, moha, rāga, māna, bhava, jāti, saṃsāra, brahmavihāra, mettā, karuṇā, muditā, upekkhā, pāramī, puñña, kusala, akusala, paññā, vimutti.",
-    "vinaya": "Buddhist Vinaya class. Pali terms: Saṅgha, Dhamma, Vinaya, pāṭimokkha, bhikkhu, bhikkhunī, pārājika, saṅghādisesa, aniyata, nissaggiya, pācittiya, pāṭidesanīya, sekhiya, adhikaraṇasamatha, apatti, thullaccaya, dukkaṭa, dubbhāsita, nissaya, ācariya, upajjhāya, vassa, pavāraṇā, cīvara, piṇḍacāra, kappiya, kamma, sīmā, uposatha, antaravāsaka, uttarāsaṅga, saṅghāṭi, patta, vikappana, dāna, desanā, upasampadā, pabbajjā, sikkhamānā.",
-    "interview": "Buddhist meditation interview. Pali terms: Saṅgha, Dhamma, satipaṭṭhāna, ānāpānasati, sati, samādhi, bhāvanā, samatha, vipassanā, jhāna, vitakka, vicāra, pīti, sukha, ekaggatā, nimitta, nīvaraṇa, lobha, dosa, moha, kilesa, mettā, vīriya, khantī, saddhā, paññā, hiri, ottappa, bojjhaṅga, indriya, bala, padhāna, upekkhā, rūpa, arūpa, asubha, maraṇassati, anicca, dukkha, anatta, rāga, thīnamiddha, uddhacca, kukkucca, vicikicchā, passaddhi, sampajañña, kusala.",
+    "sangha": f"Buddhist Saṅgha discussion. Pali terms: {', '.join(SANGHA)}",
+    "dhamma": f"Buddhist Dhamma class. Pali terms: {', '.join(DHAMMA)}",
+    "vinaya": f"Buddhist Vinaya class. Pali terms: {', '.join(VINAYA)}",
+    "interview": f"Buddhist meditation interview. Pali terms: {', '.join(DHAMMA)}",
 }
 
 
@@ -92,6 +99,9 @@ def main():
         formatted_transcript = ""
         current_paragraph = ""
         paragraph_start_time = None
+        tail_history = (
+            ""  # Short history for contiguous loop filtering across paragraph breaks
+        )
 
         for segment in result["segments"]:
             start_time = segment["start"]
@@ -107,32 +117,70 @@ def main():
             if not text or "\x00" in text:
                 skip_segment = True
 
-            # 2. Punctuation-agnostic Word Loops (4+ repetitions)
+            # 2. Punctuation-agnostic Word Loops
             # Strip punctuation for word loop check (e.g., "Valuable. Valuable. Valuable.")
             if not skip_segment:
                 clean_text_only = re.sub(r"[^\w\s]", "", text).strip()
-                if re.search(r"\b(\w+)( \1){3,}\b", clean_text_only, re.IGNORECASE):
-                    skip_segment = True
+                # Default: 4+ repetitions (word + 3 repeats)
+                match = re.search(
+                    r"\b(\w+)(?:\s+\1){3,}\b", clean_text_only, re.IGNORECASE
+                )
+                if match:
+                    word = match.group(1).lower()
+                    # For common fillers, allow up to 5 repetitions (word + 4 repeats).
+                    # Filter if 6 or more (word + 5 repeats).
+                    if word in [
+                        "yeah",
+                        "no",
+                        "okay",
+                        "so",
+                        "right",
+                        "hmm",
+                        "mhmm",
+                        "for",
+                        "and",
+                        "but",
+                        "like",
+                        "i",
+                        "it",
+                        "they",
+                        "we",
+                        "you",
+                    ]:
+                        if not re.search(
+                            r"\b(\w+)(?:\s+\1){5,}\b", clean_text_only, re.IGNORECASE
+                        ):
+                            pass  # Allow it
+                        else:
+                            skip_segment = True
+                    else:
+                        skip_segment = True
 
             # 3. Context-Aware Sentence/Phrase Loops
-            # Only check if the new text is a substantial repetition of what's already in the paragraph
+            # Use tail_history to catch loops that cross paragraph boundaries
             if not skip_segment:
                 # Clean punctuation for robust matching
                 clean_text = re.sub(r"[^\w\s]", " ", text.lower())
                 clean_text = re.sub(r"\s+", " ", clean_text).strip()
 
-                clean_para = re.sub(r"[^\w\s]", " ", current_paragraph.lower())
-                clean_para = re.sub(r"\s+", " ", clean_para).strip()
+                clean_history = re.sub(r"[^\w\s]", " ", tail_history.lower())
+                clean_history = re.sub(r"\s+", " ", clean_history).strip()
 
-                if len(clean_text) > 15 and clean_text in clean_para:
+                # Combine history and current text for cross-segment regex check
+                combined_text = (clean_history + " " + clean_text).strip()
+
+                # Check for cross-segment loops (contiguous repetition)
+                # We skip if the entire clean segment (or a significant part of it)
+                # already exists in the immediate tail history.
+                if len(clean_text) >= 10 and clean_text in clean_history:
                     skip_segment = True
                 elif clean_text:
-                    # Check for internal phrase loops
+                    # Check for internal and cross-segment phrase loops
                     # 1. Any short phrase (5+ chars) repeated 3+ times
-                    if re.search(r"\b(.{5,}?)( \1){2,}\b", clean_text):
+                    if re.search(r"\b(.{5,}?)( \1){2,}", combined_text):
                         skip_segment = True
                     # 2. Any long phrase (15+ chars) repeated 2+ times
-                    elif re.search(r"\b(.{15,}?)( \1){1,}\b", clean_text):
+                    elif re.search(r"\b(.{15,}?)( \1){1,}", combined_text):
                         skip_segment = True
 
             # 4. Catches low-entropy character spam
@@ -163,6 +211,10 @@ def main():
                 if paragraph_start_time is None:
                     paragraph_start_time = start_time
                 current_paragraph += text + " "
+                tail_history += text + " "
+                # Keep history manageable (last ~150 chars) - strictly for immediate tail matching
+                if len(tail_history) > 150:
+                    tail_history = tail_history[-150:]
                 is_terminal = text.endswith((".", "?", "!", "”", '"'))
             else:
                 # If we skipped the segment, evaluate is_terminal based on the existing paragraph
@@ -197,7 +249,7 @@ def main():
             print(f"Thermal pacing: Sleeping for {cooldown_seconds} seconds...")
             time.sleep(cooldown_seconds)
 
-    print("Batch processing complete.")
+    print(f"Batch processing complete. see {output_dir}")
 
 
 if __name__ == "__main__":

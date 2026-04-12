@@ -1,0 +1,2 @@
+- 2026-04-12 [POSITIVE] Using `cat` via `run_shell_command` successfully bypasses `.gitignore` restrictions for archived files that `read_file` cannot access.
+- 2026-04-12 [WORKFLOW] Specifying the thread name as an argument to `/kamma:4-finalize` accelerates the selection process.

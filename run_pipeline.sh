@@ -1,6 +1,12 @@
 #!/bin/bash
 # Runs the full Dhamma extraction pipeline: transcription, Pāli correction, Dhamma point extraction, and database consolidation.
 
+# Ensure log directory exists
+mkdir -p log
+# Tee output to a timestamped log file in the log/ directory
+LOG_FILE="log/$(basename "$0" .sh)_$(date +%Y%m%d_%H%M%S).log"
+exec > >(tee -a "$LOG_FILE") 2>&1
+
 # 1. Environment Safety Check
 if [ ! -f ".env" ]; then
     echo "CRITICAL ERROR: .env file not found."

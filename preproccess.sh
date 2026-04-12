@@ -1,6 +1,12 @@
 #!/bin/bash
 # Preprocesses MP3 files from audio/ by normalizing loudness, removing silence, and converting to 16kHz mono WAV in audio_processed/.
 
+# Ensure log directory exists
+mkdir -p log
+# Tee output to a timestamped log file in the log/ directory
+LOG_FILE="log/$(basename "$0" .sh)_$(date +%Y%m%d_%H%M%S).log"
+exec > >(tee -a "$LOG_FILE") 2>&1
+
 INPUT_DIR="audio"
 OUTPUT_DIR="audio_processed"
 
