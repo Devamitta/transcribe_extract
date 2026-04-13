@@ -135,7 +135,60 @@ The corrected files will be saved in `output/corrected_pali/`, mirroring the inp
 
 ---
 
-## 4. Dhamma Extraction (Draft)
+## 4. Tims YouTube Pipeline
+
+A two-step pipeline for generating and packaging YouTube upload metadata for Tims Dhamma talks.
+Input: corrected Pāli transcripts from `output/corrected_pali/tims/`.
+
+### Step 1: Generate Metadata Suggestions
+
+Reads each corrected transcript and uses the LLM to suggest a YouTube title and upload description.
+
+**Batch mode (all files):**
+```bash
+PYTHONPATH=. uv run python scripts/tims_metadata.py
+```
+
+**Single-file test mode:**
+```bash
+PYTHONPATH=. uv run python scripts/tims_metadata.py --file "output/corrected_pali/tims/<filename>.md"
+```
+
+Output: `output/tims_review_YYYY-MM-DD.md` — a combined markdown review file containing, for each talk:
+- Original filename
+- Suggested title
+- Suggested description
+
+**Options:**
+- `--file <path>`: process a single file only (test mode)
+- `--input-dir <path>`: override input directory (default: `output/corrected_pali/tims`)
+- `--output-file <path>`: override output review file path
+- `--test` / `-t`: use provider test models
+
+### Step 2: Human Review
+
+Open `output/tims_review_YYYY-MM-DD.md` and edit the suggested titles and descriptions as needed.
+The export script treats whatever is in this file as the approved values — it is the source of truth.
+
+### Automated Full Pipeline (`tims_pipeline.sh`)
+
+For processing a new batch of Tims talks, you can run the full automated pipeline:
+
+```bash
+./tims_pipeline.sh
+```
+
+This script handles all steps sequentially and supports incremental processing (skips existing files):
+1.  **Transcription:** Processes any new files in `audio/tims/` into `output/transcribed/tims/`.
+2.  **Pāli Correction:** Corrects new transcripts into `output/corrected_pali/tims/`.
+3.  **Metadata Generation:** Generates a new metadata review file `output/tims_review_YYYY-MM-DD.md`.
+4.  **Pause for Review:** Allows you to edit the generated review file before proceeding.
+5.  **Export & Tagging:** Packages approved audio into `output/audio_youtube/` with metadata tags (Artist: Devamitta Bhikkhu, Title: [Talk Title]) and verifies the file count.
+
+
+---
+
+## 5. Dhamma Extraction (Draft)
 
 Extracts core Dhamma points, metadata, and tags from the corrected transcripts.
 

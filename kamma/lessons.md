@@ -1,2 +1,5 @@
 - 2026-04-12 [POSITIVE] Using `cat` via `run_shell_command` successfully bypasses `.gitignore` restrictions for archived files that `read_file` cannot access.
 - 2026-04-12 [WORKFLOW] Specifying the thread name as an argument to `/kamma:4-finalize` accelerates the selection process.
+- 2026-04-13 [POSITIVE] Smooth finalization of Tims YouTube pipeline thread with documentation updates.
+- 2026-04-13 [BEHAVIOR] Always read the handoff for a thread before finalizing; it may contain critical context that the review verdict misses or that reflects a flawed implementation process.
+- 2026-04-13 [ECONOMY] CRITICAL: Never re-run a full batch of LLM calls to fix metadata or filenames; always transform existing data locally (e.g., via regex or renaming) to preserve tokens and minimize cost.

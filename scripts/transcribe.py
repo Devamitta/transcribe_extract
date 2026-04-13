@@ -13,7 +13,7 @@ import mlx_whisper
 # Add project root to sys.path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from scripts.glossary import DHAMMA, SANGHA, VINAYA
+from tools.glossary import DHAMMA, SANGHA, VINAYA
 
 VOCAB_PROMPTS = {
     "sangha": f"Buddhist Saṅgha discussion. Pali terms: {', '.join(SANGHA)}",
@@ -71,8 +71,8 @@ def main():
     cooldown_seconds = 180
     prompt_context = VOCAB_PROMPTS[args.context]
 
-    print(f"Found {len(audio_files)} files to process.")
-    print(f"Using Context: {args.context.upper()}")
+    print(f"Found {len(audio_files)} files to process.", flush=True)
+    print(f"Using Context: {args.context.upper()}", flush=True)
 
     for index, audio_path in enumerate(audio_files):
         # Mirror subfolder structure relative to input directory
@@ -81,10 +81,13 @@ def main():
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         if output_path.exists():
-            print(f"Skipping '{audio_path.name}' (already exists).")
+            print(f"Skipping '{audio_path.name}' (already exists).", flush=True)
             continue
 
-        print(f"[{index + 1}/{len(audio_files)}] Transcribing: {audio_path.name}")
+        print(
+            f"\n[{index + 1}/{len(audio_files)}] STARTING: {audio_path.name}",
+            flush=True,
+        )
 
         result: dict[str, Any] = mlx_whisper.transcribe(
             str(audio_path),
@@ -234,7 +237,7 @@ def main():
                     paragraph_start_time = None
 
         # Flush remainder
-        if current_paragraph:
+        if current_paragraph and paragraph_start_time is not None:
             timestamp_mins = paragraph_start_time / 60.0
             formatted_transcript += (
                 f"[{timestamp_mins:.1f}] {current_paragraph.strip()}\n\n"
@@ -243,13 +246,16 @@ def main():
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(formatted_transcript.strip())
 
-        print(f"Saved: {output_path.name}")
+        print(f"DONE: {audio_path.name} -> {output_path.name}", flush=True)
 
         if index < len(audio_files) - 1:
-            print(f"Thermal pacing: Sleeping for {cooldown_seconds} seconds...")
+            print(
+                f"Thermal pacing: Sleeping for {cooldown_seconds} seconds...",
+                flush=True,
+            )
             time.sleep(cooldown_seconds)
 
-    print(f"Batch processing complete. see {output_dir}")
+    print(f"\nBatch processing complete. See {output_dir}", flush=True)
 
 
 if __name__ == "__main__":

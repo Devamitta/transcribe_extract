@@ -18,7 +18,12 @@ OPENROUTER_WORK_MODELS = [
     "qwen/qwen-2.5-72b-instruct",
     "meta-llama/llama-3.3-70b-instruct",
 ]
-OPENROUTER_TEST_MODELS = ["minimax/minimax-m2.5:free"]
+OPENROUTER_TEST_MODELS = [
+    "nvidia/nemotron-3-nano-30b-a3b:free",
+    "openai/gpt-oss-120b:free",
+    "arcee-ai/trinity-large-preview:free",
+    "minimax/minimax-m2.5:free",
+]
 
 if PROVIDER == "openrouter":
     from tools.openrouter import (
@@ -40,15 +45,17 @@ if PROVIDER == "openrouter":
         models = OPENROUTER_TEST_MODELS if TEST_MODE else OPENROUTER_WORK_MODELS
         for model in models:
             try:
+                # Use 15s timeout as requested by user
                 return or_generate_content(
                     contents=contents,
                     system_instruction=system_instruction,
                     model=model,
                     max_output_tokens=max_output_tokens,
                     temperature=temperature,
+                    timeout=15,
                 )
             except Exception as e:
-                print(f"Model {model} failed: {e}, trying next...", flush=True)
+                print(f"Model {model} failed or timed out: {e}, trying next...", flush=True)
         raise Exception("All OpenRouter models failed")
 
     generate_content = _wrap_generate_content

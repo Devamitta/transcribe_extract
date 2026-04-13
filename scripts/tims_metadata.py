@@ -1,24 +1,57 @@
 #!/usr/bin/env python3
 """Generates YouTube metadata suggestions (title and description) for Tims Dhamma talks using Gemini API."""
 
-from pathlib import Path
-import time
 import argparse
+import datetime
+import re
+import time
+from pathlib import Path
 
 from tools.provider import generate_content, get_working_key
 
-SYSTEM_INSTRUCTION = """You are creating YouTube metadata for a Dhamma talk transcript.
+SYSTEM_INSTRUCTION = """You are preparing YouTube upload metadata for a recorded Dhamma (Buddhist teaching) talk by a senior meditation teacher.
 
-TASK: Suggest a clear, engaging title and a concise YouTube upload description for a static-image video upload.
+CONTEXT:
+- These are intimate Theravāda teaching sessions, not academic lectures.
+- The audience is practitioners and people sincerely interested in Buddhist meditation and the Dhamma.
+- Sessions often involve Q&A exchanges between the teacher and student(s).
+- Pāli terms with proper diacritics (e.g., Nibbāna, Satipaṭṭhāna, Saṅgha, Khandha) are appropriate and preferred — they signal authenticity to the audience. ALWAYS capitalize Pāli terms.
+- The video is a static-image upload (no video footage), so the metadata carries all discoverability weight.
+
+TITLE REQUIREMENTS:
+- Must capture the central teaching topic of THIS specific talk — not a generic Dhamma title.
+- Length: 3–7 words. Be extremely concise and punchy. Avoid connecting words where possible (e.g., use "Valentine's Day, Pema vs Mettā" instead of "Valentine's Day, Pema, and the Practice of Universal Mettā").
+- Do NOT use generic openers: "A Talk on...", "Lecture:", "Session:", "Discussion of...", "Exploring...".
+- Pāli terms with diacritics are acceptable and preferred when they are the core subject (e.g., "Anicca, Dukkha, Anattā", "The Five Khandhas"). ALWAYS capitalize them.
+- The title must be DISTINCTIVE — someone scanning a playlist of 30 talks should immediately understand what this specific talk covers.
+- Avoid vague spiritual marketing language: "Deep", "Profound", "Amazing", "Life-Changing".
+
+DESCRIPTION REQUIREMENTS:
+- Write exactly 2–3 sentences. No more, no less.
+- Sentence 1: State what the teaching covers and why it matters to a practitioner.
+- Sentence 2: What the listener will understand, see more clearly, or be able to apply after listening. (Phrases like "You will learn..." are acceptable).
+- Sentence 3 (optional but preferred): One notable analogy, framing, or insight from this talk that is distinctive or memorable.
+- Tone: clear, grounded, warm — written for a sincere practitioner, not a casual browser.
+- Do NOT use marketing language ("Don't miss this!", "Incredible insight!", "You won't believe...").
+- Do NOT open every description with "In this talk..." — vary the opening across descriptions.
+- Pāli terms are welcome when they are the subject of the talk. ALWAYS capitalize them.
+- NEVER mention "A personal story...". Focus entirely on the Dhamma point being illustrated, not the story itself.
+- NEVER reference the speaker (e.g., avoid "The teacher explores...", "The speaker discusses..."). Keep descriptions impersonal and focused on the Dhamma.
+- EXCEPTION: References to "The Buddha" is excellent and encouraged if mentioned in the talk.
 
 OUTPUT FORMAT:
-- Title: A concise, catchy but respectful title for the Dhamma talk. Keep it filename-safe.
-- Description: A 1-2 sentence summary of the teaching that invites the viewer to listen.
+Respond with EXACTLY two lines. No extra text, no markdown, no explanations before or after.
 
-Structure your response EXACTLY like this:
-TITLE: [suggested title]
-DESCRIPTION: [suggested description]
+TITLE: [your suggested title here]
+DESCRIPTION: [your suggested description here]
 """
+
+
+def extract_date_from_filename(filename: str) -> str:
+    """Extract YYYY-MM-DD date prefix from a filename, e.g. '2024-11-26 Talk.md' -> '2024-11-26'.
+    Returns empty string if no date prefix is found."""
+    match = re.match(r"(\d{4}-\d{2}-\d{2})", filename)
+    return match.group(1) if match else ""
 
 
 def generate_metadata(text: str) -> str:
@@ -28,21 +61,21 @@ def generate_metadata(text: str) -> str:
     )
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate YouTube metadata suggestions for Tims Dhamma talks."
     )
     parser.add_argument(
         "--input-dir",
         type=str,
-        default="output/transcribed/tims",
-        help="Directory containing transcribed markdown files (default: output/transcribed/tims)",
+        default="output/corrected_pali/tims",
+        help="Directory containing transcribed markdown files (default: output/corrected_pali/tims)",
     )
     parser.add_argument(
         "--output-file",
         type=str,
-        default="output/tims_review.md",
-        help="The combined review markdown file (default: output/tims_review.md)",
+        default="",
+        help="The combined review markdown file (default: output/tims_review_YYYY-MM-DD.md)",
     )
     parser.add_argument(
         "--file",
@@ -58,7 +91,6 @@ def main():
     args = parser.parse_args()
 
     input_dir = Path(args.input_dir)
-    output_file = Path(args.output_file)
 
     if not get_working_key():
         print("All API keys failed. Exiting.")
@@ -81,18 +113,25 @@ def main():
             print(f"No markdown files found in '{input_dir}'.")
             return
 
+    # Determine output date from the LATEST file or today
+    date_str = extract_date_from_filename(md_files[-1].name)
+    if not date_str:
+        date_str = datetime.date.today().isoformat()
+
+    if args.output_file:
+        output_file = Path(args.output_file)
+    else:
+        output_file = Path(f"output/tims_review_{date_str}.md")
+
     print(f"Found {len(md_files)} files to process.")
 
     results = []
-    # If output file exists, we might want to append or just overwrite for now as per "one combined markdown review file"
-    # Actually, the spec says "one combined markdown review file that lists, for every source file..."
+    total = len(md_files)
 
-    for file_path in md_files:
-        print(f"Processing '{file_path.name}'...")
-        with open(file_path, "r", encoding="utf-8") as f:
-            text = f.read()
-
+    for i, file_path in enumerate(md_files, 1):
+        print(f"Processing {i}/{total} '{file_path.name}'...")
         try:
+            text = file_path.read_text(encoding="utf-8")
             metadata = generate_metadata(text)
 
             # Parse metadata
@@ -115,20 +154,24 @@ def main():
         except Exception as e:
             print(f"  Failed on '{file_path.name}': {e}")
 
-        print("  Waiting 5s between files...", flush=True)
-        time.sleep(5)
+        if len(md_files) > 1:
+            print("  Waiting 5s between files...", flush=True)
+            time.sleep(5)
 
     if results:
         output_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_file, "w", encoding="utf-8") as f:
-            f.write("# Tims Audio Metadata Review\n\n")
-            f.write("Review and edit the suggested titles and descriptions below.\n")
-            f.write("The export script will use this file as the source of truth.\n\n")
-            for res in results:
-                f.write("--- \n")
-                f.write(f"## Source: {res['original']}\n")
-                f.write(f"**Approved Title:** {res['suggested_title']}\n")
-                f.write(f"**Approved Description:** {res['suggested_description']}\n\n")
+        lines = [
+            "# Tims Audio Metadata Review\n",
+            "Review and edit the suggested titles and descriptions below.\n",
+            "The export script will use this file as the source of truth.\n",
+        ]
+        for res in results:
+            lines.append("\n--- \n")
+            lines.append(f"## Source: {res['original']}\n")
+            lines.append(f"**Suggested Title:** {res['suggested_title']}\n")
+            lines.append(f"**Suggested Description:** {res['suggested_description']}\n")
+
+        output_file.write_text("".join(lines), encoding="utf-8")
         print(f"Review file saved to '{output_file}'.")
 
 

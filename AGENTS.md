@@ -1,6 +1,6 @@
 # Project Rules
 
-dhamma_extract Project Rules. Apply these in addition to your baseline global instructions `~/.claude/CLAUDE.md`.
+Apply these in addition to your baseline global instructions `~/.claude/CLAUDE.md`.
 
 ## Project Overview
 
@@ -34,3 +34,6 @@ Dhamma Transcriber & Extractor - A local pipeline that converts MP3 Dhamma talks
 - The `temp/` directory is gitignored; do not commit files from this folder.
 - Clean up temporary files in `temp/` once they are no longer needed for the current task.
 - Do NOT create temporary or test files in the project root.
+
+## Economy & Cost Management
+- NEVER re-run batch LLM processing for trivial changes like filename dates or field labels. Use local text manipulation (e.g., regex, rename) instead.

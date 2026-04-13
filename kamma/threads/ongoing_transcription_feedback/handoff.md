@@ -1,75 +1,78 @@
-# Handoff: Ongoing Transcription Quality Feedback Loop (2026-04-10)
+## Handoff: Reporting Sync & False Positive Reduction (Iteration 20260411_Interview_Feedback_Loop)
 
-## Status: Resolved Major Truncation Bug
-The iteration was triggered by the observation that 3-hour audio files were producing very short (13-minute) transcripts.
+### 1. Reporting Logic Synchronization
+- **Logic Mismatch:** Identified a discrepancy where `scripts/transcribe.py` (the engine) allowed up to 5 repetitions of filler words, but `scripts/extract_errors.py` (the reporter) flagged 4 or more as a hallucination. This caused "natural" stutters (e.g., "yeah yeah yeah yeah") to be reported as errors even when the transcription engine was behaving correctly.
+- **Fix:** Synchronized `scripts/extract_errors.py` with the transcription engine's logic.
+    - Added the same filler word whitelist: `["yeah", "no", "okay", "so", "right", "hmm", "mhmm", "for", "and", "but", "like", "i", "it", "they", "we", "you"]`.
+    - Increased the word loop threshold for these whitelisted words to **6 repetitions** (matching the engine's "allow 5, filter 6" rule).
+    - Maintained the standard **4 repetition** threshold for all other words.
 
-### Fixes Implemented
-1.  **Poisoned Context Bug (`scripts/transcribe.py`)**:
-    *   **Issue**: Hallucination filters used `continue`, bypassing the paragraph-reset logic. Once a loop was "poisoned" in the context, every subsequent segment was dropped.
-    *   **Fix**: Refactored to a `skip_segment` flag. Paragraph chunking/resetting now runs regardless of whether the current segment was skipped.
-    *   **Improvement**: Replaced global regex checks with localized substring matches for better performance and fewer false positives.
+### 2. Results
+- **Zero Noise:** Re-running `extract_errors.py` on the latest interview batch (`output/transcribed/interview/`) now returns **0 anomalies**, confirming that the reporting noise from natural conversational stutters has been eliminated.
+- **Improved Signal:** By removing these false positives, future reports will highlight only true, high-confidence hallucinations (runaway loops), making the feedback loop much more efficient.
 
-2.  **Doubled Folder Bug**:
-    *   **Issue**: redundant path calculations caused files to be saved in `output/transcribed/sangha/sangha/`.
-    *   **Fix**: Simplified path logic in `scripts/transcribe.py` and synchronized `--output-dir` arguments in `transcribe-sangha.sh` and `transcribe-interview.sh`.
+### 3. Verification Steps (User)
+1. **Run Error Extraction:** Execute `uv run python scripts/extract_errors.py --input-dir output/transcribed/interview/`
+2. **Confirm Clean Report:** The output should show "Found 0 anomalies across 5 files" (assuming no new true hallucinations have occurred).
 
-### Verification
-- **Test File**: `audio/dhamma/2024-11-26 Sabbasava Sutta (MN2).mp3`
-- **Result**: Full 16:32 duration transcribed correctly (previously truncated).
-- **Linter**: Passed `ruff check` and `ruff format`.
+---
 
-### Next Steps
-- [ ] User to run `./transcribe-sangha.sh` to re-process the 3-hour meetings.
-- [ ] Establish new baseline error reports using `scripts/extract_errors.py` on the full-length transcripts.
+## Handoff: Refined Transcription Filter Hardening (Iteration 20260411_New_Interview_Output)
 
-### Errors & Repeated Mistakes
-- **Background Processes**: Background processes via `run_shell_command` may terminate when the turn context ends if not properly detached. Use `nohup` for long-running transcription tasks, or better, run them locally outside the AI session to monitor progress in real-time.
 
-## Update: Phrase Loop Filter Refinement (2026-04-11)
+## 1. The Core Issue: Contiguous Loop "Restarts"
+The primary failure mode was identified in `ARDMK 26-04-01.md`. A Whisper "stutter" loop (e.g., *"For the... for the..."*) that started at the end of a 60-second paragraph flush would **bypass existing filters** because the `current_paragraph` variable was reset to empty at the start of the next minute. Without a memory of the previous 10 seconds, the filter treated the first loop of the new minute as a fresh, valid sentence.
 
-### Status: Improved Hallucination Detection
-The second iteration focused on catching "Sentence Loop Hallucinations" that were slipping through the previous filters.
+## 2. The Solution: Refined Immediate Tail Match
+I implemented a highly targeted "Immediate Tail" filtering system in `scripts/transcribe.py`.
 
-### Fixes Implemented
-1.  **Enhanced Phrase Loop Filter (`scripts/transcribe.py`)**:
-    *   **Issue**: Previous filter required exact punctuation matches and >15 characters. Hallucinations like `"It's possible. It's possible."` or `"what they mentioned, what they mentioned,"` were ignored.
-    *   **Fix**: Implemented a punctuation-agnostic two-tiered check:
-        *   **Short Phrase (5+ chars)**: 3+ repetitions (e.g., `"it s possible it s possible it s possible"`).
-        *   **Long Phrase (15+ chars)**: 2+ repetitions (e.g., `"what they mentioned what they mentioned"`).
-    *   **Logic**: Comparisons are now performed on cleaned text (lowercase, no punctuation, single spaces).
+**The Final Implementation (v2):**
+- **`tail_history` Buffer (150 chars):** I reduced the context window from 1000 characters to just 150 characters. This ensures the filter only "remembers" the immediately preceding 10-20 seconds of speech.
+- **Full Segment Existence Check:** Instead of checking for small prefix matches (which caused "long-distance" false positives), the filter now only skips a segment if the **entire** clean text (minimum 10 chars) is found within the short `tail_history`. This perfectly targets Whisper's contiguous stuttering loops while allowing the same phrase to be spoken naturally a few minutes later.
+- **Improved Context Continuity:** By preserving this 150-character tail across paragraph flushes, we successfully bridge the 60-second boundary that previously allowed loops to restart.
 
-### Verification
-- **Regex Testing**: Verified against 5 specific hallucinated samples from `log/error_report_20260411.md`. All samples are now correctly identified as skips.
-- **Linter**: Passed `ruff check` and `ruff format`.
+## 3. Handling False Positives (The "Yeah" Problem)
+The error analysis tool flagged several instances of natural conversational agreement ("Yeah yeah") as hallucinations.
 
-### Next Steps
-- [ ] User to run `./transcribe-sangha.sh` and verify the reduction of phrase loops in the final markdown files.
-- [ ] Run `/kamma:3-review` in a fresh session with a different model (e.g., switch from Opus to Sonnet 3.5 or vice-versa) for an independent architectural and logic review.
+**The Solution:**
+- **Nuanced Filler Filtering:** Instead of blanket-excluding words like "yeah" and "okay", the filter now uses a tiered approach. It allows these words to repeat naturally (up to 5 times), but if they repeat **6 or more times** (a clear Whisper failure mode), they are still filtered out. This preserves natural "yeah yeah yeah yeah" while catching the infinite loop cases.
+- **Internal Loop Logic:** Maintained the phrase loop detector (e.g., "for the... for the...") for repetitions *within* a single segment, ensuring internal stutters are caught before they ever reach the history buffer.
 
-### Errors & Repeated Mistakes
-- **Bash vs Python**: `transcribe-sangha.sh` is a shell script. Attempting to run it with `python` or `uv run python` results in a `SyntaxError` at the `echo ""` line. Use `./transcribe-sangha.sh` or `bash transcribe-sangha.sh`.
+## 4. Verification Results (Simulation)
+I verified the logic against the known failure cases:
+- **"For the..." Loop:** Successfully caught across the paragraph boundary because the phrase exists in the immediate `tail_history`.
+- **"Yeah yeah yeah yeah":** Now **preserved** (no longer filtered) as it stays under the 6-repetition threshold for fillers.
+- **Natural Repetition:** Phrases repeated after a few sentences are **preserved** because they fall out of the 150-character `tail_history` window.
 
-## Update: Refined Error Reporting & Hallucination Analysis (2026-04-11 V3)
+## 5. Duration Verification Utility
+I have created `scripts/verify_duration.py` to prevent "silent" truncation where the transcript ends before the audio.
 
-### Status: False Positive Reduction in Error Reports
-Iteration 3 focused on analyzing the latest transcription output with a "higher model" (Sonnet 3.5/Opus) and refining the reporting tools to distinguish between real Whisper hallucinations and natural speech stutters.
+- **How it works:** It uses `ffprobe` to get the exact duration of the `.mp3` file and compares it to the last `[XX.X]` timestamp in the `.md` transcript.
+- **Auto-Check:** This script is now integrated into `transcribe.sh`, `transcribe-interview.sh`, and `transcribe-sangha.sh`. It runs automatically after transcription and prints a report.
+- **Fail-Safe:** If a transcript is more than 120 seconds shorter than the audio, it flags it as **TRUNCATED** and warns the user.
 
-### Fixes Implemented
-1.  **Tiered Repetition Check (`scripts/extract_errors.py`)**:
-    *   **Issue**: The previous regex `(.{15,})\1{1,}` was too aggressive, flagging any 15+ character sequence that repeated exactly once. This caused many natural speech disfluencies (e.g., *"we should think we should think"*) to be reported as hallucinations.
-    *   **Fix**: Implemented a tiered approach in the `identify_anomaly` function:
-        *   **Medium Phrases (15-30 chars)**: Must repeat twice (appear 3 times) to be flagged.
-        *   **Long Phrases (>30 chars)**: Must repeat once (appear 2 times) to be flagged.
-    *   **Benefit**: This allows natural stutters (which usually only repeat once) to pass while still catching real Whisper loops.
+## Handoff: Cross-Segment Loop Detection & Workflow Hardening (Iteration 20260411_New_Interview_MD)
 
-### Verification
-- **Baseline Comparison**: Rerunning `extract_errors.py` on the `sangha` transcripts showed a reduction from 9 anomalies down to 1 real anomaly.
-- **Anomaly Identified**: The remaining anomaly correctly flagged a triple repetition loop: *"I like answers. I like answers. I like answers."*
-- **Linter**: Passed `ruff check` and `ruff format`.
+### 1. Improvements to `scripts/transcribe.py`
+- **Cross-Segment Phrase Loop Detection:** 
+    - Previously, phrase loop regexes (`(.{5,}?)( \1){2,}` and `(.{15,}?)( \1){1,}`) were only applied to the *current* segment. This allowed loops to bypass filters if they started in the previous segment and continued in the new one.
+    - **Fix:** I implemented `combined_text = (clean_history + " " + clean_text).strip()`. The regexes are now evaluated against this combined string, catching continuous repetitions that span across segment boundaries.
+- **Expanded Filler Whitelist:** 
+    - The `extract_errors.py` tool was flagging natural conversational stutters on common words as hallucinations.
+    - **Fix:** Expanded the allowed filler word list to include: `"for"`, `"and"`, `"but"`, `"like"`, `"i"`, `"it"`, `"they"`, `"we"`, `"you"`. These words can now repeat up to 5 times naturally (e.g., "for... for... for...") without the entire segment being dropped.
 
-### Next Steps
-- [ ] User to review the refined error report in `log/error_report_20260411_103814.md`.
-- [ ] Run `/kamma:3-review` in a fresh session using a different model (e.g., if currently on Sonnet, use Opus) to verify the new regex logic and ensure no regressions in hallucination detection.
+### 2. Workflow & Spec Hardening
+- **Mandatory Hard Stops:** Updated `spec.md` and the `Iteration Template` in `plan.md` to enforce two critical manual interventions:
+    1.  **Model Switch:** Explicit stop to ensure analysis is performed by a high-tier LLM (Opus/Sonnet 3.5).
+    2.  **Plan Review:** Explicit stop after the AI proposes an improvement plan but before implementation begins. This ensures human oversight of the strategy.
+- **Diminishing Returns Check:** Integrated an evaluation step into the analysis phase where the high-tier model must determine if the script has reached its practical limit. This prevents endless marginal tweaking and potential over-filtering of valid speech.
 
-### Errors & Repeated Mistakes
-- **Over-sensitivity in Tools**: Tools like `extract_errors.py` must be slightly less sensitive than the `transcribe.py` filters to avoid "crying wolf" with false positives. Natural speech is messy; the reporting tool should prioritize identifying clear Whisper glitches over every single stutter.
+### 3. Verification Steps (User)
+1.  **Run Transcription:** Execute `./transcribe-interview.sh` on the interview batch.
+2.  **Verify Loops:** Check `ARDMK 26-04-01.md` around `[71.1]` for the "which consciousness..." loop. It should now be filtered.
+3.  **Verify Stutters:** Check for "For... For... For..." in `ARDMK 26-04-01.md` around `[63.4]`. Natural stutters (under 6 reps) should now be preserved rather than the whole segment being skipped.
+
+### 4. Errors, Issues, and Repeated Mistakes
+- **Issue:** Naive substring checks (`clean_text in clean_history`) are insufficient for cross-segment loops if the new segment contains any non-repeated trailing text.
+- **Correction:** Use `combined_text` regex evaluation to catch the repetition pattern itself, regardless of where the segment boundary falls.
+- **False Positives:** Strict word loop detection (4+ reps) on non-filler words often flags valid conversational stutters. The whitelist approach is a necessary middle ground.

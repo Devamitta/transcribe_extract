@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Corrects Pāli phonetic spellings in transcribed text using Gemini API and a Pāli glossary."""
 
+import json
+import re
 import sys
-from pathlib import Path
 import time
+from pathlib import Path
 
 # Add project root to sys.path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from scripts.glossary import SANGHA, DHAMMA, VINAYA
-from tools.provider import generate_content, get_working_key, TEST_MODE
+from tools.glossary import DHAMMA, SANGHA, VINAYA
+from tools.provider import TEST_MODE, generate_content, get_working_key
 
 # Combine all lists, deduplicate, and sort
 _combined_glossary = sorted(list(set(SANGHA + DHAMMA + VINAYA)))
@@ -36,23 +38,53 @@ def chunk_text_no_overlap(text: str, chunk_size: int = 2000) -> list[str]:
 
 def correct_pali_transcription(chunk: str) -> str:
     system_instruction = (
-        "You are a highly constrained text correction engine. Your ONLY job is to fix phonetic misspellings of Pali words found in the provided glossary.\n\n"
-        "CRITICAL RULES:\n"
-        "1. DO NOT change, remove, or summarize any English words.\n"
-        "2. DO NOT add punctuation or change capitalization unless it is to fix a Pali word.\n"
-        "3. DO NOT output any conversational text, explanations, or markdown formatting. NEVER START YOUR RESPONSE WITH 'Here is...', 'I have corrected...', 'Sure', or similar AI conversational starters. NEVER USE BACKTICKS (```) to enclose the output.\n"
-        "4. ONLY apply corrections if a word in the text sounds phonetically identical or highly similar to a word in the glossary.\n"
-        "5. If a word is a valid English word (e.g., 'comma', 'karma', 'sangha' without diacritics), only change it to the Pali equivalent (e.g., 'kamma', 'Saṅgha') if the context clearly implies it.\n"
-        "6. COMPOUND WORDS: If a transcribed word sounds like a combination of two or more words from the glossary, combine them using a hyphen (e.g., 'samanasanna' -> 'samaṇa-saññā').\n"
-        "7. ENGLISH PLURALS: If a Pali word is pluralized with an English 's' (e.g., 'bhikkhus', 'theras'), KEEP the 's' at the end of the corrected Pali word (e.g., 'bhikkhus', 'theras').\n"
-        "8. DO NOT OMIT OR DELETE any part of the text. The length and content (other than Pali corrections) must remain exactly the same as the input.\n\n"
+        "You are an expert Pali proofreader. Your task is to identify phonetic misspellings of Pali words in a provided text and suggest corrections based on a glossary.\n\n"
+        "INSTRUCTIONS:\n"
+        "1. Analyze the input text for any words that sound like words in the PALI GLOSSARY.\n"
+        "2. For each identified misspelling, output a JSON object with the 'original' word (from the text) and the 'corrected' word (from the glossary).\n"
+        "3. Output ONLY a valid JSON array of these objects. No conversational text, no markdown code blocks, no explanations.\n"
+        "4. COMPOUND WORDS: If a transcribed word sounds like a combination of two or more words from the glossary, combine them using a hyphen (e.g., 'samanasanna' -> 'samaṇa-saññā').\n"
+        "5. If no corrections are needed, output an empty array: [].\n\n"
         f"PALI GLOSSARY: [{PALI_GLOSSARY}]\n\n"
-        "Output EXACTLY the original text with only the misspelled Pali words corrected."
+        "OUTPUT FORMAT EXAMPLE:\n"
+        "[\n"
+        '  {"original": "samanasanna", "corrected": "samaṇa-saññā"},\n'
+        '  {"original": "sangha", "corrected": "Saṅgha"}\n'
+        "]"
     )
-    return generate_content(
+    result = generate_content(
         contents=chunk,
         system_instruction=system_instruction,
     )
+
+    try:
+        # Clean and parse JSON
+        json_str = result.strip()
+        if json_str.startswith("```json"):
+            json_str = json_str[7:].strip()
+        if json_str.endswith("```"):
+            json_str = json_str[:-3].strip()
+
+        corrections = json.loads(json_str)
+
+        # Apply replacements to the original chunk using regex for whole words
+        corrected_chunk = chunk
+        for item in corrections:
+            orig = item["original"]
+            corr = item["corrected"]
+
+            # Use regex to replace whole words only, case-insensitive for the search
+            pattern = re.compile(rf"\b{re.escape(orig)}\b", re.IGNORECASE)
+            corrected_chunk = pattern.sub(corr, corrected_chunk)
+
+        return corrected_chunk
+
+    except (json.JSONDecodeError, Exception) as e:
+        # Fallback: if JSON fails or replacement fails, return the original uncorrupted chunk
+        print(
+            f"  Warning: JSON correction failed for chunk: {e}. Skipping corrections."
+        )
+        return chunk
 
 
 def get_completed_chunks(output_file: Path) -> int:
@@ -111,9 +143,16 @@ def main():
             print(f"No files in '{input_dir}'.")
             return
 
-    print(f"Found {len(md_files)} files", flush=True)
+    print(f"Found {len(md_files)} files:", flush=True)
+    for f in md_files:
+        print(f" - {f.name}", flush=True)
 
-    for file_path in md_files:
+    for idx, file_path in enumerate(md_files):
+        remaining = len(md_files) - idx
+        print(
+            f"\n[{remaining} files left] Processing '{file_path.name}'...", flush=True
+        )
+
         # Preserve directory structure relative to input_dir
         try:
             relative_path = file_path.relative_to(input_dir)
@@ -135,15 +174,15 @@ def main():
         start = completed
 
         if final_output.exists() and completed >= total:
-            print(f"Skipping '{file_path.name}', done.")
+            print("  Skipping (already done).", flush=True)
             continue
         elif completed > 0:
             print(
-                f"Resuming '{file_path.name}' from chunk {completed + 1}/{total}",
+                f"  Resuming from chunk {completed + 1}/{total}",
                 flush=True,
             )
         else:
-            print(f"Correcting '{file_path.name}'...", flush=True)
+            print("  Starting correction...", flush=True)
 
         if TEST_MODE:
             total = min(3, total)
@@ -188,7 +227,7 @@ def main():
             final_output.write_text("\n\n".join(corrected))
             if temp_output.exists():
                 temp_output.unlink()
-            print(f"Saved to '{final_output.name}'.")
+            print(f"Saved to '{final_output}'.")
 
         print("  Waiting 5s between files...", flush=True)
         time.sleep(5)

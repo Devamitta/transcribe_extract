@@ -50,25 +50,21 @@ client = OpenRouterClient(API_KEY)
 
 
 def get_working_key() -> bool:
-    """Test if the API key works."""
+    """Test if the API key works using the auth/key endpoint."""
     try:
         print("Testing OpenRouter API key...", flush=True)
         client.wait_for_rate_limit()
-        resp = requests.post(
-            f"{client.base_url}/chat/completions",
+        resp = requests.get(
+            f"{client.base_url}/auth/key",
             headers={
                 "Authorization": f"Bearer {client.api_key}",
-                "Content-Type": "application/json",
             },
-            json={
-                "model": "minimax/minimax-m2.5:free",
-                "messages": [{"role": "user", "content": "hi"}],
-                "max_tokens": 5,
-            },
-            timeout=30,
+            timeout=10,
         )
         if resp.status_code == 200:
-            print("[OK] OPENROUTER_API_KEY works", flush=True)
+            data = resp.json()
+            label = data.get("data", {}).get("label", "unnamed")
+            print(f"[OK] OPENROUTER_API_KEY works (Key: {label})", flush=True)
             return True
         print(f"[ERROR] OpenRouter API key failed: {resp.status_code}", flush=True)
         return False
@@ -79,8 +75,8 @@ def get_working_key() -> bool:
 
 @retry(
     wait=wait_exponential(multiplier=2, min=4, max=60),
-    stop=stop_after_attempt(3),
-    retry=retry_if_exception_type(Exception),
+    stop=stop_after_attempt(2),  # Reduced attempts since we will fallback to other models
+    retry=retry_if_exception_type((requests.exceptions.RequestException, ValueError)),
 )
 def generate_content(
     contents: str,
@@ -88,10 +84,11 @@ def generate_content(
     model: str,
     max_output_tokens: int = 32768,
     temperature: float = 0.1,
+    timeout: int = 15,  # Added timeout parameter with 15s default
 ) -> str:
     """Generate content using OpenRouter API."""
     client.wait_for_rate_limit()
-    print(f"  -> {model}...", flush=True)
+    print(f"  -> {model} (timeout={timeout}s)...", flush=True)
 
     try:
         resp = requests.post(
@@ -111,8 +108,11 @@ def generate_content(
                 "max_tokens": max_output_tokens,
                 "temperature": temperature,
             },
-            timeout=120,
+            timeout=timeout,  # Use the provided timeout
         )
+    except requests.exceptions.Timeout:
+        print(f"  [TIMEOUT] {model} exceeded {timeout}s", flush=True)
+        raise
     except Exception as e:
         if "429" in str(e) or "rate_limit" in str(e).lower():
             client.handle_rate_limit_error(model)
