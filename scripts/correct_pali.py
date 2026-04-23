@@ -7,8 +7,6 @@ import sys
 import time
 from pathlib import Path
 
-# Add project root to sys.path
-sys.path.append(str(Path(__file__).parent.parent))
 
 from tools.glossary import DHAMMA, SANGHA, VINAYA
 from tools.provider import TEST_MODE, generate_content, get_working_key

@@ -17,9 +17,7 @@ dependencies = [
 correct-pali = "scripts.correct_pali:main"
 extract-dhamma = "scripts.extract_dhamma:main"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["tools*"]
+
 
 [dependency-groups]
 dev = [
@@ -29,3 +27,10 @@ dev = [
 
 [lint]
 ignore = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["tools", "scripts"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

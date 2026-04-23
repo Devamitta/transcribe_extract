@@ -29,3 +29,7 @@ log/
 reports/
 scripts/archive/
 temp/
+NOTES.md
+
+__pycache__
+__init__.py

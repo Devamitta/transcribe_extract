@@ -1,11 +1,5 @@
 import time
-import sys
-from pathlib import Path
 
-# Add project root to sys.path to import tools
-# This script is intended to be run from the project root:
-# PYTHONPATH=. uv run python tests/test_openrouter_responsiveness.py
-sys.path.append(str(Path(__file__).parent.parent))
 
 from tools.openrouter import generate_content, list_models
 

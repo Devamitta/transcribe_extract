@@ -10,8 +10,6 @@ from typing import Any
 
 import mlx_whisper
 
-# Add project root to sys.path
-sys.path.append(str(Path(__file__).parent.parent))
 
 from tools.glossary import DHAMMA, SANGHA, VINAYA
 
