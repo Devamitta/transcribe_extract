@@ -3,8 +3,8 @@
 
 import argparse
 import re
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 # Regex definitions for Whisper failure modes
 REPEATED_WORDS_PATTERN = re.compile(r"\b(\w+)(?:\s+\1){3,}\b", re.IGNORECASE)
@@ -187,6 +187,8 @@ def main():
     print(
         f"Extraction complete. Found {total_anomalies} anomalies across {len(md_files)} files."
     )
+    if total_anomalies == 0:
+        print("All good! No anomalies found.")
     print(f"Report saved to: {args.output_file}")
 
 
