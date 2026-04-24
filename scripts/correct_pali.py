@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
-"""Corrects Pāli phonetic spellings in transcribed text using Gemini API and a Pāli glossary."""
+"""Corrects Pāli phonetic spellings in transcribed text using Gemini API and a Pāli glossary.
+
+Usage examples:
+    # Process all files in output/transcribed/
+    uv run python scripts/correct_pali.py
+
+    # Process only files in output/transcribed/sangha/
+    uv run python scripts/correct_pali.py sangha
+
+    # Process a specific file
+    uv run python scripts/correct_pali.py interview/talk.md
+"""
 
 import json
 import re
 import sys
 import time
 from pathlib import Path
-
 
 from tools.glossary import DHAMMA, SANGHA, VINAYA
 from tools.provider import TEST_MODE, generate_content, get_working_key
