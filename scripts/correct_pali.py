@@ -18,11 +18,13 @@ import sys
 import time
 from pathlib import Path
 
-from tools.glossary import DHAMMA, SANGHA, VINAYA
+from tools.glossary import DHAMMA, EXTENDED_TERMS, MONASTICS, PLACES, SANGHA, VINAYA
 from tools.provider import TEST_MODE, generate_content, get_working_key
 
 # Combine all lists, deduplicate, and sort
-_combined_glossary = sorted(list(set(SANGHA + DHAMMA + VINAYA)))
+_combined_glossary = sorted(
+    list(set(SANGHA + DHAMMA + VINAYA + EXTENDED_TERMS + MONASTICS + PLACES))
+)
 PALI_GLOSSARY = ", ".join(_combined_glossary)
 
 
@@ -46,19 +48,30 @@ def chunk_text_no_overlap(text: str, chunk_size: int = 2000) -> list[str]:
 
 def correct_pali_transcription(chunk: str) -> str:
     system_instruction = (
-        "You are an expert Pali proofreader. Your task is to identify phonetic misspellings of Pali words in a provided text and suggest corrections based on a glossary.\n\n"
+        "You are an expert Pali proofreader. Your task is to identify phonetic and semantic misspellings of Pali words, Buddhist terms, or monastery names in a provided text and suggest corrections based on a glossary.\n\n"
         "INSTRUCTIONS:\n"
-        "1. Analyze the input text for any words that sound like words in the PALI GLOSSARY.\n"
-        "2. For each identified misspelling, output a JSON object with the 'original' word (from the text) and the 'corrected' word (from the glossary).\n"
-        "3. Output ONLY a valid JSON array of these objects. No conversational text, no markdown code blocks, no explanations.\n"
-        "4. COMPOUND WORDS: If a transcribed word sounds like a combination of two or more words from the glossary, combine them using a hyphen (e.g., 'samanasanna' -> 'samaṇa-saññā').\n"
-        "5. If no corrections are needed, output an empty array: [].\n\n"
-        f"PALI GLOSSARY: [{PALI_GLOSSARY}]\n\n"
-        "OUTPUT FORMAT EXAMPLE:\n"
-        "[\n"
-        '  {"original": "samanasanna", "corrected": "samaṇa-saññā"},\n'
-        '  {"original": "sangha", "corrected": "Saṅgha"}\n'
-        "]"
+        "1. Analyze the input text for any words or phrases that sound like or are semantically related to terms in the PALI GLOSSARY.\n"
+        "2. STRICT CONTEXT CHECK: Only correct a word if the surrounding context clearly indicates a Buddhist or Pali concept was intended.\n"
+        "3. WATCH CAPITALIZATION: Be highly suspicious of capitalized English names (e.g., 'Sutter', 'Mach', 'Vinyan') if the context points to a Pali term. Speech-to-text software frequently capitalizes Pali words by mistake.\n"
+        "4. IGNORE ACRONYMS: Do NOT correct ALL CAPS acronyms (e.g., 'SPS', 'MBS') UNLESS they are in the glossary (e.g., 'SBS').\n"
+        "5. MULTI-WORD BRIDGING: Whisper often inserts spaces into the middle of Pali words. You MUST identify two-word or three-word sequences that together form a single glossary term.\n"
+        "   Example: 'Viragadham Mikam' -> 'Virāgadhammikaṁ', 'Ios Mokiti' -> 'āyasmā Kittisobhana'.\n"
+        "6. CONSISTENCY: If you identify a correction, scan the rest of the text for phonetic variations of that same term (e.g., if you fix 'Raghadamica', also fix 'Ergadamica').\n"
+        "7. SEMANTIC HALLUCINATIONS: Watch for 'Deep Hallucinations' where the transcriber replaces complex terms with common English phrases.\n"
+        "   Examples:\n"
+        "   - 'Norway for far' -> 'Noble Eightfold Path'\n"
+        "   - 'Marginal Triad' -> 'Majjhima Nikāya'\n"
+        "   - 'put up' -> 'patta'\n"
+        "   - 'Logan needed' -> 'lokavidū'\n"
+        "   - 'the ergonomic big group' -> 'the Virāgadhammika Bhikkhu'\n"
+        "   - 'share the down' -> 'share the Dhamma'\n"
+        "8. MONASTIC NAMES & TITLES: Correct phonetic misspellings of names and titles.\n"
+        "   - Examples: 'Bandiaga Jitta' -> 'Bhante Aggacitta', 'Kusavachara Bikku' -> 'Kusalacāra Bhikkhu'.\n"
+        "   - SHORTENED NAMES: Monastic names ending in '-dhammika' are often shortened (e.g., 'Virāga' -> 'Virāgadhammika').\n"
+        "9. Output ONLY a valid JSON array of objects with 'original' and 'corrected' keys. No other text.\n"
+        "10. ENGLISH BUDDHIST TERMS: Watch for phonetic mistranslations of common English Buddhist words (e.g., 'senior moms' -> 'senior monks', 'non' -> 'nun').\n"
+        "11. EXTREME PHONETIC DISTORTIONS: Whisper severely distorts foreign place names. Look for extreme phonetic matches (e.g., 'Waddenwood-Pupon' -> 'Wat Nong Pah Pong').\n"
+        f"PALI GLOSSARY: [{PALI_GLOSSARY}]"
     )
     result = generate_content(
         contents=chunk,
@@ -74,12 +87,20 @@ def correct_pali_transcription(chunk: str) -> str:
             json_str = json_str[:-3].strip()
 
         corrections = json.loads(json_str)
-
+        
         # Apply replacements to the original chunk using regex for whole words
         corrected_chunk = chunk
         for item in corrections:
-            orig = item["original"]
-            corr = item["corrected"]
+            # Ensure the item is a dictionary and has the required keys before proceeding
+            if (
+                not isinstance(item, dict)
+                or "original" not in item
+                or "corrected" not in item
+            ):
+                continue
+
+            orig = str(item["original"])
+            corr = str(item["corrected"])
 
             # Use regex to replace whole words only, case-insensitive for the search
             pattern = re.compile(rf"\b{re.escape(orig)}\b", re.IGNORECASE)
@@ -196,11 +217,19 @@ def main():
             total = min(3, total)
 
         if temp_output.exists():
-            corrected = temp_output.read_text().split("\n\n")
-            if len(corrected) != start:
-                start = len(corrected)
+            try:
+                corrected = json.loads(temp_output.read_text())
+                if len(corrected) != start:
+                    start = len(corrected)
+            except json.JSONDecodeError:
+                # Fallback if temp file is corrupted
+                start = 0
+                corrected = []
         elif start > 0 and final_output.exists():
-            corrected = final_output.read_text().split("\n\n")
+            # If we have a final file but need to resume, we'd need to re-chunk it
+            # which is complex. For now, let's just restart if no temp file.
+            start = 0
+            corrected = []
         else:
             start = 0
             corrected = []
@@ -215,7 +244,7 @@ def main():
                 try:
                     result = correct_pali_transcription(chunks[i])
                     corrected.append(result.strip())
-                    temp_output.write_text("\n\n".join(corrected))
+                    temp_output.write_text(json.dumps(corrected))
                     success = True
                     break
                 except Exception as e:
