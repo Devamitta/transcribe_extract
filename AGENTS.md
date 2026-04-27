@@ -37,3 +37,6 @@ Dhamma Transcriber & Extractor - A local pipeline that converts MP3 Dhamma talks
 
 ## Economy & Cost Management
 - NEVER re-run batch LLM processing for trivial changes like filename dates or field labels. Use local text manipulation (e.g., regex, rename) instead.
+
+## UI & Output
+- Use `tools/printer.py` for all CLI script output (e.g., `pr.green()`, `pr.yes()`, `pr.no()`, `pr.warning()`). Avoid bare `print()` calls.

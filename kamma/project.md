@@ -22,5 +22,5 @@ A local pipeline that converts MP3 Dhamma (Buddhist discourse) talks into raw Ma
 ## How You'll Know It Worked
 - Each MP3 in `/audio/` produces a corresponding extracted file in `/extracted/`
 - Extracted files contain organized Dhamma points with metadata
-- Pipeline runs without errors via `caffeinate -i nice -n 10 uv run python transcribe.py` then `uv run python extract_dhamma.py`
+- Pipeline runs without errors via `caffeinate -i nice -n 10 uv run python transcribe.py` then either real-time extraction (`uv run python extract_dhamma.py`) or cost-efficient batch extraction (`scripts/batch_prepare.py`, `scripts/batch_submit.py`, `scripts/batch_retrieve.py`).
 - Tims YouTube pipeline runs via `uv run python scripts/tims_metadata.py` followed by `uv run python scripts/tims_export.py` after human review.

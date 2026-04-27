@@ -4,7 +4,7 @@
 - **Language:** Python 3.12
 - **Package Manager:** uv
 - **Transcription:** MLX Whisper (Apple Silicon local inference)
-- **Extraction:** Google Gemini API
+- **Extraction:** Google Gemini API (real-time) or OpenAI Batch API (cost-efficient batch processing)
 - **Configuration:** python-dotenv
 
 ## Who This Is For
@@ -13,7 +13,7 @@
 
 ## Constraints
 - **Hardware:** Requires Apple Silicon (M-series chip) for MLX Whisper
-- **API:** Requires Google Gemini API key in .env file
+- **API:** Requires Google Gemini API key and/or OpenAI API key in .env file
 - **Time:** Transcription is slow on CPU; recommended to use `caffeinate -i nice -n 10` for background processing
 
 ## Resources

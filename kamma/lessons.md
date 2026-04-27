@@ -3,3 +3,5 @@
 - 2026-04-13 [POSITIVE] Smooth finalization of Tims YouTube pipeline thread with documentation updates.
 - 2026-04-13 [BEHAVIOR] Always read the handoff for a thread before finalizing; it may contain critical context that the review verdict misses or that reflects a flawed implementation process.
 - 2026-04-13 [ECONOMY] CRITICAL: Never re-run a full batch of LLM calls to fix metadata or filenames; always transform existing data locally (e.g., via regex or renaming) to preserve tokens and minimize cost.
+- 2026-04-27 [WORKFLOW] Check for GitHub issues in plan.md BEFORE archiving the thread to avoid extra steps.
+- 2026-04-27 [BEHAVIOR] Consistently use tools/printer.py for CLI scripts as per project standards, even if existing scripts haven't migrated yet.
