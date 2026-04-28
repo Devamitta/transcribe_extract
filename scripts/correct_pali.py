@@ -18,12 +18,12 @@ import sys
 import time
 from pathlib import Path
 
-from tools.pali import PALI_SYSTEM_INSTRUCTION, chunk_text_no_overlap
+from tools.pali import get_pali_system_instruction, chunk_text_no_overlap
 from tools.provider import TEST_MODE, generate_content, get_working_key
 
 
-def correct_pali_transcription(chunk: str) -> str:
-    system_instruction = PALI_SYSTEM_INSTRUCTION
+def correct_pali_transcription(chunk: str, file_path: Path) -> str:
+    system_instruction = get_pali_system_instruction(file_path)
     result = generate_content(
         contents=chunk,
         system_instruction=system_instruction,
@@ -193,7 +193,7 @@ def main():
             success = False
             for attempt in range(3):
                 try:
-                    result = correct_pali_transcription(chunks[i])
+                    result = correct_pali_transcription(chunks[i], file_path)
                     corrected.append(result.strip())
                     temp_output.write_text(json.dumps(corrected))
                     success = True

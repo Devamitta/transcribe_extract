@@ -21,5 +21,6 @@ Monitor and refine transcription quality based on manual transcriptions and erro
   - [ ] **STOP AND WAIT.** Present the plan to the user and wait for explicit approval before moving to implementation.
 - [ ] **Task X.6: Transcribe Script Hardening**
   - [ ] Implement approved improvements EXCLUSIVELY to real-time filters in `scripts/transcribe.py`. Do not modify post-processors.
+  - [ ] Manual data correction. Create a temporary script to apply fixes to existing transcriptions without re-running the entire process.
 - [ ] **Task X.7: Verification**
-  - [ ] Instruct the user to re-run the relevant `transcribe*.sh` script and verify fixes.
+  - [ ] Instruct the user to run the relevant `transcribe*.sh` script for the next batch of files.

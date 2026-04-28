@@ -76,3 +76,55 @@ I have created `scripts/verify_duration.py` to prevent "silent" truncation where
 - **Issue:** Naive substring checks (`clean_text in clean_history`) are insufficient for cross-segment loops if the new segment contains any non-repeated trailing text.
 - **Correction:** Use `combined_text` regex evaluation to catch the repetition pattern itself, regardless of where the segment boundary falls.
 - **False Positives:** Strict word loop detection (4+ reps) on non-filler words often flags valid conversational stutters. The whitelist approach is a necessary middle ground.
+
+---
+
+## Handoff: Punctuation Spam & Cross-Segment Word Loops (Iteration 20260427)
+
+### 1. Improvements to `scripts/transcribe.py`
+- **Punctuation Spam Filter:**
+    - **Issue:** Long strings of punctuation (e.g., `........`) inside otherwise valid segments were bypassing the low-entropy filter and being flagged by the error reporter.
+    - **Fix:** Implemented a direct `re.search(r"[.,!?\-_]{6,}", text)` check to align the engine with the reporter's logic.
+- **Cross-Segment Word Loop Filter:**
+    - **Issue:** Loops of short words (e.g., "mana? Mana? Mana?") that were split across multiple Whisper segments bypassed the existing word loop filter because it only evaluated the *current* segment. The cross-segment phrase filter missed them because they were shorter than 5 characters.
+    - **Fix:** Upgraded the word loop regex `(\w+)(?:\s+){3,}` to evaluate `combined_text` (the immediate 150-char history + the current segment), ensuring short word loops are caught regardless of segment boundaries.
+
+### 2. Results
+- **Zero Noise:** Re-running `extract_errors.py` on the latest interview batch (`output/transcribed/interview/`) after re-transcribing the problem files returned **0 anomalies**. The logic successfully eliminated the punctuation and cross-segment word loop hallucinations without introducing false positives.
+
+### 3. Verification Steps (User)
+1.  **Run Error Extraction:** Execute `uv run python scripts/extract_errors.py --input-dir output/transcribed/interview/`
+2.  **Confirm Clean Report:** The output should show "Found 0 anomalies across 51 files".
+
+### 4. Errors, Issues, and Repeated Mistakes
+- **Issue:** The word loop filter was blind to loops that crossed segment boundaries because it only checked the current segment's `text`.
+- **Correction:** Always apply word loop and phrase loop detection to `combined_text` (history + current text) to catch repetitions that span across Whisper's arbitrary segment chunks.
+- **Issue:** Depending solely on a low-entropy filter (`len(set(text)) < 5`) is insufficient for catching symbol spam if the segment also contains normal, high-entropy words. Direct punctuation regexes are required.
+
+---
+
+## Handoff: Character Spam & Non-Spaced Phrase Loops (Iteration 20260427_B)
+
+### 1. Improvements to `scripts/transcribe.py`
+- **Character Spam Filter:**
+    - **Issue:** Identified a "年年年年" hallucination in `Ardmk 24-04-24.md`. These CJK character loops bypass space-reliant filters and entropy checks if they are attached to valid English text.
+    - **Fix:** Implemented a direct character spam regex `re.search(r"([^\s])\1{9,}", text)` to catch any single non-whitespace character repeating 10+ times continuously.
+- **Non-Spaced Phrase Loop Filter:**
+    - **Issue:** Long repeating strings without spaces (runaway words or CJK blocks) were bypassing the core phrase loop filters which rely on `\b` and spaces.
+    - **Fix:** Synchronized with the error reporter by adding `re.search(r"(.{30,})\1{1,}", text)` to the engine. This catches any continuous 30+ character block that repeats at least once.
+
+### 2. Manual Data Correction
+- **Ardmk 24-04-24.md:** I applied a manual fix using a temporary script (`temp/fix_cjk_spam.py`) to strip the "年" spam from the existing transcript. This avoids the need for a full re-transcription of the interview.
+
+### 3. Results
+- **Zero Noise:** Re-running `extract_errors.py` on the `output/transcribed/interview/` directory now returns **0 anomalies across 61 files**.
+
+### 4. Verification Steps (User)
+1.  **Run Error Extraction:** Execute `uv run python scripts/extract_errors.py --input-dir output/transcribed/interview/`
+2.  **Confirm Clean Report:** The output should show "Found 0 anomalies across 61 files".
+
+### 5. Errors, Issues, and Repeated Mistakes
+- **Issue:** Space-reliance in filters (`\b`, `( \1)`) creates a blind spot for CJK character spam and merged-word hallucinations.
+- **Correction:** Always include fallback regexes that don't depend on spaces for long-string repetitions.
+- **Issue:** Small hallucinations (e.g., attached to the end of a long valid sentence) dilute entropy checks.
+- **Correction:** Use targeted regexes for specific character patterns (`\1{N,}`) rather than relying on aggregate metrics like `len(set(text))`.

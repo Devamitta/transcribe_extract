@@ -7,6 +7,14 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+# Try to import glossary for over-correction detection
+try:
+    from tools.pali import PALI_GLOSSARY
+
+    GLOSSARY_SET = {w.lower().strip() for w in PALI_GLOSSARY.split(",")}
+except ImportError:
+    GLOSSARY_SET = set()
+
 
 def get_words(text: str) -> list[str]:
     """Extracts words from text, ignoring punctuation."""
@@ -63,6 +71,36 @@ def evaluate_diff(original: str, corrected: str) -> dict[str, any]:
     # 5. Check if chunk is missing or extremely short
     if len(corrected_lower) < 20 and len(original) > 100:
         anomalies.append("Corrected chunk is suspiciously short compared to original.")
+
+    # 6. Check for "Buddhicizing" (Over-correction)
+    if GLOSSARY_SET:
+        orig_words_set = set(orig_words)
+        corr_words_set = set(corr_words)
+
+        orig_glossary_matches = len(orig_words_set.intersection(GLOSSARY_SET))
+        corr_glossary_matches = len(corr_words_set.intersection(GLOSSARY_SET))
+
+        # Words we don't want to see replaced by Pali if they were in English
+        TARGET_SENSITIVE_WORDS = {
+            "mind",
+            "meditation",
+            "project",
+            "merit",
+            "wisdom",
+            "suffering",
+            "monk",
+            "nun",
+            "monastery",
+        }
+        deleted_sensitive = TARGET_SENSITIVE_WORDS.intersection(
+            orig_words_set - corr_words_set
+        )
+
+        # If we gain many glossary terms AND lose sensitive English words, flag it
+        if corr_glossary_matches > orig_glossary_matches + 2 and deleted_sensitive:
+            anomalies.append(
+                f"Potential Over-correction: {orig_glossary_matches} -> {corr_glossary_matches} glossary terms, deleted {deleted_sensitive}"
+            )
 
     return anomalies
 

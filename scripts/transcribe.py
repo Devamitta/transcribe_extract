@@ -3,7 +3,6 @@
 
 import argparse
 import re
-import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -112,24 +111,42 @@ def main():
             # --- Dynamic Hallucination Filter ---
             skip_segment = False
 
-            # 1. Compress excessive whitespace gaps
-            text = re.sub(r"\s{2,}", " ", text).strip()
-
-            if not text or "\x00" in text:
+            # 1. Basic Cleaning & Punctuation Spam
+            # 1a. Punctuation Spam (e.g. "......")
+            if re.search(r"[.,!?\-_]{6,}", text):
                 skip_segment = True
 
-            # 2. Punctuation-agnostic Word Loops
-            # Strip punctuation for word loop check (e.g., "Valuable. Valuable. Valuable.")
+            # 1b. Character Spam (e.g. "aaaaaa" or "年年年年")
             if not skip_segment:
-                clean_text_only = re.sub(r"[^\w\s]", "", text).strip()
-                # Default: 4+ repetitions (word + 3 repeats)
+                if re.search(r"([^\s])\1{9,}", text):
+                    skip_segment = True
+
+            # 1c. Compress excessive whitespace gaps
+            if not skip_segment:
+                text = re.sub(r"\s{2,}", " ", text).strip()
+                if not text or "\x00" in text:
+                    skip_segment = True
+
+            # 2. Context-Aware Loops (Word, Phrase, and Cross-Segment)
+            if not skip_segment:
+                # Clean punctuation for robust matching
+                clean_text = re.sub(r"[^\w\s]", " ", text.lower())
+                clean_text = re.sub(r"\s+", " ", clean_text).strip()
+
+                clean_history = re.sub(r"[^\w\s]", " ", tail_history.lower())
+                clean_history = re.sub(r"\s+", " ", clean_history).strip()
+
+                # Combine history and current text for cross-segment regex check
+                combined_text = (clean_history + " " + clean_text).strip()
+
+                # 2a. Punctuation-agnostic Word Loops (NOW CROSS-SEGMENT)
+                # Check for 4+ repetitions of a single word in the combined context
                 match = re.search(
-                    r"\b(\w+)(?:\s+\1){3,}\b", clean_text_only, re.IGNORECASE
+                    r"\b(\w+)(?:\s+\1){3,}\b", combined_text, re.IGNORECASE
                 )
                 if match:
                     word = match.group(1).lower()
-                    # For common fillers, allow up to 5 repetitions (word + 4 repeats).
-                    # Filter if 6 or more (word + 5 repeats).
+                    # Whitelist for common fillers: Allow 5, filter 6+
                     if word in [
                         "yeah",
                         "no",
@@ -148,48 +165,34 @@ def main():
                         "we",
                         "you",
                     ]:
-                        if not re.search(
-                            r"\b(\w+)(?:\s+\1){5,}\b", clean_text_only, re.IGNORECASE
+                        if re.search(
+                            r"\b(\w+)(?:\s+\1){5,}\b", combined_text, re.IGNORECASE
                         ):
-                            pass  # Allow it
-                        else:
                             skip_segment = True
                     else:
                         skip_segment = True
 
-            # 3. Context-Aware Sentence/Phrase Loops
-            # Use tail_history to catch loops that cross paragraph boundaries
-            if not skip_segment:
-                # Clean punctuation for robust matching
-                clean_text = re.sub(r"[^\w\s]", " ", text.lower())
-                clean_text = re.sub(r"\s+", " ", clean_text).strip()
-
-                clean_history = re.sub(r"[^\w\s]", " ", tail_history.lower())
-                clean_history = re.sub(r"\s+", " ", clean_history).strip()
-
-                # Combine history and current text for cross-segment regex check
-                combined_text = (clean_history + " " + clean_text).strip()
-
-                # Check for cross-segment loops (contiguous repetition)
-                # We skip if the entire clean segment (or a significant part of it)
-                # already exists in the immediate tail history.
-                if len(clean_text) >= 10 and clean_text in clean_history:
-                    skip_segment = True
-                elif clean_text:
-                    # Check for internal and cross-segment phrase loops
-                    # 1. Any short phrase (5+ chars) repeated 3+ times
-                    if re.search(r"\b(.{5,}?)( \1){2,}", combined_text):
+                # 2b. Context-Aware Phrase Loops (Existing Logic)
+                if not skip_segment:
+                    if len(clean_text) >= 10 and clean_text in clean_history:
                         skip_segment = True
-                    # 2. Any long phrase (15+ chars) repeated 2+ times
-                    elif re.search(r"\b(.{15,}?)( \1){1,}", combined_text):
-                        skip_segment = True
+                    elif clean_text:
+                        # 1. Any short phrase (5+ chars) repeated 3+ times
+                        if re.search(r"\b(.{5,}?)( \1){2,}", combined_text):
+                            skip_segment = True
+                        # 2. Any long phrase (15+ chars) repeated 2+ times
+                        elif re.search(r"\b(.{15,}?)( \1){1,}", combined_text):
+                            skip_segment = True
+                        # 3. Any long non-spaced string (30+ chars) repeating once (e.g. CJK spam)
+                        elif re.search(r"(.{30,})\1{1,}", text):
+                            skip_segment = True
 
-            # 4. Catches low-entropy character spam
+            # 3. Catches low-entropy character spam
             if not skip_segment:
                 if len(text) > 20 and len(set(text)) < 5:
                     skip_segment = True
 
-            # 5. Drop suspiciously short, isolated segments (expanded silence hallucinations)
+            # 4. Drop suspiciously short, isolated segments (expanded silence hallucinations)
             if not skip_segment:
                 if len(text) < 15 and text.lower().strip(".!?,\"' ") in [
                     "help",

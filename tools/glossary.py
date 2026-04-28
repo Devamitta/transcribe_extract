@@ -64,6 +64,7 @@ DHAMMA = [
     "avijjā",
     "taṇhā",
     "upādāna",
+    "upādānakkhandha",
     "kamma",
     "nibbāna",
     "magga",
@@ -82,6 +83,10 @@ DHAMMA = [
     "bhava",
     "jāti",
     "saṃsāra",
+    "nāmarūpa",
+    "phoṭṭhabba",
+    "phassa",
+    "vaya-dhamma",
     "brahmavihāra",
     "brahma",
     "mettā",
@@ -94,6 +99,10 @@ DHAMMA = [
     "paññā",
     "vimutti",
     "satipaṭṭhāna",
+    "dhammānupassanā",
+    "kāyānupassanā",
+    "vedanānupassanā",
+    "cittānupassanā",
     "ānāpānasati",
     "ānāpāna",
     "sati",
@@ -141,6 +150,13 @@ DHAMMA = [
     "vāyāma",
     "ājīva",
     "lokavidū",
+    "cetanā",
+    "rūpa kalāpa",
+    "papañca",
+    "paccaya",
+    "ehipassiko",
+    "viññāṇapeta",
+    "saññā vedayita nirodha",
 ]
 
 # 3. Vinaya & Discipline
@@ -170,6 +186,9 @@ VINAYA = [
     "upasampadā",
     "pabbajjā",
     "sikkhamānā",
+    "puñña",
+    "apuñña",
+    "āneñja",
 ]
 
 # 4. Extended Buddhist Terms & Titles
@@ -180,10 +199,13 @@ EXTENDED_TERMS = [
     "Saṁyutta Nikāya",
     "Aṅguttara Nikāya",
     "Dīgha Nikāya",
+    "five aggregates",
     "sutta class",
     "Sayādaw",
-    "sikkhamāna",
-    "Abhidhamma",
+    "Aṅguttara",
+    "Pa-Auk",
+    "Byron Katie",
+    "adhisīla",
 ]
 
 # 5. Places & Monasteries
@@ -198,13 +220,28 @@ PLACES = [
     "Bodhinyana",
 ]
 
-# 6. Monastic Names (Sasanarakkha)
+# 6. Famous Teachers (Global)
+FAMOUS_TEACHERS = [
+    "Goenka",
+    "Ajahn Thanissaro",
+    "Pa-Auk Sayadaw",
+    "Bhikkhu Anālayo",
+    "Bhikkhu Bodhi",
+    "Bhikkhu Sujato",
+    "Ajahn Chah",
+    "SuttaCentral",
+    "Bhante Aggacitta",
+    "Bhante Ariyadhammika",
+    "Richard Gombrich",
+    "Dhammajī",
+    "Jinasiri",
+]
+
+# 7. Monastic Names (Sasanarakkha)
 MONASTICS = [
-    "Aggacitta",
     "Aggadhamma",
     "Amaradhammika",
     "Appamādadhammika",
-    "Ariyadhammika",
     "Ariyananda",
     "Balacitta",
     "Bodhicitta",
@@ -270,9 +307,14 @@ MONASTICS = [
     "Yogadhammika",
 ]
 
-# 7. Common Sutta Terms
+# 8. Common Sutta Terms
 SUTTA_TERMS = [
+    "Indriyasaṃvara",
     "Indriya Saṃvara",
+    "Upasamanussati",
+    "Sīlabbataparāmāsa",
+    "Jarāmaraṇa",
+    "Sasaṅkhāraniggahavāritavata",
     "Abyāpajjādhimutta",
     "Sutta-jhāna",
     "Yonisomanasikāra",
@@ -285,4 +327,23 @@ SUTTA_TERMS = [
     "Sattabojjhaṅga",
     "Cattāro Satipaṭṭhānā",
     "Paṭisambhidāmagga",
+    "sabbakāya",
+    "parimukhaṃ satiṃ upaṭṭhapetvā",
+    "sato va assasati sato va passasati",
+    "Dhammadesanā",
+    "pāmojja",
+    "kāyasaṅkhāra",
+    "pajānāti",
+    "sabbakāya-paṭisaṃvedī",
+    "assasati",
+    "passasati",
+    "dīgha",
+    "rassa",
+    "Cūḷavedalla Sutta",
+    "Visuddhimagga",
+    "passambhayaṃ",
+    "Dhammapada",
+    "Sāriputta",
+    "Moggallāna",
+    "Ānanda"
 ]

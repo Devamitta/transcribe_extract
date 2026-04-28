@@ -188,6 +188,55 @@ This script handles all steps sequentially and supports incremental processing (
 
 ---
 
+## 4.5 Semantic Evaluation (Quality Control)
+
+After Pali correction, the semantic evaluator detects remaining Whisper hallucinations and contextually wrong passages that could degrade Dhamma extraction quality. This stage catches English-word substitutions and garbled terms that the Pali correction step missed.
+
+### Direct Mode (Real-Time)
+
+Evaluate corrected transcripts from a specific folder:
+
+```bash
+uv run python scripts/evaluate_semantic.py interview
+```
+
+This generates a timestamped report in `reports/semantic_anomalies_<timestamp>.md` listing findings with passages, issues, and suggestions.
+
+**Options:**
+- Specify a folder: `uv run python scripts/evaluate_semantic.py interview` (processes `output/corrected_pali/interview/`)
+- Test mode (first 2 chunks only): `uv run python scripts/evaluate_semantic.py -t interview`
+- Specific file: `uv run python scripts/evaluate_semantic.py output/corrected_pali/interview/Talk.md`
+
+### Batch Mode
+
+Process multiple files cost-efficiently via OpenAI Batch API:
+
+```bash
+# Semantic evaluation only
+uv run python scripts/batch.py --stage semantic --folder interview
+
+# With limit (useful for testing)
+uv run python scripts/batch.py --stage semantic --folder interview --limit 1
+
+# Submit only, retrieve later
+uv run python scripts/batch.py --stage semantic --no-wait
+```
+
+Output: Per-file markdown reports in `reports/semantic/<filename>.md` listing all findings.
+
+### Review & Apply Corrections
+
+The ongoing semantic evaluation loop guides you through reviewing findings and applying corrections:
+
+1. Run the evaluator (above)
+2. Review each finding interactively (true positive vs. false positive)
+3. Apply approved corrections back to `output/corrected_pali/`
+4. Re-run evaluator to verify the fixes worked
+
+For details, see: `kamma/threads/ongoing_semantic_evaluation_loop/plan.md`
+
+---
+
 ## 5. Dhamma Extraction (Draft)
 
 Extracts core Dhamma points, metadata, and tags from the corrected transcripts.
@@ -221,6 +270,7 @@ Add to `.env`:
 OPENAI_API_KEY=sk-...
 OPENAI_PALI_MODEL=gpt-4o-mini      # optional, defaults to gpt-4o-mini
 OPENAI_EXTRACT_MODEL=gpt-4o-mini   # optional, defaults to gpt-4o-mini
+OPENAI_SEMANTIC_MODEL=gpt-4o-mini  # optional, defaults to gpt-4o-mini
 ```
 
 ### Usage
@@ -228,7 +278,7 @@ OPENAI_EXTRACT_MODEL=gpt-4o-mini   # optional, defaults to gpt-4o-mini
 **Full pipeline** — prepare, submit, auto-poll (every 30s), and retrieve:
 
 ```bash
-# Both stages (pali + extract)
+# Both pali + extract (default)
 uv run python scripts/batch.py
 
 # Pali correction only
@@ -236,6 +286,9 @@ uv run python scripts/batch.py --stage pali
 
 # Extract only
 uv run python scripts/batch.py --stage extract
+
+# Semantic evaluation only
+uv run python scripts/batch.py --stage semantic
 
 # Limit to first N files (useful for testing)
 uv run python scripts/batch.py --stage pali --limit 1
@@ -247,7 +300,7 @@ uv run python scripts/batch.py --stage pali --folder interview
 uv run python scripts/batch.py --stage extract --poll-interval 40
 
 # Submit only, don't wait for completion
-uv run python scripts/batch.py --no-wait
+uv run python scripts/batch.py --stage semantic --no-wait
 ```
 
 **Check status:**

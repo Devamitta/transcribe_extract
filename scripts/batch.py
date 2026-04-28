@@ -18,7 +18,11 @@ from tools.openai_client import (
     get_batch_status,
     download_results,
 )
-from tools.pali import PALI_SYSTEM_INSTRUCTION, chunk_text_no_overlap
+from tools.pali import (
+    get_pali_system_instruction,
+    chunk_text_no_overlap,
+    get_semantic_eval_instruction,
+)
 from tools.extract import EXTRACT_SYSTEM_INSTRUCTION, chunk_text
 from tools import printer as _p
 
@@ -30,22 +34,30 @@ TASK_CONFIG = {
     "pali": {
         "input_dir": Path("output/transcribed"),
         "output_dir": Path("output/corrected_pali"),
-        "system_instruction": PALI_SYSTEM_INSTRUCTION,
+        "get_instruction": get_pali_system_instruction,
         "chunk_fn": chunk_text_no_overlap,
         "model_env": "OPENAI_PALI_MODEL",
     },
     "extract": {
         "input_dir": Path("output/corrected_pali"),
         "output_dir": Path("output/extracted"),
-        "system_instruction": EXTRACT_SYSTEM_INSTRUCTION,
+        "get_instruction": lambda _: EXTRACT_SYSTEM_INSTRUCTION,
         "chunk_fn": chunk_text,
         "model_env": "OPENAI_EXTRACT_MODEL",
+    },
+    "semantic": {
+        "input_dir": Path("output/corrected_pali"),
+        "output_dir": Path("reports/semantic"),
+        "get_instruction": lambda _: get_semantic_eval_instruction(),
+        "chunk_fn": lambda text: chunk_text_no_overlap(text, chunk_size=5000),
+        "model_env": "OPENAI_SEMANTIC_MODEL",
     },
 }
 
 OUTPUT_DIRS = {
     "pali": Path("output/corrected_pali"),
     "extract": Path("output/extracted"),
+    "semantic": Path("reports/semantic"),
 }
 
 JOBS_PATH = Path("output/batch_jobs.json")
@@ -148,10 +160,14 @@ def prepare(task: str, folder: str | None, limit: int | None) -> Path | None:
                 pr.warning(f"path contains '__' delimiter: {file_path}")
             text = file_path.read_text(encoding="utf-8")
             chunks = config["chunk_fn"](text)
+
+            # Dynamically get instruction based on file_path (for folder-aware glossary)
+            system_instruction = config["get_instruction"](file_path)
+
             for i, chunk in enumerate(chunks):
                 custom_id = f"{task}__{rel_stem}__{i:04d}"
                 record = prepare_batch_request(
-                    custom_id, config["system_instruction"], chunk, model
+                    custom_id, system_instruction, chunk, model
                 )
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
                 total_chunks += 1
@@ -298,8 +314,30 @@ def retrieve(batch_id: str) -> None:
                 original = original_chunks.get(cid, "")
                 corrected.append(_apply_pali_corrections(original, json_response))
             text = "\n\n".join(corrected)
-        else:
+        elif job_task == "extract":
             text = "\n\n".join(c[1] for c in chunks)
+        elif job_task == "semantic":
+            findings = []
+            for _, json_response, cid in chunks:
+                try:
+                    j = json_response.strip()
+                    if j.startswith("```json"):
+                        j = j[7:].strip()
+                    if j.endswith("```"):
+                        j = j[:-3].strip()
+                    items = json.loads(j)
+                    if isinstance(items, list):
+                        findings.extend(items)
+                except Exception as e:
+                    pr.warning(f"Semantic parse failed for {cid}: {e}")
+            text = f"# Semantic Evaluation: {rel_stem}\n\n"
+            if findings:
+                for item in findings:
+                    text += f"## Passage\n> {item.get('passage', '')}\n\n"
+                    text += f"**Issue:** {item.get('issue', '')}\n\n"
+                    text += f"**Suggestion:** {item.get('suggestion', '')}\n\n---\n\n"
+            else:
+                text += "_No anomalies detected._\n"
 
         out_path = out_dir / f"{rel_stem}.md"
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -404,7 +442,7 @@ def main() -> None:
 
     parser.add_argument(
         "--stage",
-        choices=["pali", "extract", "both"],
+        choices=["pali", "extract", "semantic", "both"],
         default="both",
         help="Which stage to run (default: both)",
     )

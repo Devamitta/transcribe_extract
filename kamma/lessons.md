@@ -5,3 +5,5 @@
 - 2026-04-13 [ECONOMY] CRITICAL: Never re-run a full batch of LLM calls to fix metadata or filenames; always transform existing data locally (e.g., via regex or renaming) to preserve tokens and minimize cost.
 - 2026-04-27 [WORKFLOW] Check for GitHub issues in plan.md BEFORE archiving the thread to avoid extra steps.
 - 2026-04-27 [BEHAVIOR] Consistently use tools/printer.py for CLI scripts as per project standards, even if existing scripts haven't migrated yet.
+- 2026-04-28 [POSITIVE] Three-phase model-switching workflow (fast→pro→fast with hard stops) is a reusable pattern for multi-step tasks where different phases benefit from different model capabilities; consider documenting as a Kamma pattern.
+- 2026-04-28 [POSITIVE] Iterating the LLM prompt multiple times against real output (33→19→refined) is more effective than guessing optimal prompt upfront; test-driven prompt engineering works.
