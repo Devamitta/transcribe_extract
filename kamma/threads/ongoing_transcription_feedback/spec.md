@@ -8,13 +8,14 @@ We have built tools (`extract_errors.py`, `diff_reports.py`, `extract_snippets.p
 
 ## Strict Scope
 **CRITICAL:** This thread is EXCLUSIVELY focused on the core transcription process.
-- **In Scope:** `scripts/transcribe.py`, `transcribe.sh`, `transcribe-sangha.sh`, `transcribe-interview.sh`.
-- **Out of Scope:** Post-processors (e.g., `correct_pali.py`), extraction scripts, or any other pipeline steps. 
+- **In Scope:** `scripts/transcribe.py`, `transcribe.sh`, `transcribe-sangha.sh`, `transcribe-interview.sh`, `output/transcribed/`.
+- **Out of Scope:** Post-processors (e.g., `correct_pali.py`), extraction scripts, or any other pipeline steps.
+- **FORBIDDEN PATHS:** Do NOT read `output/extracted/`, `reports/semantic/`, or any `evaluate_pali` reports. These are handled by other threads.
 
 ## Process
-1.  **Error Identification:** Run error extraction tools (`extract_errors.py`, `diff_reports.py`) on new transcription batches.
-2.  **Branching Logic:**
-    - **IF 0 ERRORS:** Print "All good!", log the result, and finish the iteration. No model switch or analysis required.
+1.  **Error Identification:** Run error extraction tools (`extract_errors.py`, `diff_reports.py`) on new transcription batches in `output/transcribed/`.
+2.  **Branching Logic (HARD EXIT):**
+    - **IF 0 ERRORS:** Print "All good!", log the result, and STOP. Do not look for errors elsewhere.
     - **IF ERRORS FOUND:** Proceed to AI Analysis.
 3.  **AI Analysis & Diminishing Returns Check (CRITICAL MANDATE - STOP AND SWITCH MODEL):** The initial implementation may happen via a lower-reasoning model, but the analysis of the errors MUST happen via a high-tier LLM (e.g., Sonnet 3.5/Opus). **STOP here and explicitly ask the user to switch the model.** Do NOT proceed to analysis until the user has confirmed the switch. Assess if the script has reached its practical limit (diminishing returns). If so, propose concluding the thread.
 4.  **Improvement Proposal (CRITICAL MANDATE - STOP AND REVIEW PLAN):** If improvements are still viable, come up with a detailed improvement plan for the filters. **STOP here and wait for the user to review and approve the plan.** Do NOT proceed to implementation until the user has confirmed.

@@ -78,27 +78,38 @@ For **false positives**, classify reason:
 - `grammar` — spoken grammar imperfection (common in speech, not Whisper substitution)
 - `valid_content` — theologically correct statement, incorrectly flagged
 - `misquote` — evaluator cited wrong passage for finding
+- `context_only` — garbled term in clearly non-Dhamma context (monk names, place names, monastery logistics, personal conversation). These passages will be removed in the next pipeline stage; do NOT spend time correcting them.
 
 For **true positives**: these are real Whisper errors that need fixing.
+
+**IMPORTANT for Pro model:** Before proposing a fix, ask: "Is this passage Dhamma-Vinaya content, or is it personal conversation about monks, places, or logistics?" If the latter, classify as `context_only` and skip — even if the garble is clear. Only fix terms that will remain meaningful after Dhamma extraction.
 
 → verify: each finding classified, reasoning clear
 
 ### Task 2.2 — Build fix list for true positives
-For each true positive, create a replacement entry:
+For each true positive:
+- If replacement is **known with confidence**: create a fix entry
+- If replacement is **uncertain**: classify the term as one of:
+  - `deferred_dhamma` — garbled Pali/Dhamma/Vinaya term worth resolving; queue for Phase 3b user review
+  - `deferred_skip` — garbled monk name, place name, or logistical term; this content will be stripped in the next pipeline stage; no fix needed, do not queue for user review
+  - This classification must be done by the pro model — the fast model will not re-evaluate it
+
 ```
 {
   "file": "output/corrected_pali/folder/filename.md",
   "original": "exact wrong text from transcript",
-  "replacement": "corrected text"
+  "replacement": "corrected text"   // or null if deferred
+  "deferred": "dhamma" | "skip" | null
 }
 ```
-Present full list to user for approval. User may:
+Present full list (confident fixes + deferred classification) to user for approval. User may:
 - Approve as-is
 - Reject individual items
 - Manually edit original/replacement text
 - Add new fixes
+- Override deferred classification
 
-→ verify: user explicitly approves fix list
+→ verify: user explicitly approves fix list and deferred classifications
 
 ### Task 2.3 — Propose prompt improvements
 Review false positives and true positives together:
@@ -166,3 +177,30 @@ Do not implement anything. Wait for user approval.
   - Any issues encountered
 - Ensure `plan.md` is unmodified (no session-specific notes or checkmarks). `plan.md` is a reusable template for the next session.
 → verify: `temp/apply_semantic_fixes.py` deleted; `handoff.md` updated with timestamp; `plan.md` unchanged
+
+---
+
+## Phase 3b — Collaborative deferred review   ⟦ FAST MODEL ⟧
+
+This phase runs immediately after Phase 3 if there are uncertain true positives (garbled terms where no confident replacement was found).
+
+### Task 3b.1 — Load deferred list from Phase 2
+- Read the list of `deferred_dhamma` items already classified by the pro model in Phase 2
+- Do NOT re-classify or re-evaluate relevance — the pro model has already done this
+- If the list is empty: print "No deferred Dhamma-Vinaya terms to review." and skip to Task 3.4
+
+### Task 3b.2 — Present each deferred term for user review
+For each remaining deferred term, show:
+1. The **exact passage** (full paragraph, not just the word)
+2. The **evaluator's suggestion** (if any)
+3. Ask: "What should this be? (or type 'skip' to leave unchanged)"
+
+Go one by one. Do not batch them. Wait for user response before showing the next.
+
+### Task 3b.3 — Apply user-confirmed corrections
+- For each term the user confirmed: add to fix list and apply using the same `re.sub` pattern
+- Create a separate `temp/apply_semantic_fixes_deferred.py` script for these fixes
+- Delete script and backups after verification
+- Update `handoff.md` to include Phase 3b fixes in the session log
+
+→ verify: all user-confirmed fixes applied; no context_only terms were presented to the user

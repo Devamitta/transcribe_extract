@@ -27,6 +27,7 @@ Dhamma Transcriber & Extractor - A local pipeline that converts MP3 Dhamma talks
 2. Extraction: `uv run python extract_dhamma.py`
 
 ## Code Quality
+- Align CLI flags and validation constants (e.g., word-count tolerance) early in the spec phase to avoid implementation drift across scripts and tools.
 - All changed Python files MUST pass `uv run ruff check --fix` and `uv run ruff format` before task completion.
 
 ## Temporary Files & Testing

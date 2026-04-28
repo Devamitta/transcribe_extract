@@ -60,6 +60,31 @@ def main():
 
     pr.green(f"Found {len(md_files)} file(s)")
 
+    SEMANTIC_REPORT_DIR = Path("reports/semantic")
+    queue = []
+    skipped = 0
+
+    for file_path in md_files:
+        try:
+            rel = file_path.relative_to(input_dir)
+            output_path = SEMANTIC_REPORT_DIR / rel
+        except ValueError:
+            output_path = SEMANTIC_REPORT_DIR / file_path.name
+        output_path_flat = SEMANTIC_REPORT_DIR / file_path.name
+
+        if output_path.exists() or output_path_flat.exists():
+            pr.amber(f"[SKIP] {file_path.name}")
+            skipped += 1
+        else:
+            queue.append(file_path)
+
+    if skipped:
+        pr.info(f"{skipped} already done, {len(queue)} to process")
+
+    if not queue:
+        pr.yes("All files already evaluated. Nothing to do.")
+        return
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     report_path = Path(f"reports/semantic_anomalies_{timestamp}.md")
     report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -67,7 +92,7 @@ def main():
 
     total_findings = 0
 
-    for file_path in md_files:
+    for file_path in queue:
         pr.green(f"Processing {file_path.name}...")
         text = file_path.read_text(encoding="utf-8")
         chunks = chunk_text_no_overlap(text, chunk_size=5000)

@@ -24,6 +24,7 @@ from tools.pali import (
     get_semantic_eval_instruction,
 )
 from tools.extract import EXTRACT_SYSTEM_INSTRUCTION, chunk_text
+from tools.polish import POLISH_SYSTEM_INSTRUCTION
 from tools import printer as _p
 
 load_dotenv()
@@ -45,6 +46,13 @@ TASK_CONFIG = {
         "chunk_fn": chunk_text,
         "model_env": "OPENAI_EXTRACT_MODEL",
     },
+    "polish": {
+        "input_dir": Path("output/extracted"),
+        "output_dir": Path("output/polished"),
+        "get_instruction": lambda _: POLISH_SYSTEM_INSTRUCTION,
+        "chunk_fn": lambda text: chunk_text(text, chunk_size=3000, overlap=0),
+        "model_env": "OPENAI_POLISH_MODEL",
+    },
     "semantic": {
         "input_dir": Path("output/corrected_pali"),
         "output_dir": Path("reports/semantic"),
@@ -57,6 +65,7 @@ TASK_CONFIG = {
 OUTPUT_DIRS = {
     "pali": Path("output/corrected_pali"),
     "extract": Path("output/extracted"),
+    "polish": Path("output/polished"),
     "semantic": Path("reports/semantic"),
 }
 
@@ -314,7 +323,7 @@ def retrieve(batch_id: str) -> None:
                 original = original_chunks.get(cid, "")
                 corrected.append(_apply_pali_corrections(original, json_response))
             text = "\n\n".join(corrected)
-        elif job_task == "extract":
+        elif job_task in ("extract", "polish"):
             text = "\n\n".join(c[1] for c in chunks)
         elif job_task == "semantic":
             findings = []
@@ -431,6 +440,14 @@ def run_stage(
     retrieve(batch_id)
 
 
+def resolve_stages(stage: str) -> list[str]:
+    """Resolve CLI stage selection into concrete stages to run."""
+    if stage == "both":
+        return ["pali", "extract", "polish"]
+
+    return [stage]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Unified OpenAI Batch API pipeline: prepare, submit, poll, retrieve."
@@ -442,7 +459,7 @@ def main() -> None:
 
     parser.add_argument(
         "--stage",
-        choices=["pali", "extract", "semantic", "both"],
+        choices=["pali", "extract", "polish", "semantic", "both"],
         default="both",
         help="Which stage to run (default: both)",
     )
@@ -468,8 +485,7 @@ def main() -> None:
     elif args.list:
         show_list()
     else:
-        stages = ["pali", "extract"] if args.stage == "both" else [args.stage]
-        for stage in stages:
+        for stage in resolve_stages(args.stage):
             run_stage(stage, args.folder, args.limit, args.poll_interval, args.no_wait)
 
 

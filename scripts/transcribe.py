@@ -228,8 +228,12 @@ def main():
 
             # --- Syntactic Chunking Logic ---
             # Wait for both 60 seconds to pass AND a logical sentence termination
+            # OR force a flush after 120 seconds regardless of punctuation
             if paragraph_start_time is not None:
-                if (end_time - paragraph_start_time >= 60.0) and is_terminal:
+                is_over_time = end_time - paragraph_start_time >= 60.0
+                is_force_flush = end_time - paragraph_start_time >= 120.0
+
+                if (is_over_time and is_terminal) or is_force_flush:
                     timestamp_mins = paragraph_start_time / 60.0
                     formatted_transcript += (
                         f"[{timestamp_mins:.1f}] {current_paragraph.strip()}\n\n"

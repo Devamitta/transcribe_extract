@@ -157,6 +157,9 @@ DHAMMA = [
     "ehipassiko",
     "viññāṇapeta",
     "saññā vedayita nirodha",
+    "catumadhura",
+    "pañcadvāra",
+    "niggahīta"
 ]
 
 # 3. Vinaya & Discipline

@@ -26,5 +26,6 @@
 - **Extracted Points:** Structured markdown with tags/categories in `/extracted/`
 - **YouTube Metadata:** Review file at `output/tims_review_YYYY-MM-DD.md`
 - **YouTube Export:** Renamed MP3s and `summary.md` in `output/audio_youtube/`
+- **Polished Files:** Readable prose version of extracted text in `output/polished/`
 - **Reports:** Evaluation and error reports in `/reports/`
 - **File Format:** Markdown (.md)at:** Markdown (.md)

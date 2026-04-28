@@ -255,6 +255,34 @@ PROVIDER=google
 
 ---
 
+## 5.5 Polishing (Readability Pass)
+
+The polish stage takes the output of `extract_dhamma.py` and rewrites it into clean, readable English prose. It fixes fragmented sentences, self-corrections, and non-native patterns while strictly preserving all teaching points and questions.
+
+```bash
+PYTHONPATH=. uv run python scripts/polish_extract.py output/extracted/interview/Talk.md
+```
+
+**Options:**
+- `--dry-run`: See the prompt and input without calling the API.
+- `--output-dir <path>`: Override default `output/polished/` destination.
+
+**Batch Mode:**
+Include polish in the batch pipeline by specifying the stage:
+```bash
+# Extract and then polish automatically
+uv run python scripts/batch.py --stage both
+
+# Polish only
+uv run python scripts/batch.py --stage polish
+```
+
+**Constraints:**
+- No summarization or information loss.
+- Output length must remain within ±15% of input.
+
+---
+
 ## 6. OpenAI Batch Pipeline (Cost-Efficient Alternative)
 
 Run the same Pali correction and Dhamma extraction using the OpenAI Batch API at **50% lower cost** than real-time calls. Batches typically complete within **minutes to hours**. One command orchestrates the full flow: prepare → submit → poll → retrieve.

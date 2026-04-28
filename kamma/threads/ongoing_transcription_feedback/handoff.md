@@ -128,3 +128,43 @@ I have created `scripts/verify_duration.py` to prevent "silent" truncation where
 - **Correction:** Always include fallback regexes that don't depend on spaces for long-string repetitions.
 - **Issue:** Small hallucinations (e.g., attached to the end of a long valid sentence) dilute entropy checks.
 - **Correction:** Use targeted regexes for specific character patterns (`\1{N,}`) rather than relying on aggregate metrics like `len(set(text))`.
+
+---
+
+## Handoff: Forced Paragraph Flush & Truncation False Positive (Iteration 2026-04-28)
+
+### 1. Analysis of the Interview Batch
+- **Error Extraction:** Ran `extract_errors.py` on 76 files in `output/transcribed/interview/`. Found **0 anomalies**, indicating the current regex filters are highly effective and have reached diminishing returns.
+- **Duration Verification:** Found one "TRUNCATED" error in `Ardmk 22-12-31.md` (gap of ~2.5 minutes).
+- **Root Cause:** Analysis revealed that the transcription was actually complete, but Whisper generated a 2.5-minute run-on sentence without terminal punctuation (`.!?`). The transcription engine was waiting for punctuation to flush the paragraph, causing the final chunk to be timestamped much earlier than the actual audio end.
+
+### 2. Improvements to `scripts/transcribe.py`
+- **Forced Paragraph Flush:**
+    - **Fix:** Implemented a "Force Flush" rule. Paragraphs are now forced to flush after **120 seconds** even if no terminal punctuation is detected. This ensures that timestamps stay reasonably current and prevents false positive truncation reports.
+    - **Logic:** `if (is_over_time and is_terminal) or is_force_flush:` where `is_force_flush` is triggered at 120s.
+
+### 3. Verification Results
+- **Engine Logic:** Verified the new logic ensures that even unpunctuated segments will eventually receive a fresh timestamp, bridging large gaps in long-winded recordings.
+- **Diminishing Returns:** Confirmed that further regex tweaking for hallucinations is currently unnecessary for this batch.
+
+### 4. Verification Steps (User)
+1. **Next Batch:** Run `./transcribe-interview.sh` on any new files. The "Force Flush" will automatically ensure better timestamping for run-on sentences.
+2. **Review:** This thread is ready for review after the user confirms the latest output is satisfactory.
+
+
+## Handoff: Verification of Interview Batch (2026-04-28)
+
+### 1. Results
+- **Files Checked:** All 84 files in `output/transcribed/interview/`.
+- **Status:** **CLEAN.** 
+- **Anomalies Found:** 0 structural hallucinations (loops, spam, entropy issues).
+- **Manual Spot Check:** Verified `Ardmk 24-11-29.md` and `Ardmk 24-12-05 feedback .md`. Quality is high. Only minor Pali spelling issues (out of scope for this thread).
+
+### 2. Next Steps
+- The next iteration should only run if new `.mp3` files are added and transcribed.
+- **FOR THE NEXT AGENT:** Do not re-analyze the current interview batch. It has already been passed through the loop and found to be at diminishing returns for regex filtering.
+
+### 3. Scope Reminder
+- **DO NOT** touch `output/extracted/` or `reports/semantic/`.
+- **DO NOT** read Pali evaluation reports.
+- If `extract_errors.py` returns 0, stop immediately.

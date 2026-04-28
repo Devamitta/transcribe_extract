@@ -7,3 +7,4 @@
 - 2026-04-27 [BEHAVIOR] Consistently use tools/printer.py for CLI scripts as per project standards, even if existing scripts haven't migrated yet.
 - 2026-04-28 [POSITIVE] Three-phase model-switching workflow (fast→pro→fast with hard stops) is a reusable pattern for multi-step tasks where different phases benefit from different model capabilities; consider documenting as a Kamma pattern.
 - 2026-04-28 [POSITIVE] Iterating the LLM prompt multiple times against real output (33→19→refined) is more effective than guessing optimal prompt upfront; test-driven prompt engineering works.
+- 2026-04-28 [BEHAVIOR] Align CLI flags and validation constants (e.g., word-count tolerance) early in the spec phase to avoid implementation drift across scripts and tools.

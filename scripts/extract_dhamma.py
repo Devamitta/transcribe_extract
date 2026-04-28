@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Extracts core Dhamma teachings from corrected transcripts into structured Q&A format with Pāli topic tags."""
 
-import sys
-from pathlib import Path
+import argparse
 import time
+from pathlib import Path
 
-
+from tools import printer as _p
 from tools.extract import EXTRACT_SYSTEM_INSTRUCTION as SYSTEM_INSTRUCTION, chunk_text
 from tools.provider import generate_content, get_working_key
+
+pr = _p.printer
 
 
 def extract_dhamma_points(text: str) -> str:
@@ -17,67 +19,101 @@ def extract_dhamma_points(text: str) -> str:
     )
 
 
-def main():
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Extract Dhamma teachings from corrected transcripts."
+    )
+    parser.add_argument("file", nargs="?", help="Specific file to process")
+    parser.add_argument(
+        "--folder", help="Process all files in this subfolder (e.g. interview)"
+    )
+    parser.add_argument("--limit", type=int, help="Limit to first N unprocessed files")
+
+    # --test / -t are handled by the provider module via sys.argv; ignore them here
+    args, _ = parser.parse_known_args()
+
     input_dir = Path("output/corrected_pali")
     output_dir = Path("output/extracted")
     output_dir.mkdir(exist_ok=True)
 
     if not get_working_key():
-        print("All API keys failed. Exiting.")
+        pr.error("All API keys failed. Exiting.")
         return
 
-    # Parse args: optional file (--test flag handled by provider)
-    args = [a for a in sys.argv[1:] if not a.startswith("-")]
-    specific_file = args[0] if args else None
-
-    if specific_file:
-        # If it's a full path, use it directly; otherwise look in input_dir
-        if Path(specific_file).is_absolute() or Path(specific_file).exists():
-            md_files = [Path(specific_file)]
-        else:
-            md_files = [input_dir / specific_file]
-        if not md_files[0].exists():
-            print(f"File not found: {md_files[0]}")
+    if args.file:
+        file_path = Path(args.file)
+        if not file_path.is_absolute() and not file_path.exists():
+            file_path = input_dir / args.file
+        if not file_path.exists():
+            pr.error(f"File not found: {file_path}")
             return
+        md_files = [file_path]
+    elif args.folder:
+        folder_path = input_dir / args.folder
+        if not folder_path.exists():
+            pr.error(f"Folder not found: {folder_path}")
+            return
+        md_files = sorted(folder_path.rglob("*.md"), key=lambda p: p.name.lower())
     else:
-        md_files = list(input_dir.glob("*.md"))
-        if not md_files:
-            print("No files found in 'corrected_pali/'. Run correct_pali.py first.")
-            return
+        md_files = sorted(input_dir.rglob("*.md"), key=lambda p: p.name.lower())
 
-    print(f"Found {len(md_files)} files", flush=True)
+    if not md_files:
+        pr.amber("No .md files found.")
+        return
 
-    for file_path in md_files:
-        final_output_path = output_dir / file_path.name
-        if final_output_path.exists():
-            print(f"Skipping '{file_path.name}', already extracted.")
-            continue
+    queue: list[tuple[Path, Path]] = []
+    skipped = 0
+    for fp in md_files:
+        try:
+            rel = fp.relative_to(input_dir)
+            out_path = output_dir / rel
+        except ValueError:
+            out_path = output_dir / fp.name
 
-        print(f"Extracting points from '{file_path.name}'...")
-        with open(file_path, "r", encoding="utf-8") as f:
-            text = f.read()
+        if out_path.exists():
+            pr.amber(f"[SKIP] {fp.name}")
+            skipped += 1
+        else:
+            queue.append((fp, out_path))
 
+    if skipped:
+        pr.info(f"{skipped} already extracted, {len(queue)} to process")
+
+    if args.limit and len(queue) > args.limit:
+        pr.info(f"Limiting to first {args.limit} files (--limit).")
+        queue = queue[: args.limit]
+
+    if not queue:
+        pr.info("Nothing to process.")
+        return
+
+    pr.green(f"Processing {len(queue)} file(s)")
+
+    for idx, (fp, out_path) in enumerate(queue):
+        pr.green(f"Extracting '{fp.name}'...")
+        text = fp.read_text(encoding="utf-8")
         chunks = chunk_text(text)
-        all_points = []
+        all_points: list[str] = []
 
         for i, chunk in enumerate(chunks):
-            print(f"  Chunk {i + 1}/{len(chunks)}...", flush=True)
+            pr.info(f"  Chunk {i + 1}/{len(chunks)}...")
             try:
                 result = extract_dhamma_points(chunk)
                 if "NO_POINTS" not in result.strip():
                     all_points.append(result.strip())
             except Exception as e:
-                print(f"    Failed on chunk {i + 1}: {e}")
+                pr.warning(f"  Chunk {i + 1} failed: {e}")
 
         if all_points:
-            with open(final_output_path, "w", encoding="utf-8") as f:
-                f.write("\n\n".join(all_points))
-            print(f"Extraction saved to '{final_output_path.name}'.\n")
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text("\n\n".join(all_points), encoding="utf-8")
+            pr.yes(f"saved → {out_path}")
         else:
-            print(f"No Dhamma points found in '{file_path.name}'.\n")
+            pr.no(f"no Dhamma points found in '{fp.name}'")
 
-        print("  Waiting 5s between files...", flush=True)
-        time.sleep(5)
+        if idx < len(queue) - 1:
+            pr.info("Waiting 5s...")
+            time.sleep(5)
 
 
 if __name__ == "__main__":

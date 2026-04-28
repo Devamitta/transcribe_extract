@@ -232,8 +232,6 @@ These patterns are confirmed real and should be watched for in batch output:
 
 ---
 
-## Session Log
-
 ### 2026-04-27 (Session 10)
 **Context:** Manual evaluation of `output/corrected_pali/interview/ARDMK 26-04-01.md` (latest batch).
 **Anomalies Found:**
@@ -252,3 +250,36 @@ These patterns are confirmed real and should be watched for in batch output:
 **Errors or Repeated Mistakes:**
 - The prompt is becoming quite large due to Rule 10 examples. If performance degrades, consider moving these examples into a separate JSON lookup or "Few-Shot" file.
 - **Strategic Note:** The "Economy" mandate was strictly followed; we manually patched the data rather than re-running the entire batch.
+
+
+### 2026-04-28 (Session 11)
+**Context:** Comprehensive final pass on `output/corrected_pali/interview/` corpus.
+**Anomalies Found:**
+- **Widespread phonetic overrides:** 'cookie/cookies/kurtis' (kuti/kutis), 'the singer' (the Sangha), 'linear' (Vinaya), 'minerals' (monastics), 'chocolate model/Chateau Mahdra' (catumadhura), 'John Chakras' (pañcadvāra), 'handcuffs/rape' (robe/robed), 'slave food' (alms food).
+- **Missed Title:** 'Wanda' (Bhante).
+
+**Changes Implemented:**
+- **tools/glossary.py:** Added 'catumadhura' and 'pañcadvāra' to DHAMMA list.
+- **tools/pali.py (Prompt):**
+  - **Rule 8:** Added 'Wanda' -> 'Bhante'.
+  - **Rule 10:** Added the widespread phonetic overrides identified above.
+- **Manual Data Correction:** Ran 'temp/apply_fixes.py' to patch ALL 76 files in 'output/corrected_pali/interview/'.
+
+**Errors or Repeated Mistakes:**
+- Confirmed that previous session patches were limited to a single file; this session's manual correction script covered the entire directory.
+- **Conclusion Recommendation:** This thread has reached high diminishing returns. Prompt is robust and known semantic hallucinations have been manually purged. Recommend concluding the loop.
+
+### 2026-04-28 (Session 12)
+**Context:** Final manual validation of `output/corrected_pali/interview/` corpus.
+**Anomalies Found:**
+- **Missed Widespread Overrides:** 'winner' (Vinaya) was found in 8 files. 'sun disappeared' (saññā disappeared), 'he was sicko' (ehipassiko), 'Insaniya Vedetem Nebola' (saññā vedayita nirodha), and other high-impact hallucinations were found to have survived previous patching sessions.
+
+**Changes Implemented:**
+- **Manual Data Correction:** Updated `temp/apply_fixes.py` with a comprehensive dictionary of 30+ "Meaning Flip" overrides from `tools/pali.py` Rule 10.
+- **Verification:** Ran the updated script across ALL 76 files. Confirmed 10 files were updated and 0 high-impact hallucinations remain via `grep`.
+
+**Errors or Repeated Mistakes:**
+- 'winner' and several other critical overrides were missed in Session 11's `temp/apply_fixes.py` dictionary. This resulted in a "silent failure" where the automated script reported 0 anomalies while the data remained corrupted. 
+- **CRITICAL LESSON:** Automated evaluation scripts in this project are NOT sufficient for semantic quality. Manual `grep` sweeps against the full `Rule 10` list are mandatory before concluding any Pali correction batch.
+
+**FINAL RECOMMENDATION:** Thread complete. The interview corpus is now verified clean of known high-impact hallucinations. Conclude the loop.

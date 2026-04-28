@@ -10,8 +10,8 @@ Monitor and refine transcription quality based on manual transcriptions and erro
   - [ ] Run `scripts/extract_errors.py` on the latest transcription output.
 - [ ] **Task X.2: Diff Comparison**
   - [ ] Run `scripts/diff_reports.py` to compare with previous known baselines.
-- [ ] **Task X.3: Branching Logic**
-  - [ ] **IF 0 ERRORS:** Note "All good!" and skip to Verification (Task X.7).
+- [ ] **Task X.3: Branching Logic (HARD STOP IF CLEAN)**
+  - [ ] **IF 0 ERRORS:** Note "All good!", provide a brief summary of files checked, and **STOP IMMEDIATELY**. Do not look for other tasks or files.
   - [ ] **IF ERRORS FOUND:** Proceed to Task X.4.
 - [ ] **Task X.4: AI Analysis & Diminishing Returns Check (CRITICAL MANDATE - MANUAL MODEL SWITCH)**
   - [ ] **STOP EVERYTHING.** Explicitly tell the user: "Please switch to a high-tier LLM (Opus or Sonnet 3.5) for analysis before I proceed." Do NOT attempt to analyze the errors yourself using the current model. Wait for the user to confirm the model switch before moving to analysis.
