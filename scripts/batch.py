@@ -1,4 +1,115 @@
-# Unified OpenAI Batch API pipeline: prepare, submit, poll, and retrieve in one command.
+"""
+Unified OpenAI Batch API pipeline: prepare, submit, poll, and retrieve batch jobs.
+
+OVERVIEW:
+  This script manages the full lifecycle of OpenAI Batch API jobs for processing text:
+  1. Prepare: chunk input files and create JSONL batch request
+  2. Submit: upload to OpenAI and create batch job
+  3. Poll: wait for completion (or retrieve later)
+  4. Retrieve: download results and write output files
+
+USAGE EXAMPLES:
+
+  # Run a full pipeline (prepare → submit → poll → retrieve)
+  uv run python scripts/batch.py --stage pali
+  uv run python scripts/batch.py --stage extract
+  uv run python scripts/batch.py --stage polish
+  uv run python scripts/batch.py --stage semantic
+
+  # Run multiple stages in one go
+  uv run python scripts/batch.py --stage both
+
+  # Submit without waiting (submit only, check later)
+  uv run python scripts/batch.py --stage pali --no-wait
+
+  # Process only files in a specific folder
+  uv run python scripts/batch.py --stage pali --folder interview
+
+  # Process only first N files (useful for testing)
+  uv run python scripts/batch.py --stage pali --limit 5
+
+  # Check status of latest batch
+  uv run python scripts/batch.py --status
+  uv run python scripts/batch.py --status pali
+
+  # Retrieve results from latest batch
+  uv run python scripts/batch.py --retrieve
+  uv run python scripts/batch.py --retrieve pali
+  uv run python scripts/batch.py --retrieve <batch_id>
+
+  # List all tracked batch jobs
+  uv run python scripts/batch.py --list
+
+STAGES (--stage):
+  pali       Correct Pali terms and spellings in transcripts
+  extract    Extract key Dhamma points from corrected transcripts
+  polish     Polish extracted content for readability
+  semantic   Evaluate semantic anomalies in Pali text
+  both       Run pali → extract → polish (sequential)
+
+OPTIONS:
+  --stage {pali,extract,polish,semantic,both}
+             Which processing stage to run (default: both)
+
+  --folder FOLDER
+             Limit processing to a specific subfolder
+             Example: --folder interview
+
+  --limit N  Process only first N files (for testing)
+             Example: --limit 5
+
+  --poll-interval SECONDS
+             How often to check batch status (default: 30s)
+
+  --no-wait  Submit batch but don't wait for completion
+             Resume later with --status or --retrieve
+
+  --status [TASK]
+             Check status of latest batch (or by task name)
+             Example: --status pali
+
+  --retrieve [TASK|BATCH_ID]
+             Retrieve results from completed batch
+             Examples: --retrieve pali, --retrieve <batch_id>
+
+  --list     Show all tracked batch jobs
+
+WORKFLOW:
+
+  1. Prepare & Submit (blocking):
+     uv run python scripts/batch.py --stage pali
+     → Creates JSONL file, uploads to OpenAI, creates batch job
+     → Polls every 30s until completed
+     → Downloads results and writes output files
+
+  2. Submit & Check Later (non-blocking):
+     uv run python scripts/batch.py --stage pali --no-wait
+     → Submits batch, prints batch_id, exits
+     → List jobs: uv run python scripts/batch.py --list
+     → Check status: uv run python scripts/batch.py --status pali
+     → When ready, retrieve: uv run python scripts/batch.py --retrieve pali
+
+INPUT/OUTPUT:
+  pali       input:  output/transcribed/
+             output: output/corrected_pali/
+
+  extract    input:  output/corrected_pali/
+             output: output/extracted/
+
+  polish     input:  output/extracted/
+             output: output/polished/
+
+  semantic   input:  output/corrected_pali/
+             output: reports/semantic/
+
+NOTES:
+  • All models configurable via environment variables:
+    OPENAI_PALI_MODEL, OPENAI_EXTRACT_MODEL, OPENAI_POLISH_MODEL, OPENAI_SEMANTIC_MODEL
+    Default: gpt-4o-mini
+  • Batch job tracking stored in: output/batch_jobs.json
+  • Existing output files are skipped (use --limit to override)
+  • Interrupting during polling (Ctrl+C) does not cancel batch; resume with --status
+"""
 
 import argparse
 import datetime
@@ -128,12 +239,30 @@ def prepare(task: str, folder: str | None, limit: int | None) -> Path | None:
             output_path = config["output_dir"] / file_path.name
         output_path_flat = config["output_dir"] / file_path.name
 
-        if output_path.exists() or output_path_flat.exists():
-            pr.amber(f"[SKIP] {file_path.name}")
-            skipped += 1
+        if task == "semantic":
+            # For semantic: skip only if report is up-to-date (newer than or same age as source)
+            skip = False
+            if output_path.exists():
+                if output_path.stat().st_mtime >= file_path.stat().st_mtime:
+                    skip = True
+            if output_path_flat.exists() and not skip:
+                if output_path_flat.stat().st_mtime >= file_path.stat().st_mtime:
+                    skip = True
+
+            if skip:
+                pr.amber(f"[SKIP] {file_path.name}")
+                skipped += 1
+            else:
+                pr.green(f"[QUEUE] {file_path.name}")
+                queue.append(file_path)
         else:
-            pr.green(f"[QUEUE] {file_path.name}")
-            queue.append(file_path)
+            # Other tasks: use original logic (skip if report exists)
+            if output_path.exists() or output_path_flat.exists():
+                pr.amber(f"[SKIP] {file_path.name}")
+                skipped += 1
+            else:
+                pr.green(f"[QUEUE] {file_path.name}")
+                queue.append(file_path)
 
     pr.info(f"{skipped} already done, {len(queue)} to process")
 
@@ -456,6 +585,9 @@ def main() -> None:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--status", nargs="?", const="latest", help="Check batch status")
     group.add_argument("--list", action="store_true", help="List all tracked jobs")
+    group.add_argument(
+        "--retrieve", nargs="?", const="latest", help="Retrieve batch results"
+    )
 
     parser.add_argument(
         "--stage",
@@ -484,6 +616,21 @@ def main() -> None:
             show_status(args.status)
     elif args.list:
         show_list()
+    elif args.retrieve is not None:
+        jobs = json.loads(JOBS_PATH.read_text()) if JOBS_PATH.exists() else []
+
+        if not jobs:
+            pr.error("No batches tracked yet.")
+            sys.exit(1)
+
+        if args.retrieve == "latest":
+            batch_id = jobs[-1]["batch_id"]
+        else:
+            # Try to find by task name first, then by batch_id
+            matching = [j for j in jobs if j["task"] == args.retrieve]
+            batch_id = matching[-1]["batch_id"] if matching else args.retrieve
+
+        retrieve(batch_id)
     else:
         for stage in resolve_stages(args.stage):
             run_stage(stage, args.folder, args.limit, args.poll_interval, args.no_wait)

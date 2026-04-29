@@ -7,14 +7,14 @@ from pathlib import Path
 
 from tools import printer as _p
 from tools.extract import EXTRACT_SYSTEM_INSTRUCTION as SYSTEM_INSTRUCTION, chunk_text
-from tools.provider import generate_content, get_working_key
+from tools.provider import build_cacheable_contents, generate_content, get_working_key
 
 pr = _p.printer
 
 
 def extract_dhamma_points(text: str) -> str:
     return generate_content(
-        contents=text,
+        contents=build_cacheable_contents(text),
         system_instruction=SYSTEM_INSTRUCTION,
     )
 

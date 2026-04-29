@@ -1,170 +1,54 @@
-## Handoff: Reporting Sync & False Positive Reduction (Iteration 20260411_Interview_Feedback_Loop)
+# Handoff
 
-### 1. Reporting Logic Synchronization
-- **Logic Mismatch:** Identified a discrepancy where `scripts/transcribe.py` (the engine) allowed up to 5 repetitions of filler words, but `scripts/extract_errors.py` (the reporter) flagged 4 or more as a hallucination. This caused "natural" stutters (e.g., "yeah yeah yeah yeah") to be reported as errors even when the transcription engine was behaving correctly.
-- **Fix:** Synchronized `scripts/extract_errors.py` with the transcription engine's logic.
-    - Added the same filler word whitelist: `["yeah", "no", "okay", "so", "right", "hmm", "mhmm", "for", "and", "but", "like", "i", "it", "they", "we", "you"]`.
-    - Increased the word loop threshold for these whitelisted words to **6 repetitions** (matching the engine's "allow 5, filter 6" rule).
-    - Maintained the standard **4 repetition** threshold for all other words.
+## How to Use This File
+Read this before every session. It records what has been attempted, what worked,
+what failed, and what patterns are known — so no session repeats prior mistakes.
 
-### 2. Results
-- **Zero Noise:** Re-running `extract_errors.py` on the latest interview batch (`output/transcribed/interview/`) now returns **0 anomalies**, confirming that the reporting noise from natural conversational stutters has been eliminated.
-- **Improved Signal:** By removing these false positives, future reports will highlight only true, high-confidence hallucinations (runaway loops), making the feedback loop much more efficient.
+All archived sessions are in this thread folder `archive/handoff_archive.md`. Only the 2 most recent sessions are kept in this file for quick reference.
 
-### 3. Verification Steps (User)
-1. **Run Error Extraction:** Execute `uv run python scripts/extract_errors.py --input-dir output/transcribed/interview/`
-2. **Confirm Clean Report:** The output should show "Found 0 anomalies across 5 files" (assuming no new true hallucinations have occurred).
+## Handoff: Truncation False Positive Fix (Iteration 2026-04-28_B)
 
----
-
-## Handoff: Refined Transcription Filter Hardening (Iteration 20260411_New_Interview_Output)
-
-
-## 1. The Core Issue: Contiguous Loop "Restarts"
-The primary failure mode was identified in `ARDMK 26-04-01.md`. A Whisper "stutter" loop (e.g., *"For the... for the..."*) that started at the end of a 60-second paragraph flush would **bypass existing filters** because the `current_paragraph` variable was reset to empty at the start of the next minute. Without a memory of the previous 10 seconds, the filter treated the first loop of the new minute as a fresh, valid sentence.
-
-## 2. The Solution: Refined Immediate Tail Match
-I implemented a highly targeted "Immediate Tail" filtering system in `scripts/transcribe.py`.
-
-**The Final Implementation (v2):**
-- **`tail_history` Buffer (150 chars):** I reduced the context window from 1000 characters to just 150 characters. This ensures the filter only "remembers" the immediately preceding 10-20 seconds of speech.
-- **Full Segment Existence Check:** Instead of checking for small prefix matches (which caused "long-distance" false positives), the filter now only skips a segment if the **entire** clean text (minimum 10 chars) is found within the short `tail_history`. This perfectly targets Whisper's contiguous stuttering loops while allowing the same phrase to be spoken naturally a few minutes later.
-- **Improved Context Continuity:** By preserving this 150-character tail across paragraph flushes, we successfully bridge the 60-second boundary that previously allowed loops to restart.
-
-## 3. Handling False Positives (The "Yeah" Problem)
-The error analysis tool flagged several instances of natural conversational agreement ("Yeah yeah") as hallucinations.
-
-**The Solution:**
-- **Nuanced Filler Filtering:** Instead of blanket-excluding words like "yeah" and "okay", the filter now uses a tiered approach. It allows these words to repeat naturally (up to 5 times), but if they repeat **6 or more times** (a clear Whisper failure mode), they are still filtered out. This preserves natural "yeah yeah yeah yeah" while catching the infinite loop cases.
-- **Internal Loop Logic:** Maintained the phrase loop detector (e.g., "for the... for the...") for repetitions *within* a single segment, ensuring internal stutters are caught before they ever reach the history buffer.
-
-## 4. Verification Results (Simulation)
-I verified the logic against the known failure cases:
-- **"For the..." Loop:** Successfully caught across the paragraph boundary because the phrase exists in the immediate `tail_history`.
-- **"Yeah yeah yeah yeah":** Now **preserved** (no longer filtered) as it stays under the 6-repetition threshold for fillers.
-- **Natural Repetition:** Phrases repeated after a few sentences are **preserved** because they fall out of the 150-character `tail_history` window.
-
-## 5. Duration Verification Utility
-I have created `scripts/verify_duration.py` to prevent "silent" truncation where the transcript ends before the audio.
-
-- **How it works:** It uses `ffprobe` to get the exact duration of the `.mp3` file and compares it to the last `[XX.X]` timestamp in the `.md` transcript.
-- **Auto-Check:** This script is now integrated into `transcribe.sh`, `transcribe-interview.sh`, and `transcribe-sangha.sh`. It runs automatically after transcription and prints a report.
-- **Fail-Safe:** If a transcript is more than 120 seconds shorter than the audio, it flags it as **TRUNCATED** and warns the user.
-
-## Handoff: Cross-Segment Loop Detection & Workflow Hardening (Iteration 20260411_New_Interview_MD)
-
-### 1. Improvements to `scripts/transcribe.py`
-- **Cross-Segment Phrase Loop Detection:** 
-    - Previously, phrase loop regexes (`(.{5,}?)( \1){2,}` and `(.{15,}?)( \1){1,}`) were only applied to the *current* segment. This allowed loops to bypass filters if they started in the previous segment and continued in the new one.
-    - **Fix:** I implemented `combined_text = (clean_history + " " + clean_text).strip()`. The regexes are now evaluated against this combined string, catching continuous repetitions that span across segment boundaries.
-- **Expanded Filler Whitelist:** 
-    - The `extract_errors.py` tool was flagging natural conversational stutters on common words as hallucinations.
-    - **Fix:** Expanded the allowed filler word list to include: `"for"`, `"and"`, `"but"`, `"like"`, `"i"`, `"it"`, `"they"`, `"we"`, `"you"`. These words can now repeat up to 5 times naturally (e.g., "for... for... for...") without the entire segment being dropped.
-
-### 2. Workflow & Spec Hardening
-- **Mandatory Hard Stops:** Updated `spec.md` and the `Iteration Template` in `plan.md` to enforce two critical manual interventions:
-    1.  **Model Switch:** Explicit stop to ensure analysis is performed by a high-tier LLM (Opus/Sonnet 3.5).
-    2.  **Plan Review:** Explicit stop after the AI proposes an improvement plan but before implementation begins. This ensures human oversight of the strategy.
-- **Diminishing Returns Check:** Integrated an evaluation step into the analysis phase where the high-tier model must determine if the script has reached its practical limit. This prevents endless marginal tweaking and potential over-filtering of valid speech.
-
-### 3. Verification Steps (User)
-1.  **Run Transcription:** Execute `./transcribe-interview.sh` on the interview batch.
-2.  **Verify Loops:** Check `ARDMK 26-04-01.md` around `[71.1]` for the "which consciousness..." loop. It should now be filtered.
-3.  **Verify Stutters:** Check for "For... For... For..." in `ARDMK 26-04-01.md` around `[63.4]`. Natural stutters (under 6 reps) should now be preserved rather than the whole segment being skipped.
-
-### 4. Errors, Issues, and Repeated Mistakes
-- **Issue:** Naive substring checks (`clean_text in clean_history`) are insufficient for cross-segment loops if the new segment contains any non-repeated trailing text.
-- **Correction:** Use `combined_text` regex evaluation to catch the repetition pattern itself, regardless of where the segment boundary falls.
-- **False Positives:** Strict word loop detection (4+ reps) on non-filler words often flags valid conversational stutters. The whitelist approach is a necessary middle ground.
-
----
-
-## Handoff: Punctuation Spam & Cross-Segment Word Loops (Iteration 20260427)
-
-### 1. Improvements to `scripts/transcribe.py`
-- **Punctuation Spam Filter:**
-    - **Issue:** Long strings of punctuation (e.g., `........`) inside otherwise valid segments were bypassing the low-entropy filter and being flagged by the error reporter.
-    - **Fix:** Implemented a direct `re.search(r"[.,!?\-_]{6,}", text)` check to align the engine with the reporter's logic.
-- **Cross-Segment Word Loop Filter:**
-    - **Issue:** Loops of short words (e.g., "mana? Mana? Mana?") that were split across multiple Whisper segments bypassed the existing word loop filter because it only evaluated the *current* segment. The cross-segment phrase filter missed them because they were shorter than 5 characters.
-    - **Fix:** Upgraded the word loop regex `(\w+)(?:\s+){3,}` to evaluate `combined_text` (the immediate 150-char history + the current segment), ensuring short word loops are caught regardless of segment boundaries.
-
-### 2. Results
-- **Zero Noise:** Re-running `extract_errors.py` on the latest interview batch (`output/transcribed/interview/`) after re-transcribing the problem files returned **0 anomalies**. The logic successfully eliminated the punctuation and cross-segment word loop hallucinations without introducing false positives.
-
-### 3. Verification Steps (User)
-1.  **Run Error Extraction:** Execute `uv run python scripts/extract_errors.py --input-dir output/transcribed/interview/`
-2.  **Confirm Clean Report:** The output should show "Found 0 anomalies across 51 files".
-
-### 4. Errors, Issues, and Repeated Mistakes
-- **Issue:** The word loop filter was blind to loops that crossed segment boundaries because it only checked the current segment's `text`.
-- **Correction:** Always apply word loop and phrase loop detection to `combined_text` (history + current text) to catch repetitions that span across Whisper's arbitrary segment chunks.
-- **Issue:** Depending solely on a low-entropy filter (`len(set(text)) < 5`) is insufficient for catching symbol spam if the segment also contains normal, high-entropy words. Direct punctuation regexes are required.
-
----
-
-## Handoff: Character Spam & Non-Spaced Phrase Loops (Iteration 20260427_B)
-
-### 1. Improvements to `scripts/transcribe.py`
-- **Character Spam Filter:**
-    - **Issue:** Identified a "年年年年" hallucination in `Ardmk 24-04-24.md`. These CJK character loops bypass space-reliant filters and entropy checks if they are attached to valid English text.
-    - **Fix:** Implemented a direct character spam regex `re.search(r"([^\s])\1{9,}", text)` to catch any single non-whitespace character repeating 10+ times continuously.
-- **Non-Spaced Phrase Loop Filter:**
-    - **Issue:** Long repeating strings without spaces (runaway words or CJK blocks) were bypassing the core phrase loop filters which rely on `\b` and spaces.
-    - **Fix:** Synchronized with the error reporter by adding `re.search(r"(.{30,})\1{1,}", text)` to the engine. This catches any continuous 30+ character block that repeats at least once.
-
-### 2. Manual Data Correction
-- **Ardmk 24-04-24.md:** I applied a manual fix using a temporary script (`temp/fix_cjk_spam.py`) to strip the "年" spam from the existing transcript. This avoids the need for a full re-transcription of the interview.
-
-### 3. Results
-- **Zero Noise:** Re-running `extract_errors.py` on the `output/transcribed/interview/` directory now returns **0 anomalies across 61 files**.
-
-### 4. Verification Steps (User)
-1.  **Run Error Extraction:** Execute `uv run python scripts/extract_errors.py --input-dir output/transcribed/interview/`
-2.  **Confirm Clean Report:** The output should show "Found 0 anomalies across 61 files".
-
-### 5. Errors, Issues, and Repeated Mistakes
-- **Issue:** Space-reliance in filters (`\b`, `( \1)`) creates a blind spot for CJK character spam and merged-word hallucinations.
-- **Correction:** Always include fallback regexes that don't depend on spaces for long-string repetitions.
-- **Issue:** Small hallucinations (e.g., attached to the end of a long valid sentence) dilute entropy checks.
-- **Correction:** Use targeted regexes for specific character patterns (`\1{N,}`) rather than relying on aggregate metrics like `len(set(text))`.
-
----
-
-## Handoff: Forced Paragraph Flush & Truncation False Positive (Iteration 2026-04-28)
-
-### 1. Analysis of the Interview Batch
-- **Error Extraction:** Ran `extract_errors.py` on 76 files in `output/transcribed/interview/`. Found **0 anomalies**, indicating the current regex filters are highly effective and have reached diminishing returns.
-- **Duration Verification:** Found one "TRUNCATED" error in `Ardmk 22-12-31.md` (gap of ~2.5 minutes).
-- **Root Cause:** Analysis revealed that the transcription was actually complete, but Whisper generated a 2.5-minute run-on sentence without terminal punctuation (`.!?`). The transcription engine was waiting for punctuation to flush the paragraph, causing the final chunk to be timestamped much earlier than the actual audio end.
+### 1. Analysis of Truncation Issues
+- **Issue:** Two files (`Ardmk 22-12-31.md` and `Ardmk 24-11-13-2.md`) were flagged as **TRUNCATED** by `verify_duration.py`.
+- **Root Cause:** Long run-on sentences without terminal punctuation (`.!?`) at the end of recordings caused paragraphs to grow up to ~125-130 seconds before flushing (120s threshold + final segment length). This exceeded the 120s gap allowed by `verify_duration.py`, triggering a false positive truncation report even though the text was present.
 
 ### 2. Improvements to `scripts/transcribe.py`
-- **Forced Paragraph Flush:**
-    - **Fix:** Implemented a "Force Flush" rule. Paragraphs are now forced to flush after **120 seconds** even if no terminal punctuation is detected. This ensures that timestamps stay reasonably current and prevents false positive truncation reports.
-    - **Logic:** `if (is_over_time and is_terminal) or is_force_flush:` where `is_force_flush` is triggered at 120s.
+- **Lowered Force Flush Threshold:**
+    - **Fix:** Reduced `is_force_flush` threshold from **120 seconds** to **90 seconds**.
+    - **Result:** This ensures that paragraphs are flushed more frequently, bounding the maximum timestamp gap to ~100 seconds (90s + segment length), which is safely within the 120s tolerance of the verification tool.
 
 ### 3. Verification Results
-- **Engine Logic:** Verified the new logic ensures that even unpunctuated segments will eventually receive a fresh timestamp, bridging large gaps in long-winded recordings.
-- **Diminishing Returns:** Confirmed that further regex tweaking for hallucinations is currently unnecessary for this batch.
+- **Files Re-processed:** `Ardmk 22-12-31.md` and `Ardmk 24-11-13-2.md`.
+- **Status:** **PASSED.** Running `verify_duration.py` now returns **OK** for all 109 interview transcripts.
+- **Hallucinations:** `extract_errors.py` continues to report **0 anomalies** across the entire batch, confirming that the change did not introduce any regressions in filtering logic.
 
-### 4. Verification Steps (User)
-1. **Next Batch:** Run `./transcribe-interview.sh` on any new files. The "Force Flush" will automatically ensure better timestamping for run-on sentences.
-2. **Review:** This thread is ready for review after the user confirms the latest output is satisfactory.
+### 4. Next Steps
+- The core transcription filters and flush logic have reached diminishing returns. 
+- **FOR THE NEXT AGENT:** This thread is ready for final review. No further regex or timing tweaks are recommended for the current interview batch.
 
+---
 
-## Handoff: Verification of Interview Batch (2026-04-28)
+## Handoff: CJK Hallucination Filtering (Iteration 2026-04-28_C)
 
-### 1. Results
-- **Files Checked:** All 84 files in `output/transcribed/interview/`.
-- **Status:** **CLEAN.** 
-- **Anomalies Found:** 0 structural hallucinations (loops, spam, entropy issues).
-- **Manual Spot Check:** Verified `Ardmk 24-11-29.md` and `Ardmk 24-12-05 feedback .md`. Quality is high. Only minor Pali spelling issues (out of scope for this thread).
+### 1. Analysis of the Latest Batch
+- **Issue:** Identified 14 instances of the repeating Chinese characters "如此" (rúcǐ) in the latest transcription batch (115 files).
+- **Nuance:** Unlike other hallucinations, these often appeared *inside* valid segments (e.g., `sentence... 如此如此... sentence.`). Dropping the entire segment would lose valid transcript data.
 
-### 2. Next Steps
-- The next iteration should only run if new `.mp3` files are added and transcribed.
-- **FOR THE NEXT AGENT:** Do not re-analyze the current interview batch. It has already been passed through the loop and found to be at diminishing returns for regex filtering.
+### 2. Improvements to `scripts/transcribe.py`
+- **CJK Strip Filter:**
+    - **Fix:** Implemented a direct regex substitution in the basic cleaning section: `text = re.sub(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\uFAFF\uFF66-\uFF9F]+", "", text)`.
+    - **Result:** This strips out Chinese, Japanese, and Korean characters from the segment text *before* any other filters run. It preserves the valid English/Pali speech while silently removing the "如此" artifacts.
 
-### 3. Scope Reminder
-- **DO NOT** touch `output/extracted/` or `reports/semantic/`.
-- **DO NOT** read Pali evaluation reports.
-- If `extract_errors.py` returns 0, stop immediately.
+### 3. Manual Data Correction
+- **Affected Files:** I applied a manual fix to the 9 affected files (`ARDMK 26-01-10.md`, `ARDMK 25-11-01.md`, `ARDMK 26-02-21.md`, etc.) using a temporary correction script. This cleaned the existing transcripts without requiring a full re-transcription.
+
+### 4. Verification Results
+- **Error Extraction:** Re-running `extract_errors.py` on the `output/transcribed/interview/` directory now returns **0 anomalies across 115 files**.
+- **Visual Check:** Verified that valid English text surrounding the previous "如此" artifacts was preserved correctly.
+
+### 5. Next Steps
+- **FOR THE NEXT AGENT:** This thread is ready for review. All known structural and character-level hallucinations in the interview batch have been addressed.
+
+### 6. Errors, Issues, and Repeated Mistakes
+- **Issue:** Relying on `skip_segment = True` for "dirty" segments can cause data loss if the segment is a mix of valid speech and hallucinations.
+- **Correction:** Use `re.sub` for specific, high-confidence hallucination patterns (like CJK in an English/Pali context) to clean the segment instead of dropping it.

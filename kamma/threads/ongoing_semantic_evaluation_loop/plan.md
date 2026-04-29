@@ -2,66 +2,91 @@
 
 ## Architecture Decisions
 - Three-phase workflow with three hard stops (user approval gates):
-  - **Phase 1 (fast model):** Determine which files to evaluate, guide user to run evaluator script, read report and display findings
-  - **Phase 2 (pro model):** Classify findings, propose fixes and prompt improvements, wait for user approval
+  - **Phase 1 (fast model):** Read batch-generated semantic reports, filter out already-reviewed reports, cap session at SESSION_LIMIT=10 files, write all findings to temp/semantic_findings_YYYY-MM-DD.md, print summary table to conversation only
+  - **Phase 2 (pro model):** Read findings cache from temp file, classify findings, propose fixes and prompt improvements, wait for user approval
   - **Phase 3 (fast model):** Implement approved fixes, re-evaluate, update prompt, log session
 - Replacements use `re.sub(r'\b' + re.escape(original) + r'\b', replacement, text, flags=re.IGNORECASE)` (consistent with `correct_pali.py`)
-- Report path determined by user's choice of evaluation script (direct or batch mode)
-- Session metadata appended to `handoff.md` for tracking which files were processed and when
+- Session entry point is fixed: user runs `uv run python scripts/batch.py --stage semantic` or `uv run python scripts/evaluate_semantic.py` before starting the thread
+- `handoff.md` is the continuity mechanism for report-level review history: each reviewed report records its path, report mtime, and outcome so later sessions can skip unchanged reports
+- `SESSION_LIMIT = 10`: max fresh files processed per session; excess files are logged as `pending_next_session` in ledger.json and picked up in the next run
+- `temp/semantic_findings_YYYY-MM-DD.md`: ephemeral findings cache written by Phase 1, read by Phase 2 at startup, deleted in Task 3.4; keeps conversation context small
+- **Script Ownership & API Usage:** Running any script that makes external API requests (e.g., `scripts/batch.py`, `scripts/evaluate_*.py`, `scripts/extract_dhamma.py`, `scripts/polish_extract.py`, `scripts/correct_pali.py`) is strictly **OUT OF SCOPE** for the agent. The agent's role is to research issues and implement prompt/logic improvements. After improvements are applied, the agent MUST ONLY print the exact command for the user to run to verify the changes.
 
 ---
 
-## Phase 1 — Scope & run evaluator   ⟦ FAST MODEL ⟧
+## Phase 1 — Load fresh semantic reports   ⟦ FAST MODEL ⟧
 
-### Task 1.1 — Determine which files need evaluation
-- Read `kamma/threads/ongoing_semantic_evaluation_loop/handoff.md` for `last_run` timestamp (if exists)
-- If no previous session: all files in `output/corrected_pali/` are new
-- If previous session exists: identify files in `output/corrected_pali/` with mtime newer than `last_run` timestamp. These are files modified since last evaluation (by Pali correction pipeline or prior session fixes)
-- If no files are newer: print "No files modified since last session. Nothing to evaluate." and exit
-→ verify: correctly identify new or modified files based on last_run timestamp
+### Task 1.1 — Select only fresh reports
+- Assume the user already ran: `uv run python scripts/batch.py --stage semantic` or `uv run python scripts/evaluate_semantic.py`
+- Read `kamma/threads/ongoing_semantic_evaluation_loop/ledger.json`
+- Build a review ledger (ledger.json) from prior sessions mapping each semantic report path to the last reviewed report mtime and outcome
+- List files in `reports/semantic/interview/`
+- Split reports into buckets:
+  - **Bucket A:** report files never reviewed before
+  - **Bucket B:** report files whose current mtime is newer than the last reviewed mtime recorded in `handoff.md`
+  - **Skip:** report files whose mtime is older than or equal to the last reviewed mtime already logged in `handoff.md`
+- Merge Bucket A and Bucket B into a `fresh_list`; sort by Bucket A first, then Bucket B by mtime ascending
+- Apply session cap:
+  - Define `SESSION_LIMIT = 10`
+  - If `len(fresh_list) > SESSION_LIMIT`:
+    - `selected` = first SESSION_LIMIT files from fresh_list
+    - For remaining files beyond the limit: append to handoff.md one line per file: `pending_next_session: <report_path>`
+    - Print: "N fresh reports found. Processing first SESSION_LIMIT. Run the loop again for the remaining X."
+  - Else: `selected` = all files in fresh_list
+- If `selected` is empty: print "No new semantic reports since last review. Nothing to analyze." and exit
+→ verify: with 20 fresh files, only 10 are loaded; the other 10 appear as `pending_next_session` entries in ledger.json; next session picks them up as Bucket A entries
 
-### Task 1.2 — ⛔ HARD STOP 1: Present script options to user
-Print exactly:
-```
-Files to evaluate: [list files or folder name]
+### Task 1.2 — Read the fresh report files
+- Read every report selected in Task 1.1
+- Keep the report path and current file mtime with each report; this must be written back to `handoff.md` at the end of the session
+- If a selected report contains only `_No anomalies detected._`: record it as `clean` for handoff purposes and do not send it to Phase 2
+- If all selected reports are clean: print "No issues found in new semantic reports. Session complete." and update `handoff.md` with the reviewed clean reports
+→ verify: all fresh reports are loaded; clean reports are logged and filtered out
 
-Two ways to run the evaluator:
+### Task 1.3 — Write findings to temp file and print summary
+- Determine today's date string: YYYY-MM-DD (use ISO 8601 format)
+- Write ALL findings to `temp/semantic_findings_YYYY-MM-DD.md` using this structure:
 
-**Option A — Direct mode (fast, live):**
-  uv run python scripts/evaluate_semantic.py <folder>
-  Output: reports/semantic_anomalies_<timestamp>.md
+  ```
+  # Semantic Findings — YYYY-MM-DD
 
-**Option B — Batch mode (async, budget-friendly):**
-  uv run python scripts/batch.py --stage semantic [--folder <folder>]
-  Output: reports/semantic/<filename>.md
-
-Both produce identical findings format (passage, issue, suggestion).
-Choose based on your preference for speed vs. cost.
-
-Once you run the script, report back: "Done, I ran [Option A or B]. Report is at: [path]"
-```
-Stop here. Wait for user to run script and report the report path.
-
-### Task 1.3 — Read the report file
-- User provides report path (e.g., `reports/semantic_anomalies_20260428_143022.md` or `reports/semantic/interview.md`)
-- Open and read the full file
-- If file is empty or contains "_No anomalies detected_": print "No issues found. Session complete." and exit
-→ verify: report file exists and contains findings
-
-### Task 1.4 — Display all findings verbatim
-- Print all findings grouped by file
-- For each finding, show:
+  ## File: <relative report path>
+  ### Finding 1
   - **Passage:** [exact quote]
   - **Issue:** [explanation]
   - **Suggestion:** [proposed fix]
-- At the end, print summary: "Found N findings across M files"
-- Do NOT classify, judge, or propose fixes yet — just display
 
-→ verify: all findings displayed in conversation context
+  ### Finding 2
+  - **Passage:** [exact quote]
+  - **Issue:** [explanation]
+  - **Suggestion:** [proposed fix]
 
-### Task 1.5 — ⛔ HARD STOP 2: Switch to pro model
+  (repeat for each finding)
+
+  ## File: <next report path>
+  (same structure)
+  ```
+
+- Print to conversation ONLY a summary table in this format:
+
+  ```
+  | File | Findings | Status |
+  |------|----------|--------|
+  | Ardmk 22-04-04.md | 8 | has issues |
+  | Ardmk 22-05-24.md | 0 | clean |
+  | (etc for all selected files)
+  
+  Total: N findings across M files (K clean, L with issues)
+  ```
+
+- Do NOT print individual passages, issues, or suggestions to the conversation. Keep only the table.
+- Do NOT classify, judge, or propose fixes yet.
+
+→ verify: temp/semantic_findings_YYYY-MM-DD.md exists, is readable, and contains all passages and findings in full; conversation shows only the summary table
+
+### Task 1.4 — ⛔ HARD STOP 1: Switch to pro model
 Print:
-> "All findings are in context above. Please switch to the pro model to continue with Phase 2 (classification and planning)."
+> "Findings written to temp/semantic_findings_YYYY-MM-DD.md (substitute actual date). Switch to the pro model. At the start of Phase 2, read that file before classifying."
 
 Do not proceed further.
 
@@ -70,6 +95,8 @@ Do not proceed further.
 ## Phase 2 — Analyse & plan   ⟦ PRO MODEL ⟧
 
 ### Task 2.1 — Classify each finding
+- First action: read `temp/semantic_findings_YYYY-MM-DD.md` (check temp/ for the file matching today's date, or the most recent if date differs). This file contains all findings from Phase 1. Do not re-open the semantic report files or the corrected_pali source files — everything needed is in this temp file.
+
 For each finding from Phase 1, decide: **true positive** (real Whisper error) or **false positive** (not an error).
 
 For **false positives**, classify reason:
@@ -159,48 +186,93 @@ Do not implement anything. Wait for user approval.
 - If all correct: delete `.bak` files from `temp/`
 → verify: all changes match approved fixes exactly; no extra or missed replacements
 
+---
+
+## ⛔⛔⛔ CHECKPOINT: MANDATORY Task 3.2b before proceeding ⛔⛔⛔
+
+### Task 3.2b — ⛔ CRITICAL CHECKPOINT: Append deferred items to manual_corrections.md
+
+**MANDATORY. DO NOT SKIP.** This must happen BEFORE Task 3.3 prompt improvements or any cleanup.
+
+- Read the deferred_dhamma list from Phase 2 classification
+- For EACH deferred item, append to `kamma/threads/ongoing_semantic_evaluation_loop/manual_corrections.md`:
+  1. Create a new section with date header: `## Session X: YYYY-MM-DD`
+  2. For each deferred term:
+     - File reference (e.g., `### Ardmk 22-03-23`)
+     - **Exact passage** from the transcript (full paragraph context)
+     - **Evaluator's suggestion** (if any)
+     - **Reason for deferral** (deferred_dhamma vs deferred_skip)
+- If deferred list is EMPTY: explicitly state "No deferred Dhamma-Vinaya terms this session"
+→ verify: manual_corrections.md file has been updated with all deferred items from this session
+
+---
+
 ### Task 3.3 — Apply approved prompt improvements
 - If Phase 2 proposed prompt changes: edit `get_semantic_eval_instruction()` in `tools/pali.py` exactly as approved
 - Run: `uv run ruff check --fix tools/pali.py && uv run ruff format tools/pali.py`
 → verify: ruff passes without errors
 
-### Task 3.4 — Clean up and log session
-- Delete `temp/apply_semantic_fixes.py`
-- Append to `kamma/threads/ongoing_semantic_evaluation_loop/handoff.md`:
-  - `last_run: YYYY-MM-DDTHH:MM:SSZ` (ISO 8601 timestamp — used by Phase 1 next session)
-  - Date (human-readable, e.g., "2026-04-28")
-  - Evaluation mode used (direct or batch)
-  - Files processed (list or count)
-  - Fixes applied (count + summary)
-  - Prompt improvements made (if any)
-  - Findings skipped (count + why)
-  - Any issues encountered
-- Ensure `plan.md` is unmodified (no session-specific notes or checkmarks). `plan.md` is a reusable template for the next session.
-→ verify: `temp/apply_semantic_fixes.py` deleted; `handoff.md` updated with timestamp; `plan.md` unchanged
+### Task X.Verify — Print test command
+- Print the command for the user to verify the changes:
+  ```
+  uv run python scripts/batch.py --stage semantic
+  ```
 
----
-
-## Phase 3b — Collaborative deferred review   ⟦ FAST MODEL ⟧
+## Phase 3.3b — Collaborative deferred review   ⟦ FAST MODEL ⟧
 
 This phase runs immediately after Phase 3 if there are uncertain true positives (garbled terms where no confident replacement was found).
 
-### Task 3b.1 — Load deferred list from Phase 2
+### Load deferred list from Phase 2
 - Read the list of `deferred_dhamma` items already classified by the pro model in Phase 2
 - Do NOT re-classify or re-evaluate relevance — the pro model has already done this
 - If the list is empty: print "No deferred Dhamma-Vinaya terms to review." and skip to Task 3.4
 
-### Task 3b.2 — Present each deferred term for user review
-For each remaining deferred term, show:
+### Append those items to manual_corrections.md with the necessary references and context
+For each remaining deferred term, save:
 1. The **exact passage** (full paragraph, not just the word)
 2. The **evaluator's suggestion** (if any)
-3. Ask: "What should this be? (or type 'skip' to leave unchanged)"
+3. To kamma/threads/ongoing_semantic_evaluation_loop/manual_corrections.md in a new section with the date and file reference (e.g., "ARDMK 26-04-01")
+- This file is meant for user to apply those corrections himself.
 
-Go one by one. Do not batch them. Wait for user response before showing the next.
+### Task 3.4 — ⛔⛔⛔ CRITICAL HANDOFF MAINTENANCE (DO NOT SKIP) ⛔⛔⛔
 
-### Task 3b.3 — Apply user-confirmed corrections
-- For each term the user confirmed: add to fix list and apply using the same `re.sub` pattern
-- Create a separate `temp/apply_semantic_fixes_deferred.py` script for these fixes
-- Delete script and backups after verification
-- Update `handoff.md` to include Phase 3b fixes in the session log
+**MANDATORY HANDOFF HYGIENE:**
+- **ONLY 2 SESSIONS IN handoff.md AT ALL TIMES.** No exceptions.
+- **EVERY SESSION:** Archive the oldest of the current 2 sessions to `archive/handoff_archive.md` BEFORE logging the new session
+- Step-by-step:
+  1. Count the sessions currently in `handoff.md` (read the file to see `### Session N:` headers)
+  2. If 3+ sessions exist: move the OLDEST session block (including all its details) to `archive/handoff_archive.md`
+  3. Delete "Errors, issues, and repeated mistakes" entries for the archived session
+  4. Result: `handoff.md` now contains exactly Sessions [N-1, N]; archive contains all older sessions
+- **THIS IS NOT OPTIONAL.** Do not log new session until old sessions are archived.
 
-→ verify: all user-confirmed fixes applied; no context_only terms were presented to the user
+**Session cleanup:**
+- Delete `temp/apply_semantic_fixes.py`
+- Delete `temp/semantic_findings_YYYY-MM-DD.md` (the findings cache written in Task 1.3)
+- Update `ledger.json` with the current session state and remaining pending files
+- Append NEW session entry to `kamma/threads/ongoing_semantic_evaluation_loop/handoff.md`:
+  - `### Session X: YYYY-MM-DD` header
+  - `last_run: YYYY-MM-DDTHH:MM:SSZ` (ISO 8601 timestamp — used by Phase 1 next session)
+  - Date (human-readable)
+  - Evaluation mode used (direct or batch)
+  - Files processed (list or count)
+  - Review ledger for this session:
+    - `report: reports/semantic/interview/<filename>.md`
+    - `report_mtime: YYYY-MM-DDTHH:MM:SSZ`
+    - `outcome: clean | fixes_applied | deferred_only | false_positive_only | mixed`
+  - Fixes applied (count + summary)
+  - Prompt improvements made (if any)
+  - Findings skipped (count + why)
+  - Any issues encountered
+  - Update "Errors, issues, and repeated mistakes" section with findings from this session only
+- Ensure `plan.md` is unmodified (no session-specific notes or checkmarks). `plan.md` is a reusable template for the next session.
+
+→ verify: 
+  - `handoff.md` contains ONLY 2 sessions (N-1 and N)
+  - older sessions moved to `archive/handoff_archive.md`
+  - `ledger.json` updated
+  - `temp/` files deleted
+  - `plan.md` unchanged
+
+---
+

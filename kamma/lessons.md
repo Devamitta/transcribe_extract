@@ -8,3 +8,4 @@
 - 2026-04-28 [POSITIVE] Three-phase model-switching workflow (fast→pro→fast with hard stops) is a reusable pattern for multi-step tasks where different phases benefit from different model capabilities; consider documenting as a Kamma pattern.
 - 2026-04-28 [POSITIVE] Iterating the LLM prompt multiple times against real output (33→19→refined) is more effective than guessing optimal prompt upfront; test-driven prompt engineering works.
 - 2026-04-28 [BEHAVIOR] Align CLI flags and validation constants (e.g., word-count tolerance) early in the spec phase to avoid implementation drift across scripts and tools.
+- 2026-04-28 [POSITIVE] Use mtime-based skip logic (report >= source) instead of simple existence checks to allow incremental re-evaluation after source edits without deleting data.

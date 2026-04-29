@@ -12,7 +12,7 @@ from tools.polish import (
     POLISH_WORD_TOLERANCE,
     validate_word_count,
 )
-from tools.provider import generate_content, get_working_key
+from tools.provider import build_cacheable_contents, generate_content, get_working_key
 
 pr = _p.printer
 
@@ -20,7 +20,7 @@ pr = _p.printer
 def polish_text(text: str) -> str:
     """Polishes a single chunk of text."""
     return generate_content(
-        contents=text,
+        contents=build_cacheable_contents(text),
         system_instruction=SYSTEM_INSTRUCTION,
         temperature=0.1,
     )

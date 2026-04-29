@@ -121,9 +121,15 @@ def main():
                 if re.search(r"([^\s])\1{9,}", text):
                     skip_segment = True
 
-            # 1c. Compress excessive whitespace gaps
+            # 1c. Compress excessive whitespace gaps and strip CJK hallucinations (e.g. 如此)
             if not skip_segment:
                 text = re.sub(r"\s{2,}", " ", text).strip()
+                # Remove CJK characters (hallucinations like "如此") while preserving English/Pali
+                text = re.sub(
+                    r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\uFAFF\uFF66-\uFF9F]+",
+                    "",
+                    text,
+                )
                 if not text or "\x00" in text:
                     skip_segment = True
 
@@ -228,10 +234,10 @@ def main():
 
             # --- Syntactic Chunking Logic ---
             # Wait for both 60 seconds to pass AND a logical sentence termination
-            # OR force a flush after 120 seconds regardless of punctuation
+            # OR force a flush after 90 seconds regardless of punctuation
             if paragraph_start_time is not None:
                 is_over_time = end_time - paragraph_start_time >= 60.0
-                is_force_flush = end_time - paragraph_start_time >= 120.0
+                is_force_flush = end_time - paragraph_start_time >= 90.0
 
                 if (is_over_time and is_terminal) or is_force_flush:
                     timestamp_mins = paragraph_start_time / 60.0

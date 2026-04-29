@@ -95,6 +95,33 @@ def identify_anomaly(text: str) -> str | None:
     if "\x00" in clean_text:
         return "Suspicious Characters"
 
+    # Check for non-English characters (CJK, Arabic, Devanagari, etc.)
+    # Allow basic Latin, common punctuation, numeric characters, AND Pali (Latin Extended)
+    non_english_pattern = re.compile(
+        r"["
+        r"\u3040-\u309F"  # Hiragana
+        r"\u30A0-\u30FF"  # Katakana
+        r"\u4E00-\u9FFF"  # CJK Unified Ideographs
+        r"\u3400-\u4DBF"  # CJK Extension A
+        r"\u0600-\u06FF"  # Arabic
+        r"\u0900-\u097F"  # Devanagari
+        r"\u0980-\u09FF"  # Bengali
+        r"\u0A00-\u0A7F"  # Gurmukhi
+        r"\u0A80-\u0AFF"  # Gujarati
+        r"\u0B00-\u0B7F"  # Oriya
+        r"\u0B80-\u0BFF"  # Tamil
+        r"\u0C00-\u0C7F"  # Telugu
+        r"\u0C80-\u0CFF"  # Kannada
+        r"\u0D00-\u0D7F"  # Malayalam
+        r"\u0D80-\u0DFF"  # Sinhala
+        r"\u0E00-\u0E7F"  # Thai
+        r"\u0E80-\u0EFF"  # Lao
+        r"\u0F00-\u0FFF"  # Tibetan
+        r"]"
+    )
+    if non_english_pattern.search(clean_text):
+        return "Non-English Characters Detected"
+
     return None
 
 

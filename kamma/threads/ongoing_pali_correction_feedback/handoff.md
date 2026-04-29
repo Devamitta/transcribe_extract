@@ -1,63 +1,65 @@
 # Handoff: Ongoing Pali Correction Feedback Loop
 
-## Latest Status: Iteration 4 (Sangha Batch) - COMPLETED
-The prompt hardening for the `sangha` batch is fully implemented in `scripts/correct_pali.py`.
-- **Implemented:** Multi-Word Bridging (e.g., `Viragadham Mikam` → `Virāgadhammikaṁ`).
-- **Implemented:** Contextual Consistency (Mandatory scan for phonetic variants within a chunk).
-- **Implemented:** New Deep Hallucination examples (`put up`, `the ergonomic big group`).
-- **Updated:** `tools/glossary.py` now includes `lokavidū`.
+## Migration Note (2026-04-29)
+The batch loop (`20260427_ongoing_batch_pali_feedback/`) has been closed. History from that loop has been migrated to `archive/handoff_archive.md`. Active work continues in this thread using direct script execution (`scripts/correct_pali.py`).
 
 ---
 
-## Cumulative System Improvements
+## Current Active State (2026-04-29)
 
-### 1. Architecture & Infrastructure (Implemented)
-- **Structural JSON Fix:** The LLM now only outputs a JSON array of `original:corrected` pairs. Python applies these via regex word boundaries, eliminating structural anomalies and infinite loops.
-- **Robust Resume Logic:** JSON-based `.status` tracking prevents corruption and allows safe resumption of long processing tasks.
-- **Validation:** Strict verification that LLM output contains both 'original' and 'corrected' keys before application.
+### Architecture
+- **Prompt Location:** `tools/pali.py` → `get_pali_system_instruction(file_path)`
+- **Direct Script:** `scripts/correct_pali.py` (Gemini, real-time)
+- **Batch Script:** `scripts/batch.py` (OpenAI, async) — deprecated for this loop
+- **Evaluation:** `scripts/evaluate_pali.py` — **note: misses semantic meaning-flip errors**
 
-### 2. Hardened Prompt Rules (Implemented)
-- **Multi-Word Bridging (New):** Explicitly handles cases where Whisper inserts spaces into the middle of Pali words.
-- **Consistency Rule (New):** Mandates that once a correction is identified, all similar phonetic variants in the chunk must be corrected.
-- **Semantic Guardrails:** "Deep Hallucination" detection for complex phrases (e.g., "Norway for far" -> "Noble Eightfold Path").
-- **Capitalization Awareness:** Instructions to be suspicious of capitalized English names (e.g., "Sutter" -> "sutta") while ignoring non-glossary acronyms.
-- **Monastic Name Logic:** Specific rules for phonetic title correction and automatic expansion of shortened names (e.g., `Virāga` → `Virāgadhammika`).
-
-### 3. Glossary Expansion (`tools/glossary.py`)
-- **Saṅgha/Places:** Added `Wat Nong Pah Pong`, `Sasanarakkha`, `Luddhara`, `Amaravati`.
-- **Monastics:** Full Pāli names from Sasanarakkha integrated.
-- **Dhamma:** Added `lokavidū`, `Abhidhamma`, and semantic English-Pali pairs.
+### Folder-Aware Glossary
+- `scripts/correct_pali.py` uses folder-aware prompt: includes `MONASTICS` glossary only for 'sangha' folder files.
+- Interview files exclude monastic glossary to prevent over-correction of common Pali words (e.g., `pāmojja` → `Pamodadhammika`).
 
 ---
 
-## Critical Findings & Patterns (Lessons Learned)
-- **Creative Hallucinations:** Whisper "translates" complex terms into nonsense English (e.g., `Sunripe` for `Sasanarakkha`).
-- **Title Merging:** Monastic titles and names often merge into single phonetic garbles.
-- **Capitalization Bias:** Transcription software often capitalizes Pali words by mistake, which the prompt now successfully detects and fixes.
+## Key Lessons From Batch Loop (Must Not Forget)
+
+### Critical Findings
+1. **evaluate_pali.py is insufficient:** Automated script only catches character/word count changes. It **cannot** detect semantic "meaning flip" hallucinations (e.g., `vagina` → `paññā`, `winner` → `Vinaya`). **Manual grep sweeps are mandatory.**
+
+2. **Silent failures in manual patches:** If `temp/apply_fixes.py` dictionary is incomplete, patches report "0 anomalies" while data remains corrupted. Always verify with grep against the full Rule 10 list.
+
+3. **Structural corruption:** LLM can merge paragraphs or delete "noise" text, causing chunk count mismatches. Rule 13 (SURGICAL INTEGRITY) addresses this.
+
+4. **Diminishing returns:** The prompt has been hardened significantly. Further improvements will yield marginal returns. Monitor for regression, not expansion.
+
+### High-Impact Semantic Overrides (Rule 10)
+These patterns are **ALWAYS** hallucinations and must be corrected regardless of perceived English plausibility:
+- `vagina/vaginas` → `paññā` or `sampajañña`
+- `winner`, `linear` → `Vinaya`
+- `the singer/singers` → `the Sangha`
+- `Europa` → `arūpa`
+- `cookie/cookies/cook` → `kutī/kutis`
+- `epidemic` → `Abhidhamma`
+- `red cock noise` → `recognition`
+- `Russian canon` → `Theravada canon`
+- `five-year-old` → `five aggregates`
+- `wire tomorrow` → `vaya-dhamma`
+- `much money car` → `Majjhima Nikāya`
+- And 40+ more patterns documented in `tools/pali.py` Rule 10.
 
 ---
 
-## Final Verification Steps
-1. User should clear `.status` for the `sangha` batch: `rm -rf output/corrected_pali/sangha/.status/`.
-2. Run the updated script: `uv run python scripts/correct_pali.py sangha`.
-3. Verify that previously missed terms (e.g., `put up`, `Logan needed`, `Ergadamica`) are now correctly caught.
+## Operating Rules (Post-Batch)
+
+1. **Handoff-first:** Read this file before every session.
+2. **Manual grep sweep:** Run grep against the full Rule 10 override list before concluding any session.
+3. **Stop/review gates:** Switch model for analysis, get user approval before implementing changes.
+4. **Economy mandate:** Never re-run expensive LLM work for trivial fixes. Manually patch current data instead.
+5. **Diminishing returns:** If remaining anomalies are minor or unfixable without breaking other things, recommend concluding the loop.
+6. **Archive rule:** Keep only the 2 most recent sessions in handoff.md; older history goes to archive/handoff_archive.md.
 
 ---
 
-## Update: 2026-04-24 - Iteration 1 (Sangha Meeting Batch)
-The loop was restarted on a new batch of Sangha meeting transcripts (Part I & II).
-
-### Implemented Improvements
-- **Rule 10 (ENGLISH BUDDHIST TERMS):** Added to catch phonetic mistranslations of common English words that are not in the Pali glossary but are contextually important (e.g., "senior moms" -> "senior monks", "non" -> "nun").
-- **Rule 11 (EXTREME PHONETIC DISTORTIONS):** Added to specifically target heavily mangled Thai place names (e.g., "Waddenwood-Pupon" -> "Wat Nong Pah Pong").
-- **Expanded Semantic Hallucinations:** Added "share the down" -> "share the Dhamma" to Rule 7.
-
-### Errors, Issues, and Repeated Mistakes
-- **Redundant Processing (CRITICAL WASTE):** Deleting successful LLM output to re-run a "clean" batch is a violation of the economy mandate. During Iteration 1, work was successfully completed for one file, then deleted and re-run for the whole folder unnecessarily. **DO NOT delete successful output to re-verify; if it's correct, keep it.**
-- **Missed Corrections (Initial):** The prompt originally missed "Wat Nong Pah Pong" and "Dhamma" mishearings because they were too phonetically distant or involved English words rather than Pali.
-- **Regex Word Boundaries:** A hyphenated term like "Waddenwood-Pupon" was confirmed to be correctly handled by the `\b` word boundary regex in Python, provided the LLM returns the exact string.
-- **Verification Delay:** During verification, the corrected file appeared unchanged if checked before the script fully finalized its write operation. Always ensure the script has finished and saved before inspecting results.
-
-### Next Steps
-- Monitor the current batch for any new phonetic hallucinations of Bhante names or specific Sangha terms.
-- Iteration 1 is verified; the thread is ready for review or the next batch of audio.
+## Verification Command
+After any correction run:
+```bash
+grep -riE "vagina|winner|linear|epidemic" output/corrected_pali/
+```

@@ -7,7 +7,7 @@ import re
 import time
 from pathlib import Path
 
-from tools.provider import generate_content, get_working_key
+from tools.provider import build_cacheable_contents, generate_content, get_working_key
 
 SYSTEM_INSTRUCTION = """You are preparing YouTube upload metadata for a recorded Dhamma (Buddhist teaching) talk by a senior meditation teacher.
 
@@ -56,7 +56,7 @@ def extract_date_from_filename(filename: str) -> str:
 
 def generate_metadata(text: str) -> str:
     return generate_content(
-        contents=text,
+        contents=build_cacheable_contents(text),
         system_instruction=SYSTEM_INSTRUCTION,
     )
 

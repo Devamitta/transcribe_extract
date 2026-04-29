@@ -3,6 +3,14 @@
 ## Overview
 A recurring session thread for reviewing and improving the Dhamma extraction pipeline. The fast model collects evidence (comparing source transcripts vs extracted outputs), then hands off to the pro model for analysis and a concrete improvement proposal. Once the user approves the proposal, the fast model implements it. The user runs the extraction scripts themselves to test.
 
+## Extraction Goal (Updated 2026-04-28)
+The extracted output is for **public release**. The goal is:
+- Extract Dhamma-Vinaya teaching content only
+- De-identify personal stories (keep teaching value, remove names/places)
+- Remove all personally identifying details (monk names, monastery names, countries)
+- Keep useful illustrative stories in anonymized but concrete form
+- Never lose teaching in the service of privacy
+
 ## What This Thread Does NOT Do
 - Does not run extraction scripts
 - Does not delete or re-generate extracted files

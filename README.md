@@ -200,7 +200,7 @@ Evaluate corrected transcripts from a specific folder:
 uv run python scripts/evaluate_semantic.py interview
 ```
 
-This generates a timestamped report in `reports/semantic_anomalies_<timestamp>.md` listing findings with passages, issues, and suggestions.
+This writes per-file reports in `reports/semantic/<subfolder>/<filename>.md`, with the same passage/issue/suggestion format used by batch semantic evaluation.
 
 **Options:**
 - Specify a folder: `uv run python scripts/evaluate_semantic.py interview` (processes `output/corrected_pali/interview/`)
@@ -222,7 +222,7 @@ uv run python scripts/batch.py --stage semantic --folder interview --limit 1
 uv run python scripts/batch.py --stage semantic --no-wait
 ```
 
-Output: Per-file markdown reports in `reports/semantic/<filename>.md` listing all findings.
+Output: Per-file markdown reports in `reports/semantic/<subfolder>/<filename>.md` listing all findings.
 
 ### Review & Apply Corrections
 

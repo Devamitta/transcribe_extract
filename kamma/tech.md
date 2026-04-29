@@ -4,7 +4,7 @@
 - **Language:** Python 3.12
 - **Package Manager:** uv
 - **Transcription:** MLX Whisper (Apple Silicon local inference)
-- **Extraction:** Google Gemini API (real-time) or OpenAI Batch API (cost-efficient batch processing)
+- **Extraction:** Google Gemini API, DeepSeek API, or OpenAI Batch API (cost-efficient batch processing)
 - **Configuration:** python-dotenv
 
 ## Who This Is For

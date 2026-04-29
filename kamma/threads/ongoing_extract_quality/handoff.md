@@ -1,107 +1,96 @@
 # Extract Quality Improvement — Handoff
 
-## Context
-New thread created 2026-04-28 to fix the extraction pipeline. The core problem is that the model generates generic Dhamma textbook content instead of preserving the actual transcript.
+## How to Use This File
+Read this before every session. It records what has been attempted, what worked,
+what failed, and what patterns are known — so no session repeats prior mistakes.
 
-## Problem Evidence
-- `output/extracted/interview/Ardmk 22-04-04.md` contains generic Q&A like "What is the relationship between the five khandhas and dukkha?" with textbook answers — none of this was in the actual recording.
-- The actual recording (`output/corrected_pali/interview/Ardmk 22-04-04.md`, ~50KB) is a personal interview about the student's jhāna and satipaṭṭhāna practice.
-- Root cause: `EXTRACT_SYSTEM_INSTRUCTION` never told the model to use ONLY the transcript — the model treats the topic as permission to write from its own knowledge.
+All archived sessions are in this thread folder `archive/handoff_archive.md`. Only the 2 most recent sessions are kept in this file for quick reference.
 
-## Sessions
 
-### Session 1 — 2026-04-28 (fast→pro→fast model)
+### Session 8 — 2026-04-28 (fast→pro→fast model) — Headline Extraction Fix
 
-**Files evaluated:**
-- `Ardmk 22-03-09.md` (extracted)
-- `Ardmk 22-03-23.md` (extracted)
-
-**Problems identified:**
-1. Chunk overlap (500 words) causes duplicate sections in extracted output — same content appears twice under different headers
-2. Length ratio below 50% target: 38% for 22-03-09, 48% for 22-03-23
-3. "Scheduling and logistics" removal category too broad — drops meditation planning discussions (Dhamma content) that look like logistics
-
-**Changes applied to `tools/extract.py`:**
-1. Rewrote `EXTRACT_SYSTEM_INSTRUCTION`:
-   - "lightly edited version" → "near-verbatim transcript" (removes editorial discretion implication)
-   - Added LONG EXCHANGES paragraph (no compression of long dialogues)
-   - Narrowed "scheduling/logistics" removal to: travel, retreat booking, visa paperwork, unrelated admin only
-   - Added carve-out: practice planning discussions ALWAYS kept even if they mention times
-   - Added OVERLAP CONTEXT note (tells model to skip re-processing overlapping content)
-   - Strengthened LENGTH CHECK from warning to verification step ("go back and restore")
-2. Updated `chunk_text` defaults:
-   - overlap: 500 → 200 (mechanically reduces duplicate output; 200 words is enough sentence context)
-   - chunk_size: 4000 (kept unchanged to avoid compression pressure from larger chunks)
-
-**Test command printed** for user to verify.
-
-**Next action:** User runs extraction test, then opens a new session of this thread to evaluate the output.
-
----
-
-### Session 2 — 2026-04-28 (fast→pro→fast model)
-
-**Files evaluated (post-Session 1 changes):**
-- `Ardmk 22-03-09.md` (extracted) — 8,495 words vs 10,141 source (83.8%)
-- `Ardmk 22-03-23.md` (extracted) — 13,682 words vs 13,364 source (102.4%)
+**Files evaluated (post-Session 7 changes):**
+- `Ardmk 22-03-09.md` (extracted) — 5,074 words vs 10,141 source (50.0%)
+- `Ardmk 22-03-23.md` (extracted) — 11,544 words vs 13,364 source (86.4%)
 
 **Assessment:**
-- Session 1 changes succeeded: both files now far exceed 50% minimum, content is verbatim-faithful, zero hallucination detected
-- One residual issue: `Ardmk 22-03-23.md` exceeds source length (102.4%), and visible duplication found in 22-03-09 (same Q&A exchange repeated under two different topic headers)
-- Root cause: OVERLAP CONTEXT instruction relies on "mid-thought/mid-sentence" detection, which fails when overlap begins at a sentence boundary
+- Session 7 improvement to 22-03-23 holds (71.6% → 86.4%) ✓
+- Session 7 regression to 22-03-09 identified: 78.3% → 50.0% (significant content loss) ⚠
+- Root cause: After Session 7 flexible-tag change, model creates 38 thin sections (~134 words avg) instead of full exchanges — **"headline extraction" problem**
+- 22-03-09 has dense teaching topics that shift frequently; model treats each topic as a "headline" and moves to next tag
+- 22-03-23 has long rambling discussions; model preserves them verbatim (no headline effect)
 
 **Problems identified:**
-1. Chunk overlap (200 words from Session 1) still causes mild duplication — model includes overlapping content when it begins at a clean sentence boundary
-2. Length ratio >100% in one file indicates content is being output twice
+1. Over-fragmentation with thin sections: 38 tagged sections in 22-03-09 (should be 10-20)
+2. Incomplete extraction: each section has only 1-2 sentences instead of full dialogue
+3. Secondary: REMOVE category leakage in 22-03-23 (monastery admin/publication work being kept)
 
 **Changes applied to `tools/extract.py`:**
-1. Rewrote `OVERLAP CONTEXT` section:
-   - Removed dependency on structural signal ("mid-thought/mid-sentence")
-   - Replaced with explicit instruction: assume opening content is overlap; skip forward until new topic begins
-   - Added guideline: "When uncertain whether opening content is overlap or new, skip it — duplication is worse than a missed sentence"
-2. Updated `chunk_text` defaults:
-   - overlap: 200 → 50 (reduces duplication window while preserving sentence-boundary safety)
-   - chunk_size: 4000 (unchanged)
+1. Added GROUND RULES line: "Do not skip or summarize teaching exchanges that pass the KEEP criteria. Include the complete exchange, not just the opening statement or key sentence. The elaboration IS the teaching."
+2. Expanded WORKING METHOD step 3: "Keep the remaining teaching content — including follow-up questions, elaborations, and the speaker's full explanation"
+3. Expanded LONG EXCHANGES section:
+   - Added: "When a topic has multiple Q&A turns (Q→A→Q→A), include all turns — do not stop after the first exchange and move on to the next topic."
+   - Added: "The elaboration, follow-up questions, and further explanation in a teaching dialogue are part of the teaching, not optional context. Include them."
+4. Expanded TAG GRANULARITY:
+   - Added: "Each tagged section should contain the complete teaching exchange on that topic — not just an opening statement. A section with only 1-2 sentences usually indicates incomplete extraction; go back and include the full dialogue on that topic."
+   - Added: "Do not extract the headline of a teaching point and skip the explanation. The explanation is the point."
+5. Expanded LENGTH CHECK:
+   - Added: "If you have produced more than 25 tagged sections with fewer than 150 words each on average, you are extracting headlines rather than exchanges. Return to the source and restore the full teaching dialogue under each tag."
+6. Expanded REMOVE category: explicit examples for "Scheduling and rotation of Dhamma talks" and "Production work on monastery publications"
 
-**Test command to verify fix:**
-```
-rm output/extracted/interview/Ardmk\ 22-03-23.md
-uv run python scripts/extract_dhamma.py output/corrected_pali/interview/Ardmk\ 22-03-23.md
-```
+**chunk_text defaults:** unchanged (chunk_size=4000, overlap=50)
 
-**Expected outcome:** New extracted file should be ≤100% of source length with no visible duplicate sections.
+**Test command printed** for user to verify fix on 22-03-09.
 
-**Next action:** User runs extraction test, then opens a new session to evaluate.
-
----
-
-### Session 3 — 2026-04-28 (fast→pro→fast model)
-
-**Files evaluated (post-Session 2 changes):**
-- `Ardmk 22-03-09.md` (extracted) — 6,505 words vs 10,141 source (64.1%)
-- `Ardmk 22-03-23.md` (extracted) — 12,481 words vs 13,364 source (93.4%)
-
-**Assessment:**
-- Session 2 duplication fix successful: 22-03-23 ratio improved from 102.4% → 93.4% ✓
-- Content quality good: no hallucination detected, all traced phrases verified against source
-- One issue identified: 22-03-09 dropped from 8,495 → 6,505 words (83.8% → 64.1%), losing ~2,000 words
-
-**Root cause diagnosed:**
-The Session 2 OVERLAP CONTEXT rewrite was too aggressive for overlap=50. The instruction "scan forward until you reach a new topic" + "skip when uncertain" was appropriate for 200-word overlap but causes over-skipping with 50-word overlap. The model is treating 200-500 words at chunk starts as potential overlap when only ~50 words actually overlap.
-
-**Changes applied to `tools/extract.py`:**
-Rewrote OVERLAP CONTEXT section:
-- Specified the overlap is ~50 words (not unbounded)
-- Changed scan limit from "until new topic" to "first 50–100 words only"
-- Reversed bias from "skip when uncertain" to "include when uncertain"
-- Rationale: With small overlap, recovering legitimate content is more important than eliminating minimal duplication
-
-**Test command printed** for user to verify fix.
-
-**Next action:** User runs extraction test on 22-03-09, then opens a new session to evaluate.
+**Next action:** User runs extraction test on 22-03-09, then opens a new session to evaluate whether content ratio improves toward 70%+ target and whether section count reduces to 10-20 range.
 
 ---
 
 ## Errors & Issues Encountered
 - Session 2: Residual chunk overlap duplication (200-word overlap with weak detection logic caused 102.4% ratio in one file) — fixed by reducing overlap to 50 words and rewriting OVERLAP CONTEXT instruction
 - Session 3: Over-aggressive OVERLAP CONTEXT (calibrated for 200-word overlap) caused unnecessary content loss in 22-03-09 (dropped 2,000 words) — fixed by recalibrating instruction to 50-word overlap size and reversing uncertainty bias
+- Session 7: Fixed tag list constraint that was blocking model from creating appropriate tags for interview topics
+- Session 8: Flexible tagging (Session 7) introduced headline extraction problem — model creates 38 thin sections instead of 10-20 full exchanges, causing 22-03-09 regression from 78.3% to 50.0% ratio. Fixed by adding explicit instructions to preserve complete teaching dialogues and audit for over-fragmentation in LENGTH CHECK.
+- Session 9 (2026-04-28) (fast→pro→fast model): De-identification failures detected in 22-03-09 and 22-03-23
+
+---
+
+### Session 9 — 2026-04-28 (fast→pro→fast model) — De-identification Enforcement
+
+**Files evaluated:**
+- `Ardmk 22-03-09.md` (post-Session 8) — 9,993 words vs 10,141 source (98.5%)
+- `Ardmk 22-03-23.md` (post-Session 8) — 8,491 words vs 13,364 source (63.5%)
+
+**Assessment:**
+- Session 8 fix for 22-03-09 successful: 50.0% → 98.5% — headline-extraction problem resolved ✓
+- Session 8 ratio drop in 22-03-23 (86.4% → 63.5%) is NOT a regression but correct filtering of monastery logistics content (Dhamma talk scheduling, publication work) per Session 8's REMOVE additions — stays above 50% minimum ✓
+- However, **critical de-identification failures detected**:
+  1. Monk names leaked: "Bhante Aggacitta" appears in [meditation-tools-exploration]
+  2. Monastery names leaked: "SBS", "SPS" appear throughout [investigation-practice], [upasamanussati], [sense-restraint]
+  3. Country names leaked: "Sri Lanka", "Malaysia" appear in [investigation-practice], [upasamanussati], [sense-restraint], [saṅghādisesa-procedure]
+  4. Layperson name leaked: "Koka" appears in [teacher-relationship]
+
+**Root cause diagnosed:**
+De-identification is applied as a content-selection filter during KEEP/REMOVE decisions, but the model reverts to near-verbatim copying once a sentence passes KEEP test. Sentences like "I came from SBS to practice..." are correctly identified as keepable teaching content, then copied verbatim without removing "SBS" identifier. The DE-IDENTIFICATION RULE positioning in the prompt comes too late.
+
+**Changes applied to `tools/extract.py`:**
+1. Modified GROUND RULES (line 11): Reinforced that de-identification applies "even when the sentence is otherwise kept verbatim for teaching content"
+2. Added FINAL DE-IDENTIFICATION CHECK section at prompt's end (lines 140-148): Mandatory post-extraction scan for proper nouns (monk names, monastery names, cities, countries, layperson names) with specific replacement examples
+   - Rationale: Separates de-identification from extraction decision; makes it a verification step rather than content-selection step
+   - Examples show common leak patterns (sentences with [MONASTERY] or [MONK NAME] that appear as teaching content)
+
+**chunk_text defaults:** unchanged (chunk_size=4000, overlap=50)
+
+**Test command for user:**
+```
+rm output/extracted/interview/Ardmk\ 22-03-09.md
+uv run python scripts/extract_dhamma.py output/corrected_pali/interview/Ardmk\ 22-03-09.md
+```
+
+Verify in the extracted output that "Bhante Aggacitta", "SBS", "SPS", "Sri Lanka", "Malaysia", and "Koka" have been replaced with generic wording ("a teacher", "a monastery", "another place", etc.).
+
+**Next action:** User runs extraction test, then opens a new session to evaluate whether de-identification is now working correctly.
+
+---
+
+### Errors & Issues Encountered (Session 9 findings added above)
