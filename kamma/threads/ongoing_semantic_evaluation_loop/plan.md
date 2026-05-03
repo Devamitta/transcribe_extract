@@ -273,6 +273,3 @@ For each remaining deferred term, save:
   - `ledger.json` updated
   - `temp/` files deleted
   - `plan.md` unchanged
-
----
-

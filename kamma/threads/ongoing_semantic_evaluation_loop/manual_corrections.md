@@ -1,230 +1,140 @@
 # Manual Corrections & Deferred Dhamma Terms
 
-## ARDMK 26-01-10
-- "the cheetah is sauter, the cheetah is unoperative" → "citta is subtle, citta is ..."? (highly uncertain)
-- "sautra" → "samatha"? (uncertain; joyful state context)
+## Archived
+- Here we keep only last 2 sessions for quick reference. All older sessions are in `archive/manual_corrections_archive.md`.
 
-## ARDMK 26-04-01
-- "ati-sealers" → "ati-sīla" (confident, already applied)
-- "upale" → "Upāli" (confident, already applied)
-- "polyvascular system" — deferred_dhamma (structural/anatomical term, unclear)
-- "double-dog" — deferred_dhamma (talk length reference, unclear)
+---
 
-## Ardmk 22-04-04
-- "Sahu Sahu" → "Sādhu Sādhu" (confident, already applied)
+## Session 17: 2026-04-30
 
-## Ardmk 22-06-08
-- "Sajjana" → "sukha"? (uncertain)
-- "Chatur Madhu" → "chaturmāsa"? (4-month retreat; uncertain)
+### Ardmk 24-02-26
+- **Passage:** "Bored or unfulfilling or impermanent?"
+- **Reason:** deferred_dhamma (uncertain context)
 
-## Ardmk 22-07-06 MN118
-- "in the background in the office" → "in the background of the practice"? (uncertain)
-- "very unaligned he's got a meditation" — deferred_dhamma (unclear)
-- "duty button" → unclear (possibly "Buddha-dhamma" or "the nimitta"; uncertain)
+### Ardmk 24-04-24 open awareness
+- **Passage:** "he means ozcha."
+- **Reason:** deferred_dhamma (Pali garble)
+- **Passage:** "the mind jump between sentence"
+- **Reason:** deferred_dhamma (uncertain intent)
+- **Passage:** "this card we have found before."
+- **Reason:** deferred_dhamma (Whisper substitution)
 
-## Ardmk 22-07-06
-- "the the eye" → "the eye" (confident, duplicate word; already applied)
-- "Chakutu nomanity" → unclear (citta-consciousness term, uncertain)
+### Ardmk 24-04-06
+- **Passage:** "Solaita Niroda"
+- **Reason:** deferred_dhamma (Pali garble)
+- **Passage:** "a video of Nibbāna"
+- **Reason:** deferred_dhamma (Whisper substitution)
+- **Passage:** "Kanta Paññābhisamaya"
+- **Reason:** deferred_dhamma (Pali garble)
+- **Passage:** "done europe or making europe"
+- **Reason:** deferred_dhamma (extreme garble)
 
-## Ardmk 22-10-05
-- "golden ring is on" — deferred_dhamma (unclear context)
-- "polyplast" → "Pali class"? (uncertain)
-- "ketchup in the same putty" — highly garbled (uncertain)
-- "Put the palya side" → "Pali side"? (uncertain)
+### Ardmk 24-06-29
+- **Passage:** "anānupubbaṃ or desire like abandon his old clothes"
+- **Reason:** deferred_dhamma (complex garble)
+- **Passage:** "unconditioned in a certain way... in teams"
+- **Reason:** deferred_dhamma (Teams substitution in doctrinal context)
+- **Passage:** "stay in this best"
+- **Reason:** deferred_dhamma (uncertain intent)
 
-## Ardmk 22-10-19
-- "tomatok" → "Dhamma talk" or "chanting"? (uncertain)
-- "motor dummy car" — analogy garbled (uncertain)
+### Ardmk 24-01-07
+- **Passage:** "this is only kind of porridge"
+- **Reason:** deferred_dhamma (Whisper substitution)
 
-## ARDMK 25-11-01
-- "Gachita give a sutta" → suggestion: "Gacchita sutta" (sutta name, but multi-word garble makes regex replacement risky)
-- "Abutrenika" → suggestion: "Abhidhamma" (plausible but uncertain)
-- "Haya" → suggestion: "Puggala" (speculative)
-- "stopped like rocket or Raga and Dosa" → suggestion: "stream of rāga and dosa" (multi-word phrase)
-- "ajedaka" → suggestion: "a jāti (rebirth)" (plausible)
+### Ardmk 23-12-09 feedback
+- **Passage:** "see from midify"
+- **Reason:** deferred_dhamma (uncertain intent)
 
-## ARDMK 25-11-29
-- "as safe as pretexts in our mind" → pretexts garbled, unclear replacement
-- "dog bases" → possibly "dhamma places" or context_only (travel/logistics context)
+### Ardmk 24-01-27
+- **Passage:** "find the locks"
+- **Reason:** deferred_dhamma (Whisper substitution)
+- **Passage:** "self-apuncha"
+- **Reason:** deferred_dhamma (Pali garble)
+- **Passage:** "pārāyaṇa for suppose"
+- **Reason:** deferred_dhamma (Pali garble)
 
-## ARDMK 25-12-13-1
-- "never a nope feeling" → suggestion: "never a dull feeling" or "never a null feeling" (uncertain which)
-- "anchor for the damping" → "damping" unclear (concentration? dampening?)
+### Ardmk 24-01-13
+- **Passage:** "like the parameter"
+- **Reason:** deferred_dhamma (uncertain intent)
+- **Passage:** "some SAR they might identify"
+- **Reason:** deferred_dhamma (extreme garble)
 
-## ARDMK 25-12-13-2
-- "early-blasty feeling" → suggestion: "early-buddhist" (uncertain phonetic match)
-- "Anwar-Lyukekha" → suggestion: "upekkha" (equanimity; speculative)
+---
 
-## ARDMK 25-12-13-3
-- "a sand cone and it likes it" → garbled simile/metaphor (unclear intent)
+## Session 18: 2026-04-30
 
-## ARDMK 25-12-27
-- "looking at cold as a object" → "cold" unclear (color? sensation? cold as practice tool?)
+### Ardmk 23-09-23
+- **Passage:** "It's a poetic license yeah this china something probably comes only in gathas right"
+- **Reason:** deferred_dhamma (Pali garble 'china')
+- **Passage:** "from the sāmaññaphala this is clear well because there's a lot of power comes sure about right and wrong he knows the past liberation right"
+- **Reason:** deferred_dhamma (garble 'a lot of power comes')
+- **Passage:** "create a god I yeah okay say that because of this because of the form because of five aggregates commentary but he says that is probably referred to some gold or whatever it's a big body."
+- **Reason:** deferred_dhamma (garble 'create a god I')
+- **Passage:** "And now some people see i am i mean the conventional sense you can say yes but here is speaking about the argument because of this ship you understood i mean because of this form."
+- **Reason:** deferred_dhamma (garble 'because of this ship')
+- **Passage:** "the two kuzingas, but this only the Buddha speaks to them, right? Or is one of the two kuzingas beside Buddha?"
+- **Reason:** deferred_dhamma (Pali garble 'kuzingas')
 
-## ARDMK 26-02-21
-- "heatmissions left by Sunday" → suggestion: "commitments" or "hindrances" (context-dependent)
+### Ardmk 23-12-16
+- **Passage:** "by the Buddha so we must say that in the bundle would you have a definitions this seems to be like more early even yeah"
+- **Reason:** deferred_dhamma (garble 'bundle would you have a definitions')
 
-## Ardmk 22-03-26
-- "galvanization" → in spiritual context; unclear what Pali/English term intended
-- "conditioned Nibbana" → doctrinally suspect (Nibbāna is unconditioned by definition); may reflect teacher's phrasing
+### Ardmk 24-02-11
+- **Passage:** "because there is nothing that can cut the process and it's always just even if you are attached, even if you are willing or not willing to ape of muscular. Just to mitigate, you are not being so clear about it."
+- **Reason:** deferred_dhamma (garble 'ape of muscular')
 
-## Ardmk 22-04-04
-- "not in self" → could be valid teacher phrasing or should be "anattā"; context-dependent
-- "jesus somebody as a nature" → "jesus" garbled; suggestion: "consciousness" or a bhikkhu name (uncertain)
-- "Puji" → garbled term; possibly "pajānāti" or Buddhist practice term (uncertain)
-- "Because even this is just a Nietzsche" → "Nietzsche" → suggestion: "nibbāna" (plausible but creative)
-- "the spiritual-sumum body" → suggestion: "spiritual-sammā body" or "spiritual-sūmā body" (uncertain form)
-- "how to make an antipag" → "antipag" garbled; possibly "teaching" or meditation term (uncertain)
+### Ardmk 24-04-24
+- **Passage:** "moha I have a problem is that because it would mean moha is one of the roots don't see an issue to Canada"
+- **Reason:** deferred_dhamma (garble 'to Canada')
+- **Passage:** "a certain intention is has some motivation or some good to it okay so it is rooted in one of two three who doesn't mean like dormant"
+- **Reason:** deferred_dhamma (garble 'one of two three')
 
-## Ardmk 22-04-28
-- "the Absalom of the Mauditre web" → garbled; partial suggestions "Abhidhamma" or "Madhyamika view" (highly uncertain)
-- "with phosphorous suppression" → "phosphorous" → suggestion: "forceful" suppression (plausible but uncertain)
-- "like for nega holding the holding down the bull" → "nega" → suggestion: "niggaha" (restraint); multi-word complexity
-- "upekkhā would come from unity" → "unity" unclear in Dhamma context (unification? unified mind?)
-- "died. But then when you just see it" → "died" → suggestion: "decide" (phonetically plausible but uncertain)
+### Ardmk 24-06-01
+- **Passage:** "what did it do I got strong craving for the same if it is okay Wow"
+- **Reason:** deferred_dhamma (garble 'craving for the same')
+- **Passage:** "the production. Weekly, lower area, and then the sick here."
+- **Reason:** deferred_dhamma (garble 'production'/'sick here')
+- **Passage:** "this the same man has sata and so yeah it's also a sense of only put it"
+- **Reason:** deferred_dhamma (garble 'sense of only put it')
+- **Passage:** "that we see some sort of in the Bojangas and hotels."
+- **Reason:** deferred_dhamma (garble 'hotels')
+- **Passage:** "it could be just an it's just language what am I doing now I'm not doing the other putter"
+- **Reason:** deferred_dhamma (garble 'the other putter')
+- **Passage:** "those are some cool actions often said they always come together it's like two wings then at the jar it's like two wings of a bird"
+- **Reason:** deferred_dhamma (garble 'at the jar')
 
-## Ardmk 22-05-24
-- "room anusay" → suggestion: "rūpa anusaya" (underlying tendencies; uncertain about "room")
-- "Mogapurisa" → suggestion: "Moggallāna" or "mohapurisa" (context-dependent)
-- "I can be the ocean" → speaker identification error (Rūpa/consciousness?); uncertain
-- "the current are the forms" → "current/currents" in samsara metaphor; grammatically odd but possibly valid
-- "the other sounds called Untrius" → "Untrius" → suggestion: "Uttara" or Pali term (speculative)
-- "the birth curve" → "curve" → suggestion: "the birth" or "birth junction" (uncertain what "curve" means)
+### Ardmk 24-06-15
+- **Passage:** "I would say, again, it's probably 99% pride karma, right?"
+- **Reason:** deferred_dhamma (garble 'pride karma')
+- **Passage:** "these requests come often, that's why I was in the teams"
+- **Reason:** deferred_dhamma (Teams substitution)
+- **Passage:** "the dog comments"
+- **Reason:** deferred_dhamma (Dog substitution)
 
-## Ardmk25-11-01
-- "San Diego" (context: "for the purpose of San Diego") — possibly samādhi, sati, or samādhi-nimitta
-- "those skills that Oh wow" — mid-sentence garble in death/war narrative
-- "it's a no faster we have it" — unclear multi-word garble
-- "find it expensive" — in aggregates naming context
+### Ardmk 24-07-20
+- **Passage:** "may you get your angry tablet."
+- **Reason:** deferred_dhamma (garble 'angry tablet')
+- **Passage:** "the nature to car not our conditionality you just see the okay like we said with the skeleton right side you turn around this is still some of them you don't see."
+- **Reason:** deferred_dhamma (garble 'to car')
 
-## Ardmk25-11-14
-- "packs his dead in already" — multi-word garble
-- "last russian tomato" — garbled reference
+### Ardmk 24-10-23
+- **Passage:** "this is not anymore modern necessity this is something new city or so even when person is just nobody mentioned if I even if I like let go of thinking about fine something but I'm aware of this here"
+- **Reason:** deferred_dhamma (garble 'new city')
 
-## Ardmk25-11-29
-- "freeze it" — likely "free it" or "release it"
-- "the guys are the freedom" — garbled
-- "through kate" — possibly a name or donation term
-- "table locker" — likely garbled Pali realm/plane term
-- "hold of mind" — possibly "wholesome mind"
-
-## Ardmk25-12-13-1, 25-12-13-2, 25-12-13-3
-- Multiple items; see handoff.md for full list
-
-## Ardmk25-12-27
-- "movies who want to support you" — applied as "people"; alternatives: "movements"
-
-## Ardmk26-01-10
-- "the like you for something" — garbled
-- "it's a share of me" — possibly "shame"
-- "cheetah is sauter/unoperative" — possibly "citta is subtle"
-- "sautra" — possibly "samatha"
-
-## Ardmk26-02-21
-- "heatmissions left by Sunday" — possibly "hindrances" or "commitments"
-- "do the fitness" — possibly "do the sitting" or meditation reference
-
-## Ardmk26-04-01
-- "polyvascular system" — unclear
-- "double-dog" — possibly talk-length reference
-
-## Ardmk26-04-24
-- "anna" — possibly "tanha", "ñāṇa", or "anatta"
-- "supplement the aka aka aka passada sutta" — garbled sutta reference (possibly Pāsa Sutta or Assāda Sutta)
-
-## Ardmk22-03-20patimokkha
-- "not everybody understands mentoring" — possibly "Dhamma teachings" or valid mentorship reference
-
-## Ardmk22-03-23
-- "near the grave" — unclear
-- "in this lockdown" — possibly COVID reference (valid) or garbled term
-
-## Ardmk22-03-26
-- "galvanization" — garbled spiritual practice term
-- "conditioned Nibbana" — doctrinally sensitive (Nibbāna is unconditioned by definition)
-
-## Ardmk 22-04-20
-- "a little bit on what might depend this question on what on what mind what what support the mind another what" — severely garbled passage about what supports the mind; no confident replacement
-
-## Ardmk 22-22-04 vinaya-pandaka
-- "reparker" — possibly "result" or "vipāka"? (Context: "homosexuality as the reparker of strong infidelity")
-
-## Ardmk 23-01-07
-- "moment where lift is gone"
-- "birthing grounding"
-- "FMP plan"
-- "urine on your skin"
-
-## Ardmk 22-12-31
-- "Bitcoin lifestyle" — possibly "bhikkhu lifestyle"?
-- "90 locker"
-
-## Ardmk 22-11-15-2
-- "baliklav" — possibly "backlash"?
-- "system for motor damage"
-
-## Ardmk 22-07-06
-- "the father is the other here"
-- "the self comes from the eye" — possibly "from the I"?
-
-## Ardmk 22-12-10
-- "Mahajatra Arjika Devots" (Context: "That's Mahajatra Arjika Devots.")
-
-## Ardmk 22-11-05
-- "Don't cut the cloth" (Context: "You're a murderer, you're a killer, you're a murderer. Don't cut the cloth.")
-- "rip one as a peta class"
-- "money any palier"
-- "no red for pass"
-- "phanarchical"
-
-## Ardmk 22-10-29
-- "deliver liquid breathing" — possibly "directed breathing"?
-
-## Ardmk 22-11-26
-- "To become a vedanā" — possibly "To become a puthujjana"?
-
-## Ardmk 22-11-15-1
-- "Fahy" — possibly "phassa"?
-- "Rasa" — possibly "Vassa"?
-- "food on my father"
-- "what Sangha we have" — maybe "what resources"?
-
-## Ardmk 22-03-20patimokkha + dhammadesana
-- "Sadhu or Noah Hamniki" — Pali formula after "Sadhu" (salutation). Possibly "Namo Amitābhāya" (Mahayana, unlikely) or variant of "Namo Tassa"? Unclear.
-
-## Ardmk 22-03-23
-- "with this after mind" → garbled in meditation context; possibly "after-mind" or "subsequent mind-state"; unclear replacement
-- "how many input you put in the channel" → "channel" garbled in chanting/monastery context; possibly "chanting book", "schedule", or liturgical term
-- "All the dismind, beloved and pleasing will become otherwise" → standard Five Recollections (asubha) passage; "dismind" garbled; likely "All that is dear, beloved and pleasing will become otherwise" but confident replacement risky
-- "my moment to reflect about chur" → "chur" unknown Pali/Dhamma term; possibly "chanting", "practice", or "chōra"?
-
-## Ardmk 22-05-24
-- "It's just a family" → garbled in Cūḷa paṭiccasamuppāda discussion; context unclear
-- "what I the beautiful forms what may be wrong you" → severely garbled passage about rūpa (form) and sense objects; no confident replacement
-- "Paññā, Yetiswa, or paññāya, Disati?" → "Yetiswa" and "Disati" are garbled Pali terms; possibly corrupted verb forms of pañjānāti or related
-- "color bar" → in Abhidhamma eye-sensitivity context; garbled; possibly "color-form" or technical term in rūpa discussion
-- "nitchia with the chakai, I don't know" → "nitchia" and "chakai" garbled Pali; possibly "nirodha" + "cakkhu" or other compound
-
-## Ardmk 22-06-08
-- "Barok method is more Mahasi" / "Baok uses a lot this" → "Barok"/"Baok" appears as separate meditation tradition alongside Pa-Auk and Mahasi; garbled tradition name; uncertain which tradition intended
-- "the eggs. Akankaya sutta." → "the eggs" garbled prefix to sutta reference; possibly "Ākaṅkheyya Sutta" (famous sutta on wishes/determination)
-
-## Ardmk 22-06-15
-- "because kamadhan means action... atanham is like a place" → "kamadhan" and "atanham" garbled Pali; teacher explains "place of action"; possibly "kamma" + "kammaṭṭhāna" garbled as "kamadhan" and "atanham"
-
-## Ardmk 22-07-06 MN118
-- "if you do sub-kirkus, it seems like it was before" → "sub-kirkus" unclear in meditation practice context; possibly "subsidiary practices", "sub-kasiṇa", or specific technique term
-- "J.P.S.I.K.A. mental pain, physical therapy" → garbled acronym/initialism; possibly abbreviation for jhāna factors or meditation sequence; unknown
-- "So, the Michinopasi, Virāgadhammika. Just fading away of Virāgadhammika." (appears twice in file) → "Michinopasi" garbled Pali contemplation term in fading-away sequence; possibly "aniccānupassī", "nibbidānupassī", or related contemplation marker; uncertain
-
-## Ardmk 22-07-28
-- "that will be the census gene" → "census gene" garbled in sense-faculty (indriya) context; likely "sense object" (ārammana), "sense faculty" (indriya), or "sense door" (dvāra)
-
-## Ardmk 22-10-05
-- "one little ketchup in the same putty like to kind of kind of cerebrane and..." → severely garbled food/logistics discussion; deferred_skip (will be stripped in extraction, not core Dhamma)
-- "Put the palya side for you" → "palya" unknown term; possibly "pāli side" (textual discussion), "pali-recitation side", or logistics term; unclear
-
-## ARDMK 26-01-10 (additional new items)
-- "30-plus experience a little bit like that" — garbled in jhāna experience context; possibly refers to a numbered experience but unclear
-- "but just to the wall" — garbled perception passage; possibly "looking at the wall" or meditation object reference
-- "very broad, unsupportable" — possibly "immeasurable", "ungraspable", or "vast/unsupported"; describes a meditation quality
+### Ardmk 24-11-05
+- **Passage:** "because he did run away, stolen of the occupation, basically looking off the inside."
+- **Reason:** deferred_dhamma (garble 'stolen of the occupation')
+- **Passage:** "the whole personality of Kuru Kult."
+- **Reason:** deferred_dhamma (garble 'Kuru Kult')
+- **Passage:** "Paññā Regina."
+- **Reason:** deferred_dhamma (Pali garble 'Regina')
+- **Passage:** "it's a wonder, bring it back to Upekha."
+- **Reason:** deferred_dhamma (garble 'a wonder')
+- **Passage:** "it just may be an economist and a piece, something like this."
+- **Reason:** deferred_dhamma (garble 'economist and a piece')
+- **Passage:** "So those phrases that are more related to beings, they are you can bring them to the more bounces thing"
+- **Reason:** deferred_dhamma (garble 'more bounces thing')
+- **Passage:** "underlines the pleasant feelings of jhāna? No, no, I think the one that is the last underlines to realize pleasant feelings and lust underlines it's not related to the channels that would be the sense pleasures so it means underlying tendency of lust and pleasant feelings for jana they're not connected with each other."
+- **Reason:** deferred_dhamma (garble 'underlines')
+- **Passage:** "the underlying tendency of lust but in general to work on that underlying tendency of lust is still beneficial to karmipassana at some point"
+- **Reason:** deferred_dhamma (Pali garble 'karmipassana')

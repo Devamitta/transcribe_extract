@@ -1,5 +1,27 @@
 # Handoff: Ongoing Pali Correction Feedback Loop
 
+## How to Use This File
+Read this before every session. It records what has been attempted, what worked,
+what failed, and what patterns are known — so no session repeats prior mistakes.
+
+All archived sessions are in this thread folder `archive/handoff_archive.md`. Only the 2 most recent sessions are kept in this file for quick reference.
+
+---
+
+## ⚠️ EVERY SESSION END — Handoff Maintenance Checklist
+
+Before marking the session complete, run these steps:
+
+- Move session [N-2] from this file to `archive/handoff_archive.md` (keep only sessions [N-1, N])
+- Delete old session entries from "Errors, issues, and repeated mistakes" section
+- Verify this file contains ONLY the 2 most recent sessions + their errors
+- Verify `archive/handoff_archive.md` received the archived session
+- Confirm `plan.md` is unchanged (reusable template for next session)
+
+If you skip this, the next session's handoff will be 100+ lines too long. Don't skip.
+
+---
+
 ## Migration Note (2026-04-29)
 The batch loop (`20260427_ongoing_batch_pali_feedback/`) has been closed. History from that loop has been migrated to `archive/handoff_archive.md`. Active work continues in this thread using direct script execution (`scripts/correct_pali.py`).
 
@@ -63,3 +85,34 @@ After any correction run:
 ```bash
 grep -riE "vagina|winner|linear|epidemic" output/corrected_pali/
 ```
+
+---
+
+
+---
+
+## Session Log: 2026-04-30 (Iteration 1)
+
+### Status
+- **Phase 1 (Error Identification):** Completed. Identified 8 key error types including over-corrections and missed Rule 10 hallucinations.
+- **Phase 2 (Analysis & Refinement):** Completed. Approved rules implemented in `tools/pali.py`.
+
+### Key Changes in tools/pali.py
+1. **Rule 10 Refinement:** Added contextual exception for `cook` -> `kutī` (ignore if context is food/kitchen/eating).
+2. **Critical Overrides Added:**
+   - `some vagina` -> `sampajañña`
+   - `stonic` -> `tonic`
+   - `manoeuvres` -> `monastics`
+   - `Chaturmādha`, `Chaturmattu`, `Chathumattā` -> `catumadhura`
+
+### Observed Issues (Not Fixed)
+- `eigen` was left uncorrected due to high ambiguity (could be `Abhidhamma` or `Asubha`).
+
+### Next Steps for User
+- Re-run `scripts/correct_pali.py`.
+- Verify with `grep -riE "vagina|winner|linear|epidemic|cookie|cook|cookies" output/corrected_pali/`.
+- Run `scripts/evaluate_pali.py` for structural verification.
+
+### Errors, issues, and repeated mistakes
+
+- **Observed Issues:** `eigen` was left uncorrected due to high ambiguity (could be `Abhidhamma` or `Asubha`).

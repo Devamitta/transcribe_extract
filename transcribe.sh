@@ -21,6 +21,12 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+./transcribe-dhamma.sh "$@"
+if [ $? -ne 0 ]; then
+    echo "Dhamma transcription failed. Stopping batch."
+    exit 1
+fi
+
 echo ""
 echo "=========================================="
 echo "  Batch Transcription Pipeline Complete.  "
