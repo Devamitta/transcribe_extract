@@ -25,7 +25,7 @@ def evaluate_chunk(chunk: str) -> list[dict[str, str]]:
             system_instruction=instruction,
         )
         if not result:
-            pr.warning("Empty response from LLM.")
+            pr.amber("Empty response from LLM.")
             return []
 
         json_str = result.strip()
@@ -39,7 +39,7 @@ def evaluate_chunk(chunk: str) -> list[dict[str, str]]:
             return items
         return []
     except Exception as e:
-        pr.warning(f"Parse failed: {e}")
+        pr.amber(f"Parse failed: {e}")
         return []
 
 
@@ -107,7 +107,7 @@ def main():
             queue.append(file_path)
 
     if skipped:
-        pr.info(f"{skipped} already done, {len(queue)} to process")
+        pr.green(f"{skipped} already done, {len(queue)} to process")
 
     if not queue:
         pr.yes("All files already evaluated. Nothing to do.")

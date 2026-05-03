@@ -79,13 +79,13 @@ def main() -> None:
         if not file_path.is_absolute() and not file_path.exists():
             file_path = input_dir / args.file
         if not file_path.exists():
-            pr.error(f"File not found: {file_path}")
+            pr.red(f"File not found: {file_path}")
             return
         md_files = [file_path]
     elif args.folder:
         folder_path = input_dir / args.folder
         if not folder_path.exists():
-            pr.error(f"Folder not found: {folder_path}")
+            pr.red(f"Folder not found: {folder_path}")
             return
         md_files = sorted(folder_path.rglob("*.md"), key=lambda p: p.name.lower())
     else:
@@ -106,26 +106,26 @@ def main() -> None:
             queue.append((fp, out_path))
 
     if skipped:
-        pr.info(f"{skipped} already polished, {len(queue)} to process")
+        pr.green(f"{skipped} already polished, {len(queue)} to process")
 
     if args.limit and len(queue) > args.limit:
-        pr.info(f"Limiting to first {args.limit} files (--limit).")
+        pr.green(f"Limiting to first {args.limit} files (--limit).")
         queue = queue[: args.limit]
 
     if not queue:
-        pr.info("Nothing to process.")
+        pr.green("Nothing to process.")
         return
 
     if args.dry_run:
         pr.green(f"Dry run: {len(queue)} file(s) would be processed")
         for fp, out_path in queue:
-            pr.info(f"{fp} -> {out_path}")
+            pr.green(f"{fp} -> {out_path}")
         pr.summary("skipped", skipped)
         pr.summary("queued", len(queue))
         return
 
     if not get_working_key():
-        pr.error("No working API key found.")
+        pr.red("No working API key found.")
         return
 
     pr.green(f"Processing {len(queue)} file(s)")
@@ -151,7 +151,7 @@ def main() -> None:
 
         for i, chunk in enumerate(chunks):
             if len(chunks) > 1:
-                pr.info(f"    Chunk {i + 1}/{len(chunks)}...")
+                pr.green(f"    Chunk {i + 1}/{len(chunks)}...")
             try:
                 result = polish_text(chunk)
                 if result and result.strip() != "NO_POINTS":
@@ -159,7 +159,7 @@ def main() -> None:
                 elif result.strip() == "NO_POINTS":
                     all_polished.append("NO_POINTS")
             except Exception as e:
-                pr.warning(f"    Chunk {i + 1} failed: {e}")
+                pr.amber(f"    Chunk {i + 1} failed: {e}")
                 failed_chunk = True
                 break
 
@@ -181,14 +181,14 @@ def main() -> None:
                 pr.yes(f"  saved → {out_path}")
                 succeeded += 1
             else:
-                pr.warning(f"  [VAL FAIL] Word count out of bounds for {fp.name}")
+                pr.amber(f"  [VAL FAIL] Word count out of bounds for {fp.name}")
                 failed += 1
         else:
             pr.no(f"  nothing to save for '{fp.name}'")
             failed += 1
 
         if idx < len(queue) - 1:
-            pr.info("Waiting 5s...")
+            pr.green("Waiting 5s...")
             time.sleep(5)
 
     pr.summary("total", len(queue))

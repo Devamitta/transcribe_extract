@@ -37,7 +37,7 @@ def main() -> None:
     output_dir.mkdir(exist_ok=True)
 
     if not get_working_key():
-        pr.error("All API keys failed. Exiting.")
+        pr.red("All API keys failed. Exiting.")
         return
 
     if args.file:
@@ -45,13 +45,13 @@ def main() -> None:
         if not file_path.is_absolute() and not file_path.exists():
             file_path = input_dir / args.file
         if not file_path.exists():
-            pr.error(f"File not found: {file_path}")
+            pr.red(f"File not found: {file_path}")
             return
         md_files = [file_path]
     elif args.folder:
         folder_path = input_dir / args.folder
         if not folder_path.exists():
-            pr.error(f"Folder not found: {folder_path}")
+            pr.red(f"Folder not found: {folder_path}")
             return
         md_files = sorted(folder_path.rglob("*.md"), key=lambda p: p.name.lower())
     else:
@@ -77,14 +77,14 @@ def main() -> None:
             queue.append((fp, out_path))
 
     if skipped:
-        pr.info(f"{skipped} already extracted, {len(queue)} to process")
+        pr.green(f"{skipped} already extracted, {len(queue)} to process")
 
     if args.limit and len(queue) > args.limit:
-        pr.info(f"Limiting to first {args.limit} files (--limit).")
+        pr.green(f"Limiting to first {args.limit} files (--limit).")
         queue = queue[: args.limit]
 
     if not queue:
-        pr.info("Nothing to process.")
+        pr.green("Nothing to process.")
         return
 
     pr.green(f"Processing {len(queue)} file(s)")
@@ -96,13 +96,13 @@ def main() -> None:
         all_points: list[str] = []
 
         for i, chunk in enumerate(chunks):
-            pr.info(f"  Chunk {i + 1}/{len(chunks)}...")
+            pr.green(f"  Chunk {i + 1}/{len(chunks)}...")
             try:
                 result = extract_dhamma_points(chunk)
                 if "NO_POINTS" not in result.strip():
                     all_points.append(result.strip())
             except Exception as e:
-                pr.warning(f"  Chunk {i + 1} failed: {e}")
+                pr.amber(f"  Chunk {i + 1} failed: {e}")
 
         if all_points:
             out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -112,7 +112,7 @@ def main() -> None:
             pr.no(f"no Dhamma points found in '{fp.name}'")
 
         if idx < len(queue) - 1:
-            pr.info("Waiting 5s...")
+            pr.green("Waiting 5s...")
             time.sleep(5)
 
 

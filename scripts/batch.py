@@ -206,7 +206,7 @@ def _apply_pali_corrections(original: str, json_response: str) -> str:
             text = pattern.sub(str(item["corrected"]), text)
         return text
     except Exception as e:
-        pr.warning(f"Correction parse failed: {e} — keeping original")
+        pr.amber(f"Correction parse failed: {e} — keeping original")
         return original
 
 
@@ -217,7 +217,7 @@ def prepare(task: str, folder: str | None, limit: int | None) -> Path | None:
     if folder:
         path = config["input_dir"] / folder
         if not path.exists():
-            pr.error(f"Folder not found: {folder}")
+            pr.red(f"Folder not found: {folder}")
             sys.exit(1)
         md_files = sorted(list(path.rglob("*.md")))
     else:
@@ -264,14 +264,14 @@ def prepare(task: str, folder: str | None, limit: int | None) -> Path | None:
                 pr.green(f"[QUEUE] {file_path.name}")
                 queue.append(file_path)
 
-    pr.info(f"{skipped} already done, {len(queue)} to process")
+    pr.green(f"{skipped} already done, {len(queue)} to process")
 
     if limit and len(queue) > limit:
-        pr.info(f"Limiting to first {limit} files (--limit).")
+        pr.green(f"Limiting to first {limit} files (--limit).")
         queue = queue[:limit]
 
     if not queue:
-        pr.info("Nothing to prepare.")
+        pr.green("Nothing to prepare.")
         return None
 
     output_dir = Path("output/batch_input")
@@ -295,7 +295,7 @@ def prepare(task: str, folder: str | None, limit: int | None) -> Path | None:
             except ValueError:
                 rel_stem = file_path.stem
             if "__" in rel_stem:
-                pr.warning(f"path contains '__' delimiter: {file_path}")
+                pr.amber(f"path contains '__' delimiter: {file_path}")
             text = file_path.read_text(encoding="utf-8")
             chunks = config["chunk_fn"](text)
 
@@ -310,8 +310,8 @@ def prepare(task: str, folder: str | None, limit: int | None) -> Path | None:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
                 total_chunks += 1
 
-    pr.info(f"Written {total_chunks} requests to {jsonl_path}")
-    pr.info(f"Files: {len(queue)}  Model: {model}")
+    pr.green(f"Written {total_chunks} requests to {jsonl_path}")
+    pr.green(f"Files: {len(queue)}  Model: {model}")
     return jsonl_path
 
 
@@ -362,7 +362,7 @@ def poll_until_done(batch_id: str, task: str, poll_interval: int) -> bool:
                 return True
 
             if status in ("failed", "cancelled", "expired"):
-                pr.error(f"Batch {status}.")
+                pr.red(f"Batch {status}.")
                 return False
 
             pr.cyan(f"[{ts}] {status} — {counts['completed']}/{counts['total']}")
@@ -403,7 +403,7 @@ def retrieve(batch_id: str) -> None:
         custom_id = result.get("custom_id", "")
         parts = custom_id.split("__")
         if len(parts) != 3:
-            pr.warning(f"bad custom_id {custom_id!r}, skipping")
+            pr.amber(f"bad custom_id {custom_id!r}, skipping")
             n_skipped += 1
             continue
 
@@ -414,7 +414,7 @@ def retrieve(batch_id: str) -> None:
 
         resp = result.get("response", {})
         if resp.get("status_code", 200) != 200:
-            pr.warning(f"HTTP {resp.get('status_code')} for {custom_id}")
+            pr.amber(f"HTTP {resp.get('status_code')} for {custom_id}")
             n_skipped += 1
             continue
 
@@ -427,7 +427,7 @@ def retrieve(batch_id: str) -> None:
         file_chunks[rel_stem].append((int(chunk_idx_str), content, custom_id))
 
     if not job_task or job_task not in OUTPUT_DIRS:
-        pr.error(f"Unknown task '{job_task}'. Cannot determine output directory.")
+        pr.red(f"Unknown task '{job_task}'. Cannot determine output directory.")
         sys.exit(1)
 
     out_dir = OUTPUT_DIRS[job_task]
@@ -439,7 +439,7 @@ def retrieve(batch_id: str) -> None:
         expected = list(range(len(chunks)))
 
         if indices != expected:
-            pr.warning(
+            pr.amber(
                 f"chunk gap in {rel_stem}, skipping (got {indices}, expected {expected})"
             )
             n_skipped += 1
@@ -467,7 +467,7 @@ def retrieve(batch_id: str) -> None:
                     if isinstance(items, list):
                         findings.extend(items)
                 except Exception as e:
-                    pr.warning(f"Semantic parse failed for {cid}: {e}")
+                    pr.amber(f"Semantic parse failed for {cid}: {e}")
             text = f"# Semantic Evaluation: {rel_stem}\n\n"
             if findings:
                 for item in findings:
@@ -501,13 +501,13 @@ def show_status(task: str | None) -> None:
     jobs = json.loads(JOBS_PATH.read_text()) if JOBS_PATH.exists() else []
 
     if not jobs:
-        pr.info("No batches tracked yet.")
+        pr.green("No batches tracked yet.")
         return
 
     if task:
         matching = [j for j in jobs if j["task"] == task]
         if not matching:
-            pr.info(f"No jobs found for task: {task}")
+            pr.green(f"No jobs found for task: {task}")
             return
         batch_id = matching[-1]["batch_id"]
     else:
@@ -517,12 +517,12 @@ def show_status(task: str | None) -> None:
     try:
         info = get_batch_status(batch_id)
     except Exception as e:
-        pr.error(f"Error: {e}")
+        pr.red(f"Error: {e}")
         sys.exit(1)
 
     counts = info["request_counts"]
-    pr.info(f"Status: {info['status']}")
-    pr.info(
+    pr.green(f"Status: {info['status']}")
+    pr.green(
         f"  total={counts['total']}  completed={counts['completed']}  failed={counts['failed']}"
     )
 
@@ -535,10 +535,10 @@ def show_list() -> None:
     jobs = json.loads(JOBS_PATH.read_text()) if JOBS_PATH.exists() else []
 
     if not jobs:
-        pr.info("No batches tracked yet.")
+        pr.green("No batches tracked yet.")
         return
 
-    pr.info("Batch jobs:")
+    pr.green("Batch jobs:")
     for job in jobs:
         print(
             f"[{job['status']:<10}] {job['batch_id']}  {job['task']:<8} {job['submitted_at']}"
@@ -549,7 +549,7 @@ def run_stage(
     task: str, folder: str | None, limit: int | None, poll_interval: int, no_wait: bool
 ) -> None:
     """Run one stage: prepare → submit → (poll → retrieve)."""
-    pr.title(f"Stage: {task}")
+    pr.green_title(f"Stage: {task}")
 
     jsonl = prepare(task, folder, limit)
     if not jsonl:
@@ -620,7 +620,7 @@ def main() -> None:
         jobs = json.loads(JOBS_PATH.read_text()) if JOBS_PATH.exists() else []
 
         if not jobs:
-            pr.error("No batches tracked yet.")
+            pr.red("No batches tracked yet.")
             sys.exit(1)
 
         if args.retrieve == "latest":
