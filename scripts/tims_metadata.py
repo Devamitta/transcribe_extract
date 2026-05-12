@@ -2,12 +2,17 @@
 """Generates YouTube metadata suggestions (title and description) for Tims Dhamma talks using Gemini API."""
 
 import argparse
-import datetime
+import concurrent.futures
 import re
 import time
 from pathlib import Path
 
-from tools.provider import build_cacheable_contents, generate_content, get_working_key
+from tools.printer import printer as pr
+from tools.provider import (
+    build_cacheable_contents,
+    generate_with_timeout,
+    get_working_key,
+)
 
 SYSTEM_INSTRUCTION = """You are preparing YouTube upload metadata for a recorded Dhamma (Buddhist teaching) talk by a senior meditation teacher.
 
@@ -47,15 +52,8 @@ DESCRIPTION: [your suggested description here]
 """
 
 
-def extract_date_from_filename(filename: str) -> str:
-    """Extract YYYY-MM-DD date prefix from a filename, e.g. '2024-11-26 Talk.md' -> '2024-11-26'.
-    Returns empty string if no date prefix is found."""
-    match = re.match(r"(\d{4}-\d{2}-\d{2})", filename)
-    return match.group(1) if match else ""
-
-
 def generate_metadata(text: str) -> str:
-    return generate_content(
+    return generate_with_timeout(
         contents=build_cacheable_contents(text),
         system_instruction=SYSTEM_INSTRUCTION,
     )
@@ -93,7 +91,7 @@ def main() -> None:
     input_dir = Path(args.input_dir)
 
     if not get_working_key():
-        print("All API keys failed. Exiting.")
+        pr.no("All API keys failed. Exiting.")
         return
 
     if args.file:
@@ -101,40 +99,59 @@ def main() -> None:
         if not file_path.exists():
             file_path = input_dir / args.file
         if not file_path.exists():
-            print(f"File not found: {args.file}")
+            pr.no(f"File not found: {args.file}")
             return
         md_files = [file_path]
     else:
         if not input_dir.exists():
-            print(f"Input directory not found: {input_dir}")
+            pr.no(f"Input directory not found: {input_dir}")
             return
         md_files = sorted(list(input_dir.glob("*.md")))
         if not md_files:
-            print(f"No markdown files found in '{input_dir}'.")
+            pr.no(f"No markdown files found in '{input_dir}'.")
             return
-
-    # Determine output date from the LATEST file or today
-    date_str = extract_date_from_filename(md_files[-1].name)
-    if not date_str:
-        date_str = datetime.date.today().isoformat()
 
     if args.output_file:
         output_file = Path(args.output_file)
     else:
-        output_file = Path(f"output/tims_review_{date_str}.md")
+        output_file = Path("output/tims_review.md")
 
-    print(f"Found {len(md_files)} files to process.")
+    already_done: set[str] = set()
+    if output_file.exists():
+        existing = output_file.read_text(encoding="utf-8")
+        already_done = set(re.findall(r"## Source: (.+)", existing))
+        if already_done:
+            pr.green(
+                f"Resuming — {len(already_done)} files already processed, skipping."
+            )
 
-    results = []
-    total = len(md_files)
+    pending = [f for f in md_files if f.name not in already_done]
+    if not pending:
+        pr.yes("All files already processed. Nothing to do.")
+        return
 
-    for i, file_path in enumerate(md_files, 1):
-        print(f"Processing {i}/{total} '{file_path.name}'...")
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    if not output_file.exists():
+        output_file.write_text(
+            "# Tims Audio Metadata Review\n"
+            "Review and edit the suggested titles and descriptions below.\n"
+            "The export script will use this file as the source of truth.\n",
+            encoding="utf-8",
+        )
+
+    pr.green(f"Processing {len(pending)} files → '{output_file}'.")
+    total = len(pending)
+
+    for i, file_path in enumerate(pending, 1):
+        pr.green(f"Processing {i}/{total} '{file_path.name}'...")
         try:
             text = file_path.read_text(encoding="utf-8")
-            metadata = generate_metadata(text)
+            try:
+                metadata = generate_metadata(text)
+            except concurrent.futures.TimeoutError:
+                pr.amber(f"  Timeout on '{file_path.name}' — skipping.")
+                continue
 
-            # Parse metadata
             title = ""
             description = ""
             for line in metadata.strip().split("\n"):
@@ -143,36 +160,23 @@ def main() -> None:
                 elif line.upper().startswith("DESCRIPTION:"):
                     description = line[len("DESCRIPTION:") :].strip()
 
-            results.append(
-                {
-                    "original": file_path.name,
-                    "suggested_title": title,
-                    "suggested_description": description,
-                }
+            section = (
+                f"\n--- \n"
+                f"## Source: {file_path.name}\n"
+                f"**Suggested Title:** {title}\n"
+                f"**Suggested Description:** {description}\n"
             )
+            with output_file.open("a", encoding="utf-8") as fh:
+                fh.write(section)
 
         except Exception as e:
-            print(f"  Failed on '{file_path.name}': {e}")
+            pr.no(f"  Failed on '{file_path.name}': {e}")
 
-        if len(md_files) > 1:
-            print("  Waiting 5s between files...", flush=True)
+        if total > 1:
+            pr.green("  Waiting 5s between files...")
             time.sleep(5)
 
-    if results:
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-        lines = [
-            "# Tims Audio Metadata Review\n",
-            "Review and edit the suggested titles and descriptions below.\n",
-            "The export script will use this file as the source of truth.\n",
-        ]
-        for res in results:
-            lines.append("\n--- \n")
-            lines.append(f"## Source: {res['original']}\n")
-            lines.append(f"**Suggested Title:** {res['suggested_title']}\n")
-            lines.append(f"**Suggested Description:** {res['suggested_description']}\n")
-
-        output_file.write_text("".join(lines), encoding="utf-8")
-        print(f"Review file saved to '{output_file}'.")
+    pr.yes(f"Done. Review file: '{output_file}'.")
 
 
 if __name__ == "__main__":

@@ -1,9 +1,10 @@
 # Unified API provider abstraction that routes requests to either Gemini or OpenRouter based on configuration.
 
+import concurrent.futures
 import os
 import sys
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # type: ignore[import-untyped]
 
 load_dotenv()
 
@@ -157,3 +158,26 @@ else:
     print(f"[ERROR] Unknown provider: {PROVIDER}")
     print(PROVIDER_ERROR_MSG)
     exit(1)
+
+
+def generate_with_timeout(
+    contents: str,
+    system_instruction: str,
+    timeout: int = 120,
+    max_output_tokens: int = 32768,
+    temperature: float = 0.1,
+) -> str:
+    """Wraps generate_content with a hard timeout (default 120s).
+
+    Raises concurrent.futures.TimeoutError if the call exceeds the limit.
+    Callers should catch TimeoutError and skip or retry the item.
+    """
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(
+            generate_content,
+            contents=contents,
+            system_instruction=system_instruction,
+            max_output_tokens=max_output_tokens,
+            temperature=temperature,
+        )
+        return future.result(timeout=timeout)
