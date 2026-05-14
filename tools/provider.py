@@ -172,12 +172,16 @@ def generate_with_timeout(
     Raises concurrent.futures.TimeoutError if the call exceeds the limit.
     Callers should catch TimeoutError and skip or retry the item.
     """
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(
-            generate_content,
-            contents=contents,
-            system_instruction=system_instruction,
-            max_output_tokens=max_output_tokens,
-            temperature=temperature,
-        )
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(
+        generate_content,
+        contents=contents,
+        system_instruction=system_instruction,
+        max_output_tokens=max_output_tokens,
+        temperature=temperature,
+    )
+    try:
         return future.result(timeout=timeout)
+    finally:
+        # wait=False so a hung network thread doesn't block the caller after timeout
+        executor.shutdown(wait=False)

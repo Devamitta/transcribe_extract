@@ -9,7 +9,7 @@ from scripts import (
     evaluate_semantic,
     extract_dhamma,
     polish_extract,
-    tims_metadata,
+    yt_metadata,
 )
 from tools.provider import CACHE_PREFIX, build_cacheable_contents
 
@@ -76,9 +76,9 @@ class ProviderCachePromptTests(unittest.TestCase):
         text = "metadata body"
 
         with patch(
-            "scripts.tims_metadata.generate_content", return_value="ok"
+            "scripts.yt_metadata.generate_content", return_value="ok"
         ) as mock_call:
-            tims_metadata.generate_metadata(text)
+            yt_metadata.generate_metadata(text, "en")
 
         self.assertEqual(
             mock_call.call_args.kwargs["contents"], f"{CACHE_PREFIX}{text}"

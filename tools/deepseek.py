@@ -142,7 +142,18 @@ def generate_content(
     if not data.get("choices"):
         raise ValueError("Empty response from DeepSeek API")
 
-    return data["choices"][0]["message"]["content"]
+    message = data["choices"][0]["message"]
+    content = message.get("content") or ""
+    if not content:
+        finish_reason = data["choices"][0].get("finish_reason", "unknown")
+        reasoning = message.get("reasoning_content") or ""
+        print(
+            f"  [DeepSeek] null/empty content (finish_reason={finish_reason},"
+            f" reasoning_len={len(reasoning)})",
+            flush=True,
+        )
+        return reasoning  # fall back to reasoning trace if content is absent
+    return content
 
 
 SUPPORTED_MODELS = ["deepseek-v4-flash", "deepseek-v4-pro"]

@@ -17,6 +17,7 @@ VOCAB_PROMPTS = {
     "dhamma": f"Buddhist Dhamma class. Pali terms: {', '.join(DHAMMA)}",
     "vinaya": f"Buddhist Vinaya class. Pali terms: {', '.join(VINAYA)}",
     "interview": f"Buddhist meditation interview. Pali terms: {', '.join(DHAMMA)}",
+    "russian": "Буддийская лекция о Дхамме. Pali terms: Nibbāna, Satipaṭṭhāna, Dhamma, Saṅgha",
 }
 
 
@@ -40,7 +41,7 @@ def main():
     parser.add_argument(
         "--context",
         type=str,
-        choices=["sangha", "dhamma", "vinaya", "interview"],
+        choices=["sangha", "dhamma", "vinaya", "interview", "russian"],
         default="interview",
         help="Select the Pali vocabulary context.",
     )
@@ -49,8 +50,15 @@ def main():
         action="store_true",
         help="If active, only transcribe the first file found (for testing).",
     )
+    parser.add_argument(
+        "--chunk-seconds",
+        type=int,
+        default=60,
+        help="Paragraph flush interval in seconds (default: 60). Use 30 for finer YouTube chapter timestamps.",
+    )
     args = parser.parse_args()
 
+    chunk_seconds = float(args.chunk_seconds)
     audio_dir = Path(args.input_dir)
     output_dir = Path(args.output_dir)
 
@@ -78,7 +86,6 @@ def main():
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         if output_path.exists():
-            print(f"Skipping '{audio_path.name}' (already exists).", flush=True)
             continue
 
         print(
@@ -233,11 +240,11 @@ def main():
                 )
 
             # --- Syntactic Chunking Logic ---
-            # Wait for both 60 seconds to pass AND a logical sentence termination
-            # OR force a flush after 90 seconds regardless of punctuation
+            # Wait for both chunk_seconds seconds to pass AND a logical sentence termination
+            # OR force a flush after chunk_seconds * 1.5 seconds regardless of punctuation
             if paragraph_start_time is not None:
-                is_over_time = end_time - paragraph_start_time >= 60.0
-                is_force_flush = end_time - paragraph_start_time >= 90.0
+                is_over_time = end_time - paragraph_start_time >= chunk_seconds
+                is_force_flush = end_time - paragraph_start_time >= chunk_seconds * 1.5
 
                 if (is_over_time and is_terminal) or is_force_flush:
                     timestamp_mins = paragraph_start_time / 60.0

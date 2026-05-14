@@ -12,6 +12,7 @@ Usage examples:
     uv run python scripts/correct_pali.py interview/talk.md
 """
 
+import concurrent.futures
 import json
 import re
 import sys
@@ -22,14 +23,14 @@ from tools.pali import get_pali_system_instruction, chunk_text_no_overlap
 from tools.provider import (
     TEST_MODE,
     build_cacheable_contents,
-    generate_content,
+    generate_with_timeout,
     get_working_key,
 )
 
 
 def correct_pali_transcription(chunk: str, file_path: Path) -> str:
     system_instruction = get_pali_system_instruction(file_path)
-    result = generate_content(
+    result = generate_with_timeout(
         contents=build_cacheable_contents(chunk),
         system_instruction=system_instruction,
     )
@@ -203,6 +204,10 @@ def main():
                     temp_output.write_text(json.dumps(corrected))
                     success = True
                     break
+                except concurrent.futures.TimeoutError:
+                    if attempt == 2:
+                        print(f"  Timeout on chunk {i + 1} — giving up.", flush=True)
+                        failed.append(i + 1)
                 except Exception as e:
                     if attempt == 2:
                         print(f"  Failed: {e}", flush=True)

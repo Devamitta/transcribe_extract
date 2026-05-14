@@ -75,7 +75,9 @@ def get_working_key() -> bool:
 
 @retry(
     wait=wait_exponential(multiplier=2, min=4, max=60),
-    stop=stop_after_attempt(2),  # Reduced attempts since we will fallback to other models
+    stop=stop_after_attempt(
+        2
+    ),  # Reduced attempts since we will fallback to other models
     retry=retry_if_exception_type((requests.exceptions.RequestException, ValueError)),
 )
 def generate_content(
@@ -125,7 +127,18 @@ def generate_content(
     if not data.get("choices"):
         raise ValueError("Empty response from OpenRouter API")
 
-    return data["choices"][0]["message"]["content"]
+    message = data["choices"][0]["message"]
+    content = message.get("content") or ""
+    if not content:
+        finish_reason = data["choices"][0].get("finish_reason", "unknown")
+        reasoning = message.get("reasoning_content") or ""
+        print(
+            f"  [OpenRouter] null/empty content (finish_reason={finish_reason},"
+            f" reasoning_len={len(reasoning)})",
+            flush=True,
+        )
+        return reasoning  # fall back to reasoning trace if content is absent
+    return content
 
 
 def list_models(free_only: bool = True) -> list[str]:

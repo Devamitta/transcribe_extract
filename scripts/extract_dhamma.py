@@ -2,18 +2,24 @@
 """Extracts core Dhamma teachings from corrected transcripts into structured Q&A format with Pāli topic tags."""
 
 import argparse
+import concurrent.futures
 import time
 from pathlib import Path
 
 from tools import printer as _p
 from tools.extract import EXTRACT_SYSTEM_INSTRUCTION as SYSTEM_INSTRUCTION, chunk_text
-from tools.provider import build_cacheable_contents, generate_content, get_working_key
+from tools.provider import (
+    build_cacheable_contents,
+    generate_with_timeout,
+    get_working_key,
+)
+from tools.incremental import finalize_temp, get_temp_path, load_temp, save_temp
 
 pr = _p.printer
 
 
 def extract_dhamma_points(text: str) -> str:
-    return generate_content(
+    return generate_with_timeout(
         contents=build_cacheable_contents(text),
         system_instruction=SYSTEM_INSTRUCTION,
     )
@@ -93,23 +99,38 @@ def main() -> None:
         pr.green(f"Extracting '{fp.name}'...")
         text = fp.read_text(encoding="utf-8")
         chunks = chunk_text(text)
-        all_points: list[str] = []
+
+        temp_path = get_temp_path(out_path)
+        saved: list[str] = load_temp(temp_path)
+        start = len(saved)
+
+        if 0 < start < len(chunks):
+            pr.green(f"  Resuming from chunk {start + 1}/{len(chunks)}...")
 
         for i, chunk in enumerate(chunks):
+            if i < start:
+                continue
             pr.green(f"  Chunk {i + 1}/{len(chunks)}...")
             try:
                 result = extract_dhamma_points(chunk)
-                if "NO_POINTS" not in result.strip():
-                    all_points.append(result.strip())
+                saved.append("" if "NO_POINTS" in result.strip() else result.strip())
+            except concurrent.futures.TimeoutError:
+                pr.amber(f"  Chunk {i + 1} timed out — skipping.")
+                saved.append("")
             except Exception as e:
                 pr.amber(f"  Chunk {i + 1} failed: {e}")
+                saved.append("")
+            save_temp(temp_path, saved)
 
+        all_points = [p for p in saved if p]
         if all_points:
             out_path.parent.mkdir(parents=True, exist_ok=True)
             out_path.write_text("\n\n".join(all_points), encoding="utf-8")
             pr.yes(f"saved → {out_path}")
         else:
             pr.no(f"no Dhamma points found in '{fp.name}'")
+        
+        finalize_temp(temp_path)
 
         if idx < len(queue) - 1:
             pr.green("Waiting 5s...")

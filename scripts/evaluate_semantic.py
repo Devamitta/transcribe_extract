@@ -1,16 +1,19 @@
+#!/usr/bin/env python3
 """Evaluates post-Pali-correction transcripts for semantic hallucinations using an LLM."""
 
+import concurrent.futures
 import json
 import sys
 import time
 from pathlib import Path
 
 from tools import printer as _p
+from tools.incremental import finalize_temp, get_temp_path, load_temp, save_temp
 from tools.pali import chunk_text_no_overlap, get_semantic_eval_instruction
 from tools.provider import (
     TEST_MODE,
     build_cacheable_contents,
-    generate_content,
+    generate_with_timeout,
     get_working_key,
 )
 
@@ -20,7 +23,7 @@ pr = _p.printer
 def evaluate_chunk(chunk: str) -> list[dict[str, str]]:
     instruction = get_semantic_eval_instruction()
     try:
-        result = generate_content(
+        result = generate_with_timeout(
             contents=build_cacheable_contents(chunk),
             system_instruction=instruction,
         )
@@ -37,6 +40,9 @@ def evaluate_chunk(chunk: str) -> list[dict[str, str]]:
         items = json.loads(json_str)
         if isinstance(items, list):
             return items
+        return []
+    except concurrent.futures.TimeoutError:
+        pr.amber("Timeout on chunk — skipping.")
         return []
     except Exception as e:
         pr.amber(f"Parse failed: {e}")
@@ -120,15 +126,24 @@ def main():
         if TEST_MODE:
             chunks = chunks[:2]
 
-        file_findings = []
+        out_path, _, rel_stem = get_report_paths(file_path, input_dir)
+        temp_path = get_temp_path(out_path)
+        chunk_results: list[list[dict[str, str]]] = load_temp(temp_path)
+        start = len(chunk_results)
+
+        if 0 < start < len(chunks):
+            pr.green(f"  Resuming from chunk {start + 1}/{len(chunks)}...")
+
         for i, chunk in enumerate(chunks):
+            if i < start:
+                continue
             pr.green(f"  Chunk {i + 1}/{len(chunks)}...")
             results = evaluate_chunk(chunk)
-            file_findings.extend(results)
+            chunk_results.append(results)
+            save_temp(temp_path, chunk_results)
             time.sleep(2)
 
-        # Write per-file report matching batch.py semantic output.
-        out_path, _, rel_stem = get_report_paths(file_path, input_dir)
+        file_findings = [item for sublist in chunk_results for item in sublist]
 
         out_path.parent.mkdir(parents=True, exist_ok=True)
         report_text = f"# Semantic Evaluation: {rel_stem}\n\n"
@@ -146,6 +161,7 @@ def main():
             pr.yes(f"{file_path.name} — clean")
 
         out_path.write_text(report_text, encoding="utf-8")
+        finalize_temp(temp_path)
 
         time.sleep(5)
 

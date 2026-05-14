@@ -2,6 +2,7 @@
 """Polishes extracted Dhamma transcripts for readability."""
 
 import argparse
+import concurrent.futures
 import time
 from pathlib import Path
 
@@ -12,14 +13,19 @@ from tools.polish import (
     POLISH_WORD_TOLERANCE,
     validate_word_count,
 )
-from tools.provider import build_cacheable_contents, generate_content, get_working_key
+from tools.provider import (
+    build_cacheable_contents,
+    generate_with_timeout,
+    get_working_key,
+)
+from tools.incremental import finalize_temp, get_temp_path, load_temp, save_temp
 
 pr = _p.printer
 
 
 def polish_text(text: str) -> str:
     """Polishes a single chunk of text."""
-    return generate_content(
+    return generate_with_timeout(
         contents=build_cacheable_contents(text),
         system_instruction=SYSTEM_INSTRUCTION,
         temperature=0.1,
@@ -146,31 +152,36 @@ def main() -> None:
         total_words += len(text.split())
         chunks = build_chunks(text)
 
-        all_polished = []
-        failed_chunk = False
+        temp_path = get_temp_path(out_path)
+        saved: list[str] = load_temp(temp_path)
+        start = len(saved)
 
+        if 0 < start < len(chunks):
+            pr.green(f"  Resuming from chunk {start + 1}/{len(chunks)}...")
+
+        had_failure = False
         for i, chunk in enumerate(chunks):
+            if i < start:
+                continue
             if len(chunks) > 1:
                 pr.green(f"    Chunk {i + 1}/{len(chunks)}...")
             try:
                 result = polish_text(chunk)
-                if result and result.strip() != "NO_POINTS":
-                    all_polished.append(result.strip())
-                elif result.strip() == "NO_POINTS":
-                    all_polished.append("NO_POINTS")
+                saved.append(result.strip() if result else "")
+            except concurrent.futures.TimeoutError:
+                pr.amber(f"    Chunk {i + 1} timed out — saving partial.")
+                saved.append("")
+                had_failure = True
             except Exception as e:
                 pr.amber(f"    Chunk {i + 1} failed: {e}")
-                failed_chunk = True
-                break
+                saved.append("")
+                had_failure = True
+            save_temp(temp_path, saved)
 
             if i < len(chunks) - 1:
                 time.sleep(2)
 
-        if failed_chunk:
-            pr.no(f"  Failed polishing '{fp.name}' due to chunk failure")
-            failed += 1
-            continue
-
+        all_polished = [p for p in saved if p and p != "NO_POINTS"]
         if all_polished:
             polished_text = "\n\n".join(all_polished)
             if validate_word_count(
@@ -184,8 +195,13 @@ def main() -> None:
                 pr.amber(f"  [VAL FAIL] Word count out of bounds for {fp.name}")
                 failed += 1
         else:
-            pr.no(f"  nothing to save for '{fp.name}'")
+            if had_failure:
+                pr.no(f"  nothing to save for '{fp.name}' (all chunks failed)")
+            else:
+                pr.no(f"  nothing to save for '{fp.name}'")
             failed += 1
+
+        finalize_temp(temp_path)
 
         if idx < len(queue) - 1:
             pr.green("Waiting 5s...")
