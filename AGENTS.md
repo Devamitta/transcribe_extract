@@ -29,6 +29,8 @@ Dhamma Transcriber & Extractor - A local pipeline that converts MP3 Dhamma talks
 ## Code Quality
 - Align CLI flags and validation constants (e.g., word-count tolerance) early in the spec phase to avoid implementation drift across scripts and tools.
 - All changed Python files MUST pass `uv run ruff check --fix` and `uv run ruff format` before task completion.
+- All changed Python files MUST pass pyright before task completion. Pyright is a dev dependency — invoke as `uv run python -m pyright <file>`. Do NOT use bare `pyright` or `uv run pyright` (the venv wrapper script has a fragile shebang that breaks on project moves).
+- **Shared logic belongs in `tools/`:** Any pattern used across two or more scripts must be extracted into a `tools/` module and imported. Do not duplicate logic inline. During planning, check for existing shared patterns before writing new code.
 
 ## Temporary Files & Testing
 - Use the `temp/` directory for all temporary files, scratchpad scripts, or one-off test files.
@@ -41,3 +43,11 @@ Dhamma Transcriber & Extractor - A local pipeline that converts MP3 Dhamma talks
 
 ## UI & Output
 - Use `tools/printer.py` for all CLI script output (e.g., `pr.green()`, `pr.yes()`, `pr.no()`, `pr.warning()`). Avoid bare `print()` calls.
+
+## Documentation
+- When making a significant change to any pipeline (new flags, changed behaviour, new stages, renamed scripts), update the corresponding doc in `docs/`:
+  - English pipeline → `docs/pipeline-english.md`
+  - Russian pipeline → `docs/pipeline-russian.md`
+  - Quality control (transcription loop, semantic eval) → `docs/quality-control.md`
+  - OpenAI batch pipeline → `docs/batch-pipeline.md`
+- Include doc updates in the same commit as the code change.

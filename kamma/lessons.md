@@ -9,3 +9,5 @@
 - 2026-04-28 [POSITIVE] Iterating the LLM prompt multiple times against real output (33→19→refined) is more effective than guessing optimal prompt upfront; test-driven prompt engineering works.
 - 2026-04-28 [BEHAVIOR] Align CLI flags and validation constants (e.g., word-count tolerance) early in the spec phase to avoid implementation drift across scripts and tools.
 - 2026-04-28 [POSITIVE] Use mtime-based skip logic (report >= source) instead of simple existence checks to allow incremental re-evaluation after source edits without deleting data.
+- 2026-05-14 [BEHAVIOR] Move finalize_temp() cleanup outside of content-existence checks to ensure stale .tmp files are removed even if a script generates no valid content.
+- 2026-05-14 [WORKFLOW] Guard 'Resuming...' UI messages with '0 < start < total' to avoid misleading output on fresh runs or already-completed files.

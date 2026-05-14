@@ -28,4 +28,8 @@
 - **YouTube Export:** Renamed MP3s and `summary.md` in `output/audio_youtube/`
 - **Polished Files:** Readable prose version of extracted text in `output/polished/`
 - **Reports:** Evaluation and error reports in `/reports/`
-- **File Format:** Markdown (.md)at:** Markdown (.md)
+- **File Format:** Markdown (.md)
+
+## Core Patterns
+- **Incremental Processing:** Long-running LLM loops (`extract_dhamma.py`, `polish_extract.py`, `evaluate_semantic.py`) use `tools/incremental.py` to save per-chunk results to `.{filename}.tmp`. This enables resume capability if the process is interrupted.
+at:** Markdown (.md)
