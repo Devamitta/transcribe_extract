@@ -1,6 +1,8 @@
 # Dhamma Transcriber & Extractor
 
-A local pipeline that converts MP3 Dhamma talks into Markdown transcripts using MLX Whisper (Apple Silicon), then extracts core Dhamma points using Google Gemini API or OpenRouter.
+A local pipeline that converts MP3 Dhamma talks into Markdown transcripts using MLX Whisper, then extracts core Dhamma points using an LLM (OpenRouter, Gemini, OpenAI, or DeepSeek).
+
+> **Requires Apple Silicon (M1/M2/M3/M4).** MLX Whisper does not run on Intel Macs or Linux.
 
 ---
 
@@ -27,6 +29,19 @@ uv sync
 ```
 *Run `uv sync` whenever you pull new changes.*
 
+### 5. Initialize Directory Structure & Environment
+```bash
+./setup_folders.sh
+```
+Creates all required `audio/`, `video/`, `output/`, and `reports/` subdirectories, and generates a `.env` template in the project root. Run once after cloning.
+
+### 6. Fill in `.env`
+
+Open the generated `.env` and fill in the values you need:
+- `PROVIDER` + the matching API key (`OPENROUTER_API_KEY`, `GEMINI_API_KEY`, etc.)
+- `IMAGE_PROVIDER` for thumbnail generation
+- `GDRIVE_FOLDER_ID_RU` / `GDRIVE_FOLDER_ID_EN` only if using Google Drive uploads (see [docs/upload-gdrive.md](docs/upload-gdrive.md))
+
 ---
 
 ## 1. Transcription
@@ -35,13 +50,14 @@ Converts raw audio into Markdown format, using context-specific Pali glossaries 
 
 | Scope | Command | Input | Output |
 | :--- | :--- | :--- | :--- |
-| **All** | `./transcribe.sh` | `audio/sangha/` & `audio/interview/` | `output/transcribed/` |
-| **Saṅgha** | `./transcribe-sangha.sh` | `audio/sangha/` | `output/transcribed/sangha/` |
-| **Interview** | `./transcribe-interview.sh` | `audio/interview/` | `output/transcribed/interview/` |
+| **All** | `./transcribe.sh` | `audio/sangha/`, `audio/interview/`, `audio/dhamma/` | `output/transcribed/` |
+| **Saṅgha** | `./transcribe.sh --context sangha` | `audio/sangha/` | `output/transcribed/sangha/` |
+| **Interview** | `./transcribe.sh --context interview` | `audio/interview/` | `output/transcribed/interview/` |
+| **Dhamma** | `./transcribe.sh --context dhamma` | `audio/dhamma/` | `output/transcribed/dhamma/` |
 
 **Direct script:**
 ```bash
-uv run python scripts/transcribe.py --input-dir <dir> --output-dir <dir> --context <context>
+uv run python scripts/transcribe.py --input-dir <dir> --context <context>
 ```
 
 **Options:**
@@ -52,63 +68,39 @@ uv run python scripts/transcribe.py --input-dir <dir> --output-dir <dir> --conte
 
 ---
 
-## 2. Pali Spelling Correction
+## 2. Dhamma Extraction Pipeline
 
-Refines Pāli term spelling in transcripts using a consolidated glossary of ~155 terms.
-
-**Process all transcripts:**
-```bash
-uv run python scripts/correct_pali.py
-```
-
-**Process a specific file or folder:**
-```bash
-uv run python scripts/correct_pali.py <filename_or_path>
-```
-
-Output: `output/corrected_pali/`, mirroring the input directory structure.
+Pāli correction → extraction → polishing. See [docs/pipeline-dhamma-extraction.md](docs/pipeline-dhamma-extraction.md).
 
 ---
 
-## 3. Dhamma Extraction
+## 3. YouTube Pipeline
 
-Extracts core Dhamma points, metadata, and tags from corrected transcripts.
+Multi-stage pipeline for publishing Dhamma talks to YouTube and Google Drive (English and Russian). See [docs/pipeline-youtube.md](docs/pipeline-youtube.md).
 
+**First-time setup:** configure OAuth credentials before running uploads — see [docs/upload-youtube.md](docs/upload-youtube.md) and [docs/upload-gdrive.md](docs/upload-gdrive.md).
+
+**Quick start:**
 ```bash
-uv run python scripts/extract_dhamma.py <filename>
+./yt_run.sh --lang ru|en [folder] [--video-mode] [--dry-run]
 ```
-
-**Environment setup** — create a `.env` file:
-```bash
-GEMINI_API_KEY_1=your_key_here
-PROVIDER=google
-```
-
----
-
-## 4. Polishing
-
-Rewrites extraction output into clean, readable English prose. Fixes fragmented sentences and non-native patterns while preserving all teaching points.
-
-```bash
-uv run python scripts/polish_extract.py output/extracted/interview/Talk.md
-```
-
-**Options:**
-- `--dry-run`: see the prompt and input without calling the API
-- `--output-dir <path>`: override default `output/polished/` destination
 
 ---
 
 ## Project Structure
 
-- `audio/` — Raw audio files (`sangha/`, `interview/`, `russian/`, `english/`)
-- `output/transcribed/` — Raw Markdown transcripts
-- `output/corrected_pali/` — Pāli-corrected transcripts
-- `output/extracted/` — Extracted Dhamma points
-- `output/polished/` — Polished extraction output
-- `scripts/` — Core pipeline scripts
-- `kamma/` — Project management, thread plans, and quality loop tracking
+- `audio/` — Raw audio input (`sangha/`, `interview/`, `russian/`, `english/`)
+- `video/` — Raw video input (`russian/`, `english/`)
+- `output/` — All pipeline outputs (transcripts, extractions, upload assets)
+- `scripts/` — Runnable pipeline scripts
+- `tools/` — Shared modules imported by scripts
+- `tests/` — Automated tests
+- `docs/` — Pipeline documentation
+- `reports/` — Semantic evaluation reports
+- `reviews/` — YouTube metadata review files
+- `log/` — Script run logs
+- `temp/` — Scratch space (gitignored)
+- `kamma/` — Project management and thread plans
 
 ---
 
@@ -116,7 +108,9 @@ uv run python scripts/polish_extract.py output/extracted/interview/Talk.md
 
 | Pipeline | Doc |
 | :--- | :--- |
-| English YouTube pipeline | [docs/pipeline-english.md](docs/pipeline-english.md) |
-| Russian YouTube pipeline | [docs/pipeline-russian.md](docs/pipeline-russian.md) |
+| Dhamma extraction (Pāli correction, extraction, polishing) | [docs/pipeline-dhamma-extraction.md](docs/pipeline-dhamma-extraction.md) |
+| YouTube pipeline (English & Russian) | [docs/pipeline-youtube.md](docs/pipeline-youtube.md) |
+| YouTube upload OAuth setup | [docs/upload-youtube.md](docs/upload-youtube.md) |
+| Google Drive upload setup | [docs/upload-gdrive.md](docs/upload-gdrive.md) |
 | Quality control (transcription loop + semantic eval) | [docs/quality-control.md](docs/quality-control.md) |
 | OpenAI Batch pipeline | [docs/batch-pipeline.md](docs/batch-pipeline.md) |

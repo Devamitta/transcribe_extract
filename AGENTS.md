@@ -18,19 +18,37 @@ Dhamma Transcriber & Extractor - A local pipeline that converts MP3 Dhamma talks
 - Use Path for anything related to filepaths, not os.
 
 ## Project Structure
-- `/audio`: Raw `.mp3` files to process
-- `/output`: Raw Whisper transcripts (Markdown)
-- `/extracted`: Final extracted Dhamma points (Markdown with metadata)
+- `audio/english`, `audio/russian`, `audio/sangha`, `audio/interview` — raw MP3 inputs by pipeline branch
+- `video/english`, `video/russian` — raw video inputs for YouTube upload pipelines
+- `output/transcribed` — Whisper transcripts (Markdown)
+- `output/corrected_pali` — LLM Pali-corrected transcripts
+- `output/extracted` — Dhamma point extractions (Markdown + metadata)
+- `output/polished` — polished/post-processed extractions
+- `output/batch_input` — OpenAI batch API job inputs
+- `output/english_audio`, `output/english_thumbnails`, `output/english_youtube` — English upload assets
+- `output/russian_audio`, `output/russian_thumbnails`, `output/russian_youtube` — Russian upload assets
+- `reports/semantic` — semantic evaluation reports
+- `reviews/` — pipeline review outputs
+- `temp/` — scratch space (gitignored)
 
 ## Pipeline Commands
-1. Transcription: `caffeinate -i nice -n 10 uv run python transcribe.py`
-2. Extraction: `uv run python extract_dhamma.py`
+All scripts live in `scripts/`. Use the shell wrappers at the project root:
+
+- **Full Dhamma pipeline** (transcribe → Pali correct → extract → consolidate): `./run_pipeline.sh`
+- **Batch transcription only** (sangha + interview + dhamma): `./transcribe.sh`; single context: `./transcribe.sh --context sangha|interview|dhamma`
+- **YouTube pipeline** (English or Russian): `./yt_run.sh --lang ru|en [folder] [--video-mode]` (defaults: `russian`/`english`)
+
+Individual scripts (run from project root):
+- Transcription: `caffeinate -i nice -n 10 uv run python scripts/transcribe.py`
+- Extraction: `uv run python scripts/extract_dhamma.py`
+- Pali correction: `uv run python scripts/correct_pali.py`
+- Consolidation: `uv run python scripts/consolidate.py`
 
 ## Code Quality
 - Align CLI flags and validation constants (e.g., word-count tolerance) early in the spec phase to avoid implementation drift across scripts and tools.
 - All changed Python files MUST pass `uv run ruff check --fix` and `uv run ruff format` before task completion.
 - All changed Python files MUST pass pyright before task completion. Pyright is a dev dependency — invoke as `uv run python -m pyright <file>`. Do NOT use bare `pyright` or `uv run pyright` (the venv wrapper script has a fragile shebang that breaks on project moves).
-- **Shared logic belongs in `tools/`:** Any pattern used across two or more scripts must be extracted into a `tools/` module and imported. Do not duplicate logic inline. During planning, check for existing shared patterns before writing new code.
+- **`scripts/` vs `tools/`:** `scripts/` contains files run directly from the command line. `tools/` contains modules with functions called by scripts — purpose is to keep scripts focused and maintainable. Extraction into `tools/` does not require the code to be shared across multiple scripts.
 
 ## Temporary Files & Testing
 - Use the `temp/` directory for all temporary files, scratchpad scripts, or one-off test files.
@@ -46,8 +64,7 @@ Dhamma Transcriber & Extractor - A local pipeline that converts MP3 Dhamma talks
 
 ## Documentation
 - When making a significant change to any pipeline (new flags, changed behaviour, new stages, renamed scripts), update the corresponding doc in `docs/`:
-  - English pipeline → `docs/pipeline-english.md`
-  - Russian pipeline → `docs/pipeline-russian.md`
+  - YouTube pipeline (English & Russian) → `docs/pipeline-youtube.md`
   - Quality control (transcription loop, semantic eval) → `docs/quality-control.md`
   - OpenAI batch pipeline → `docs/batch-pipeline.md`
 - Include doc updates in the same commit as the code change.
