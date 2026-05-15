@@ -9,18 +9,60 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 echo ">>> Creating directory structure <<<"
 
-# Create audio directories
+# Audio input directories
+mkdir -p audio/english
+mkdir -p audio/russian
 mkdir -p audio/sangha
 mkdir -p audio/interview
 
-# Create output directories
+# Video input directories
+mkdir -p video/english
+mkdir -p video/russian
+
+# Output directories — transcription & correction
 mkdir -p output/transcribed
 mkdir -p output/corrected_pali
 mkdir -p output/extracted
+mkdir -p output/polished
 
-echo "Done. Folders created:"
-echo " - audio/sangha (Place raw Sangha MP3s here)"
-echo " - audio/interview (Place raw Interview MP3s here)"
-echo " - output/transcribed (Whisper output)"
-echo " - output/corrected_pali (LLM Pali correction output)"
-echo " - output/extracted (Final Dhamma extraction output)"
+# Output directories — batch pipeline
+mkdir -p output/batch_input
+
+# Output directories — YouTube/GDrive upload assets
+mkdir -p output/english_audio
+mkdir -p output/english_thumbnails
+mkdir -p output/english_youtube
+mkdir -p output/russian_audio
+mkdir -p output/russian_thumbnails
+mkdir -p output/russian_youtube
+
+# Reports and reviews
+mkdir -p reports/semantic
+mkdir -p reviews
+
+# Scratch space (gitignored)
+mkdir -p temp
+
+echo "Done. Folders created."
+
+# Create .env template if it doesn't exist
+if [ ! -f .env ]; then
+    cat > .env << 'EOF'
+# LLM provider: openrouter | gemini | openai | deepseek
+PROVIDER=
+IMAGE_PROVIDER=
+
+# API keys — fill in the one matching your PROVIDER
+OPENROUTER_API_KEY=
+GEMINI_API_KEY=
+OPENAI_API_KEY=
+DEEPSEEK_API_KEY=
+
+# Google Drive upload — folder IDs from Drive URL
+GDRIVE_FOLDER_ID_RU=
+GDRIVE_FOLDER_ID_EN=
+EOF
+    echo ".env template created — fill in your API keys before running pipelines."
+else
+    echo ".env already exists — skipped."
+fi
