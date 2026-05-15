@@ -14,6 +14,7 @@ from tools.provider import (
     generate_with_timeout,
     get_working_key,
 )
+from tools.uploader_common import minutes_to_hms
 from tools.yt_chapters_merge import merge_close_chapters
 from tools.yt_chapters_silence import (
     SILENCE_DEDUP_GAP_MINS,
@@ -33,6 +34,9 @@ SNAP_TOLERANCE_MINS = 0.75
 SILENCE_SNAP_TOLERANCE_MINS = 0.75
 MIN_CHAPTER_GAP_MINS = 2.0
 MIN_CHAPTERS = 3
+
+LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
+
 
 SYSTEM_INSTRUCTIONS_PARAGRAPHS: dict[str, str] = {
     "ru": """You are analyzing a timestamped transcript of a Russian Buddhist Dhamma talk.
@@ -302,7 +306,7 @@ def main() -> None:
     parser.add_argument(
         "--folder",
         type=str,
-        help="Subfolder in output/transcribed/ to process. If absent, processes all subfolders.",
+        help="Subfolder in output/transcribed/ to process. Defaults to lang-based folder (ru→russian, en→english).",
     )
     parser.add_argument("--review-file", type=Path, help="Override review file path.")
     parser.add_argument("--file", type=Path, help="Process a single transcript file.")
@@ -387,7 +391,7 @@ def main() -> None:
     if args.folder:
         folders = [transcribed_base / args.folder]
     else:
-        folders = [d for d in transcribed_base.iterdir() if d.is_dir()]
+        folders = [transcribed_base / LANG_TO_FOLDER[args.lang]]
 
     if not folders:
         pr.no("No subfolders found to process.")
@@ -453,6 +457,10 @@ def main() -> None:
                 continue
 
             duration_mins = max(available) if available else 0.0
+
+            if duration_mins < 6.0:
+                pr.no(f"    Transcript too short ({duration_mins:.1f} min < 6.0 min)")
+                continue
 
             content_type = classify_content(transcript, folder_name, duration_mins)
             pr.green(f"    Content type: {content_type}")
@@ -620,7 +628,9 @@ def main() -> None:
 
             ok = insert_chapters_block(review_path, file_path.name, chapters)
             if ok:
-                pr.yes(f"    {len(chapters)} chapters written")
+                pr.yes(
+                    f"    {len(chapters)} chapters written ({minutes_to_hms(duration_mins)})"
+                )
 
             if args.debug_log and debug_buffer:
                 _flush_debug_log(file_path, debug_buffer)

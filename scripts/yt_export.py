@@ -10,6 +10,8 @@ from pathlib import Path
 from tools.printer import printer as pr
 from tools.uploader_common import find_latest_review
 
+LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
+
 
 DATE_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}")
 
@@ -169,7 +171,13 @@ def main() -> None:
     parser.add_argument(
         "--folder",
         type=str,
-        help="Subfolder name (e.g. 'russian', 'english'). If absent, processes all folders.",
+        help="Subfolder in output/transcribed/ to process. If absent and --lang given, defaults to lang-based folder. If both absent, scans all subfolders.",
+    )
+    parser.add_argument(
+        "--lang",
+        type=str,
+        choices=["ru", "en"],
+        help="Language shortcode (ru|en). Sets default folder (ru→russian, en→english). Overridden by --folder.",
     )
     parser.add_argument(
         "--video-mode",
@@ -205,6 +213,8 @@ def main() -> None:
 
     if args.folder:
         folder_names = [args.folder]
+    elif args.lang:
+        folder_names = [LANG_TO_FOLDER[args.lang]]
     else:
         folder_names = [d.name for d in transcribed_base.iterdir() if d.is_dir()]
 

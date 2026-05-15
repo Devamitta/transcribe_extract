@@ -20,6 +20,8 @@ TAG_POOLS: dict[str, list[str]] = {
     "en": TAG_POOL_EN,
 }
 
+LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
+
 
 def enrich_tags(tags: str, lang: str) -> str:
     """Add Pāli counterparts and synonym pairs missing from LLM tag output."""
@@ -254,7 +256,7 @@ def main() -> None:
     parser.add_argument(
         "--folder",
         type=str,
-        help="Subfolder in output/transcribed/ to process. If absent, processes all subfolders.",
+        help="Subfolder in output/transcribed/ to process. Defaults to lang-based folder (ru→russian, en→english).",
     )
     parser.add_argument(
         "--output-file",
@@ -308,7 +310,7 @@ def main() -> None:
     if args.folder:
         folders = [transcribed_base / args.folder]
     else:
-        folders = [d for d in transcribed_base.iterdir() if d.is_dir()]
+        folders = [transcribed_base / LANG_TO_FOLDER[args.lang]]
 
     if not folders:
         pr.no("No subfolders found to process.")

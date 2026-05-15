@@ -27,6 +27,8 @@ e.g. uv run bash yt_run.sh --lang ru russian --from-export --gdrive
 
 Both modes end with YouTube and Google Drive uploads. Pass `--dry-run` to run those steps without actually uploading.
 
+> All individual scripts accept `--lang ru|en`; omitting `--folder` then defaults to the lang-based subfolder (`ru→russian`, `en→english`).
+
 ---
 
 ## Stage 1: Ingest and Transcribe
@@ -37,16 +39,18 @@ Ensure all input audio is in MP3 format (required by Whisper).
 **For Video Files (`--video-mode`):**
 Extracts audio from `.mp4` files in `video/<folder>/` into `audio/<folder>/`:
 ```bash
-uv run python scripts/yt_ingest.py --folder <folder> --limit 5
+uv run python scripts/yt_ingest.py --lang ru|en [--folder <folder>] --limit 5
 ```
 
 **For Non-MP3 Audio Files (default):**
 Converts any non-MP3 files in `audio/<folder>/` in-place:
 ```bash
-uv run python scripts/yt_audio_convert.py --folder <folder> --limit 5
+uv run python scripts/yt_audio_convert.py --lang ru|en [--folder <folder>] --limit 5
 ```
 
 **Common Options:**
+- `--lang ru|en`: (Optional) Language shortcode. Sets default folder (`ru→russian`, `en→english`).
+- `--folder NAME`: (Optional) Subfolder to process. If both `--lang` and `--folder` are absent, scans all subfolders.
 - `--limit N`: Process only the first N files globally (across all target subfolders).
 
 ### 1.2: Transcription
@@ -71,12 +75,12 @@ Output: Raw transcripts in `output/transcribed/<folder>/`
 Generates titles and descriptions using the configured LLM provider.
 
 ```bash
-uv run python scripts/yt_metadata.py --lang ru|en --folder <folder> --limit 5
+uv run python scripts/yt_metadata.py --lang ru|en [--folder <folder>] --limit 5
 ```
 
 **Options:**
-- `--lang ru|en`: (Required) Language of the talk and prompts
-- `--folder NAME`: Subfolder in `output/transcribed/` to process. **Supports subfolder traversal** (finds `.md` files in all subdirectories).
+- `--lang ru|en`: (Required) Language of the talk and prompts.
+- `--folder NAME`: (Optional) Subfolder in `output/transcribed/` to process. Defaults to `russian`/`english` based on `--lang` when omitted. Supports subfolder traversal.
 - `--limit N`: Process only the first N files globally.
 - `--file <filename>`: Process a single file only (test mode)
 - `--input-dir <path>`: Use an alternative transcript directory, e.g. `output/corrected_pali/<folder>` for Pali-corrected English transcripts.
@@ -86,7 +90,7 @@ uv run python scripts/yt_metadata.py --lang ru|en --folder <folder> --limit 5
 Generates AI chapter timestamps based on the transcript and appends them to the review file.
 
 ```bash
-uv run python scripts/yt_chapters.py --lang ru|en --folder <folder> --limit 5
+uv run python scripts/yt_chapters.py --lang ru|en [--folder <folder>] --limit 5
 ```
 
 **Default Mode:** By default, the script uses **paragraph mode**. It reads the full transcript and allows the LLM to select semantic topic transitions from all available paragraph timestamps.
@@ -96,7 +100,8 @@ uv run python scripts/yt_chapters.py --lang ru|en --folder <folder> --limit 5
 - **Chapter Spacing:** The script enforces a **minimum of 2–3 minutes between chapters**. If the LLM suggests chapters too close together, they are automatically merged or dropped.
 
 **Options:**
-- `--folder NAME`: Subfolder in `output/transcribed/` to process. **Supports subfolder traversal**.
+- `--lang ru|en`: (Required) Language of the talk and prompts.
+- `--folder NAME`: (Optional) Subfolder in `output/transcribed/` to process. Defaults to `russian`/`english` based on `--lang` when omitted. Supports subfolder traversal.
 - `--limit N`: Process only the first N files globally.
 - `--silence-mode`: (Experimental) Use ffmpeg silence detection to constrain chapter anchors.
 
@@ -107,7 +112,7 @@ If paragraph mode is not producing the desired results, you can experiment with 
 **Diagnostic workflow:**
 1. Run diagnostics on 1–2 representative talks:
    ```bash
-   uv run python scripts/yt_chapters.py --lang ru|en --folder <folder> \
+   uv run python scripts/yt_chapters.py --lang ru|en [--folder <folder>] \
      --file "path/to/talk.md" \
      --silence-mode --debug --debug-log --diagnose-only
    ```
@@ -142,14 +147,15 @@ The export script treats this file as the source of truth — it only processes 
 Renames source audio and transcript files to `YYYY-MM-DD - Suggested Title`, then exports copies with embedded metadata.
 
 ```bash
-uv run python scripts/yt_export.py --folder <folder> --limit 5
+uv run python scripts/yt_export.py --lang ru|en [--folder <folder>] --limit 5
 ```
 
 - **Step 1 — Rename:** `audio/<folder>/*.mp3` and `output/transcribed/<folder>/*.md` → `YYYY-MM-DD - Suggested Title.{ext}`
 - **Step 2 — Export:** copies renamed MP3s to `output/<folder>_audio/` with embedded metadata
 
 **Options:**
-- `--limit N`: Process only the first N dated items globally.
+- `--lang ru|en`: (Optional) Language shortcode. Sets default folder.
+- `--folder NAME`: (Optional) Subfolder to process. If both absent, scans all subfolders.
 - `--video-mode`: For video-input talks, embeds metadata into `.mp4` and moves to `output/<folder>_video_upload/`
 - `--dry-run`: Preview planned renames only; skips export
 
@@ -160,23 +166,26 @@ uv run python scripts/yt_export.py --folder <folder> --limit 5
 Uses reviewed metadata to generate photorealistic thumbnails via OpenRouter FLUX.
 
 ```bash
-uv run python scripts/yt_image_gen.py --lang ru|en --folder <folder> --limit 5
+uv run python scripts/yt_image_gen.py --lang ru|en [--folder <folder>] --limit 5
 ```
 
 **Options:**
-- `--limit N`: Process only the first N approved talks globally.
+- `--lang ru|en`: (Required) Language of the talk and prompts.
+- `--folder NAME`: (Optional) Subfolder name (e.g. 'russian'). Defaults to lang-based folder when omitted.
 
 ### 3.3: Create MP4 Videos
 Combines the generated thumbnails with the original MP3 audio files using `ffmpeg`.
 
 ```bash
-uv run python scripts/yt_video.py --folder <folder> --limit 5
+uv run python scripts/yt_video.py --lang ru|en [--folder <folder>] --limit 5
 ```
 
 - **Input:** `output/<folder>_thumbnails/` and `output/<folder>_audio/`
 - **Output:** `output/<folder>_youtube/`
 
 **Options:**
+- `--lang ru|en`: (Optional) Language shortcode. Sets default folder.
+- `--folder NAME`: (Optional) Subfolder to process. If both absent, scans all subfolders.
 - `--limit N`: Process only the first N talks globally.
 
 ---
@@ -191,11 +200,15 @@ Automates the upload of MP4s to YouTube and MP4+MP3 to Google Drive.
 
 ```bash
 # Dry-run: verify description format and metadata match without uploading
-uv run python scripts/yt_upload.py --lang ru|en --folder <folder> --dry-run
+uv run python scripts/yt_upload.py --lang ru|en [--folder <folder>] --dry-run
 
 # Upload approved videos
-uv run python scripts/yt_upload.py --lang ru|en --folder <folder>
+uv run python scripts/yt_upload.py --lang ru|en [--folder <folder>]
 ```
+
+**Options:**
+- `--lang ru|en`: (Required) Language shortcode.
+- `--folder NAME`: (Optional) Subfolder name (e.g. 'russian'). Defaults to lang-based folder when omitted.
 
 - **Tokens:** Uses `youtube_token_ru.json` or `youtube_token_en.json` based on `--lang`.
 - **History:** `output/youtube_history.json` uses language-scoped sections (`ru`, `en`) to track uploads separately per language.

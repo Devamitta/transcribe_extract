@@ -37,6 +37,8 @@ TOKEN_PATHS: dict[str, Path] = {
     "en": Path("youtube_token_en.json"),
 }
 
+LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
+
 
 def get_google_client(service: str, version: str, token_path: Path):
     """Authenticates and returns a Google API client."""
@@ -127,7 +129,7 @@ def main():
     parser.add_argument(
         "--folder",
         type=str,
-        help="Subfolder name (e.g. 'russian', 'english'). If absent, processes all folders.",
+        help="Subfolder name (e.g. 'russian'). Defaults to lang-based folder (ru→russian, en→english).",
     )
     parser.add_argument(
         "--dry-run", action="store_true", help="Do not upload, just list"
@@ -145,12 +147,10 @@ def main():
     parser.add_argument("--input-dir", type=Path, help="Override MP4 directory")
     args = parser.parse_args()
 
-    transcribed_base = Path("output/transcribed")
-
     if args.folder:
         folder_names = [args.folder]
     else:
-        folder_names = [d.name for d in transcribed_base.iterdir() if d.is_dir()]
+        folder_names = [LANG_TO_FOLDER[args.lang]]
 
     if not folder_names:
         pr.no("No subfolders found in 'output/transcribed/'.")

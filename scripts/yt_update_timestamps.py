@@ -1,4 +1,12 @@
-"""One-time script to add YouTube chapter timestamps to uploaded video descriptions that are missing them."""
+"""Add YouTube chapter timestamps to uploaded video descriptions that are missing them.
+
+Usage:
+    uv run python scripts/yt_update_timestamps.py --lang ru
+    uv run python scripts/yt_update_timestamps.py --lang en
+    uv run python scripts/yt_update_timestamps.py --lang ru --dry-run
+    uv run python scripts/yt_update_timestamps.py --lang ru --force       # overwrite existing chapters
+    uv run python scripts/yt_update_timestamps.py --lang ru --limit 3     # process first 3 only
+"""
 
 import argparse
 import pickle
@@ -48,6 +56,32 @@ def get_youtube_client(token_path: Path):
         with token_path.open("wb") as f:
             pickle.dump(creds, f)
     return build("youtube", "v3", credentials=creds)
+
+
+def fetch_channel_videos(youtube) -> dict[str, str]:
+    """Returns {video_id: title} for every video in the authenticated channel's uploads playlist."""
+    ch_resp = youtube.channels().list(part="contentDetails", mine=True).execute()
+    uploads_id = ch_resp["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
+    titles: dict[str, str] = {}
+    page_token: str | None = None
+    while True:
+        pl_resp = (
+            youtube.playlistItems()
+            .list(
+                part="snippet",
+                playlistId=uploads_id,
+                maxResults=50,
+                pageToken=page_token,
+            )
+            .execute()
+        )
+        for item in pl_resp.get("items", []):
+            vid_id: str = item["snippet"]["resourceId"]["videoId"]
+            titles[vid_id] = item["snippet"]["title"]
+        page_token = pl_resp.get("nextPageToken")
+        if not page_token:
+            break
+    return titles
 
 
 def description_has_chapters(description: str) -> bool:
@@ -104,25 +138,48 @@ def main():
         return
 
     to_update: list[tuple[str, str, dict]] = []  # (stem, video_id, meta)
+    no_match: list[tuple[str, str, str]] = []  # (stem, video_id, reason)
 
     for key, v in history.items():
         if v.get("status") == "uploaded" and v.get("platform_id"):
             # Strip album/ and .mp4
             stem = unicodedata.normalize("NFC", Path(key).stem)
-            if stem in review:
+            video_id = v["platform_id"]
+            if stem not in review:
+                no_match.append((stem, video_id, "not in review"))
+            else:
                 meta = review[stem]
                 if meta.get("chapters"):
-                    to_update.append((stem, v["platform_id"], meta))
+                    to_update.append((stem, video_id, meta))
+                else:
+                    no_match.append((stem, video_id, "no chapters in review"))
+
+    if not to_update and not no_match:
+        pr.yes("No videos to process.")
+        return
+
+    youtube = get_youtube_client(TOKEN_PATHS[args.lang])
+
+    if no_match:
+        ids = [vid for _, vid, _ in no_match]
+        title_map: dict[str, str] = {}
+        for i in range(0, len(ids), 50):
+            batch = ids[i : i + 50]
+            resp = youtube.videos().list(part="snippet", id=",".join(batch)).execute()
+            for item in resp.get("items", []):
+                title_map[item["id"]] = item["snippet"]["title"]
+        pr.amber(f"\n{len(no_match)} uploaded videos do not match criteria:")
+        for stem, video_id, reason in no_match:
+            title = title_map.get(video_id, stem)
+            pr.amber(f"  [{reason}] {title}")
 
     if not to_update:
-        pr.yes("No videos to update.")
         return
 
     if args.limit > 0:
         to_update = to_update[: args.limit]
-
-    youtube = get_youtube_client(TOKEN_PATHS[args.lang])
     updated, skipped, failed = 0, 0, 0
+    has_chapters_titles: list[str] = []
 
     for stem, video_id, meta in to_update:
         try:
@@ -137,7 +194,7 @@ def main():
             if not args.force and description_has_chapters(
                 snippet.get("description", "")
             ):
-                pr.amber(f"  {video_id} ({stem}): already has chapters — skipping")
+                has_chapters_titles.append(snippet.get("title", stem))
                 skipped += 1
                 continue
 
@@ -166,6 +223,24 @@ def main():
         except Exception as e:
             pr.no(f"  Failed {video_id} ({stem}): {e}")
             failed += 1
+
+    if has_chapters_titles:
+        pr.amber(
+            f"\n{len(has_chapters_titles)} videos already have chapters on YouTube:"
+        )
+        for title in has_chapters_titles:
+            pr.amber(f"  {title}")
+
+    # Report channel videos not tracked in history at all
+    known_ids = {vid for _, vid, _ in no_match} | {vid for _, vid, _ in to_update}
+    channel_videos = fetch_channel_videos(youtube)
+    untracked = {
+        vid: title for vid, title in channel_videos.items() if vid not in known_ids
+    }
+    if untracked:
+        pr.amber(f"\n{len(untracked)} channel videos not in history:")
+        for title in untracked.values():
+            pr.amber(f"  [not in history] {title}")
 
     if args.dry_run:
         return

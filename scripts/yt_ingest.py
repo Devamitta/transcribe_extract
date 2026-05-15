@@ -6,6 +6,8 @@ from pathlib import Path
 
 from tools.printer import printer as pr
 
+LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
+
 
 def extract_audio(video_path: Path, audio_path: Path) -> bool:
     """Extracts MP3 audio from a video file."""
@@ -51,7 +53,13 @@ def main():
     parser.add_argument(
         "--folder",
         type=str,
-        help="Subfolder in video/ to process. If absent, scans all immediate subfolders under video/.",
+        help="Subfolder in video/ to process. If absent and --lang given, defaults to lang-based folder. If both absent, scans all subfolders.",
+    )
+    parser.add_argument(
+        "--lang",
+        type=str,
+        choices=["ru", "en"],
+        help="Language shortcode (ru|en). Sets default folder (ru→russian, en→english). Overridden by --folder.",
     )
     parser.add_argument(
         "--limit",
@@ -69,6 +77,12 @@ def main():
     targets: list[Path] = []
     if args.folder:
         folder_path = video_base / args.folder
+        if not folder_path.is_dir():
+            pr.red(f"Error: Folder '{folder_path}' not found or is not a directory.")
+            return
+        targets = [folder_path]
+    elif args.lang:
+        folder_path = video_base / LANG_TO_FOLDER[args.lang]
         if not folder_path.is_dir():
             pr.red(f"Error: Folder '{folder_path}' not found or is not a directory.")
             return

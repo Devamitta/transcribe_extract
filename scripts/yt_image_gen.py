@@ -37,6 +37,8 @@ Output: one paragraph only, no preamble, no labels, no quotes.
 """,
 }
 
+LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
+
 
 def sanitize_filename(name: str) -> str:
     """Sanitize filename by removing invalid characters."""
@@ -131,7 +133,7 @@ def main() -> None:
     parser.add_argument(
         "--folder",
         type=str,
-        help="Subfolder name (e.g. 'russian', 'english'). If absent, processes all folders.",
+        help="Subfolder name (e.g. 'russian'). Defaults to lang-based folder (ru→russian, en→english).",
     )
     parser.add_argument("--review-file", type=Path, help="Path to specific review file")
     parser.add_argument(
@@ -161,12 +163,10 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    transcribed_base = Path("output/transcribed")
-
     if args.folder:
         folder_names = [args.folder]
     else:
-        folder_names = [d.name for d in transcribed_base.iterdir() if d.is_dir()]
+        folder_names = [LANG_TO_FOLDER[args.lang]]
 
     if not folder_names:
         pr.no("No subfolders found in 'output/transcribed/'.")

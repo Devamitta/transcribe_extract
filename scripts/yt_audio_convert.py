@@ -9,6 +9,8 @@ from tools.printer import printer as pr
 
 SUPPORTED_EXTENSIONS = {".wav", ".m4a", ".aiff", ".flac", ".ogg", ".opus", ".wma"}
 
+LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
+
 
 def convert_to_mp3(file_path: Path) -> bool:
     """Converts a single audio file to MP3 and deletes the original."""
@@ -60,7 +62,13 @@ def main():
     parser.add_argument(
         "--folder",
         type=str,
-        help="Subfolder in audio/ to process. If absent, scans all immediate subfolders under audio/.",
+        help="Subfolder in audio/ to process. If absent and --lang given, defaults to lang-based folder. If both absent, scans all subfolders.",
+    )
+    parser.add_argument(
+        "--lang",
+        type=str,
+        choices=["ru", "en"],
+        help="Language shortcode (ru|en). Sets default folder (ru→russian, en→english). Overridden by --folder.",
     )
     parser.add_argument(
         "--limit",
@@ -78,6 +86,12 @@ def main():
     targets: list[Path] = []
     if args.folder:
         folder_path = audio_base / args.folder
+        if not folder_path.is_dir():
+            pr.red(f"Error: Folder '{folder_path}' not found or is not a directory.")
+            return
+        targets = [folder_path]
+    elif args.lang:
+        folder_path = audio_base / LANG_TO_FOLDER[args.lang]
         if not folder_path.is_dir():
             pr.red(f"Error: Folder '{folder_path}' not found or is not a directory.")
             return

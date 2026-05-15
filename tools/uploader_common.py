@@ -35,7 +35,7 @@ def parse_review(review_path: Path) -> dict[str, dict[str, str]]:
         desc_m = re.search(r"\*\*Suggested Description:\*\*\s*(.*)", section)
         tags_m = re.search(r"\*\*Suggested Tags:\*\*\s*(.*)", section)
         chapters_m = re.search(
-            r"\*\*Chapters:\*\*\n((?:\[[\d.]+\][^\n]+\n?)+)", section
+            r"\*\*Chapters:\*\*\n((?:\[[\d:.]+\][^\n]+\n?)+)", section
         )
 
         approved = approved_m.group(1).lower() == "yes" if approved_m else False
