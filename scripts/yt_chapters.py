@@ -1,9 +1,10 @@
 """Generates AI chapter timestamps for Dhamma talk transcripts and appends them to the review file."""
 
+from __future__ import annotations
+
 import argparse
 import concurrent.futures
 import re
-import subprocess
 import time
 from pathlib import Path
 
@@ -13,14 +14,25 @@ from tools.provider import (
     generate_with_timeout,
     get_working_key,
 )
+from tools.yt_chapters_merge import merge_close_chapters
+from tools.yt_chapters_silence import (
+    SILENCE_DEDUP_GAP_MINS,
+    SILENCE_MIN_DURATION_S,
+    SILENCE_NOISE_DB,
+    ContentType,
+    build_silence_instruction,
+    detect_silences,
+    get_audio_duration,
+    is_sentence_boundary,
+    prune_silence_anchors,
+    silence_histogram,
+    snap_silences_to_transcript,
+)
 
-
-SNAP_TOLERANCE_MINS = 2.0
-SILENCE_SNAP_TOLERANCE_MINS = 3.0
+SNAP_TOLERANCE_MINS = 0.75
+SILENCE_SNAP_TOLERANCE_MINS = 0.75
 MIN_CHAPTER_GAP_MINS = 2.0
 MIN_CHAPTERS = 3
-SILENCE_NOISE_DB_LEVELS = [-30, -25, -20]
-SILENCE_MIN_DURATION_S = 1.5
 
 SYSTEM_INSTRUCTIONS_PARAGRAPHS: dict[str, str] = {
     "ru": """You are analyzing a timestamped transcript of a Russian Buddhist Dhamma talk.
@@ -66,111 +78,108 @@ Output format — one chapter per line, nothing else, no explanations, no markdo
 }
 
 
-def build_silence_instruction(
-    silence_times: list[float], lang: str, duration_mins: float = 0.0
-) -> str:
-    """Build system instruction that pins the LLM to real silence break points."""
-    min_ch, max_ch = compute_chapter_range(duration_mins, len(silence_times))
-    ts_list = "  ".join(f"[{t:.2f}]" for t in silence_times)
-
-    if lang == "ru":
-        return f"""You are analyzing a Russian Buddhist Dhamma talk.
-
-The following timestamps mark actual silence/pause points in the audio (in MINUTES).
-These are the ONLY valid chapter start times — do NOT use any other values:
-{ts_list}
-
-The transcript below is provided for content understanding only.
-Do NOT use timestamps from the transcript — use ONLY the timestamps listed above.
-
-Your task: identify {min_ch}–{max_ch} meaningful topic sections and name each one.
-
-Rules:
-- The FIRST chapter MUST be [0.00] — always in the list above
-- Select timestamps from the list that best match topic transitions in the talk
-- Chapter names: Russian, 2–5 words, concise and descriptive of the actual content
-- Aim for {max_ch} chapters; use fewer if the talk is short
-- Each chapter must span at least 2–3 minutes of content
-
-Output format — one chapter per line, nothing else, no explanations, no markdown:
-[0.00] Название первой главы
-[X.XX] Название следующей главы
-"""
-    else:
-        return f"""You are analyzing an English Buddhist Dhamma talk.
-
-The following timestamps mark actual silence/pause points in the audio (in MINUTES).
-These are the ONLY valid chapter start times — do NOT use any other values:
-{ts_list}
-
-The transcript below is provided for content understanding only.
-Do NOT use timestamps from the transcript — use ONLY the timestamps listed above.
-
-Your task: identify {min_ch}–{max_ch} meaningful topic sections and name each one.
-
-Rules:
-- The FIRST chapter MUST be [0.00] — always in the list above
-- Select timestamps from the list that best match topic transitions in the talk
-- Chapter names: English, 2–5 words, concise and descriptive of the actual content
-- Aim for {max_ch} chapters; use fewer if the talk is short
-- Each chapter must span at least 2–3 minutes of content
-
-Output format — one chapter per line, nothing else, no explanations, no markdown:
-[0.00] Name of the first chapter
-[X.XX] Name of the next chapter
-"""
-
-
 def extract_timestamps(text: str) -> list[float]:
     """Extracts all [X.X] decimal minute timestamps from the transcript text."""
     return sorted({float(m) for m in re.findall(r"\[(\d+(?:\.\d+)?)\]", text)})
 
 
-def detect_silences(
-    audio_path: Path, noise_db: int = SILENCE_NOISE_DB_LEVELS[0]
-) -> list[float]:
-    """Return silence start times in minutes using ffmpeg silencedetect."""
-    cmd = [
-        "ffmpeg",
-        "-i",
-        str(audio_path),
-        "-af",
-        f"silencedetect=noise={noise_db}dB:d={SILENCE_MIN_DURATION_S}",
-        "-f",
-        "null",
-        "-",
-    ]
-    # Use errors='replace' to handle truncated UTF-8 in metadata
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, encoding="utf-8", errors="replace"
+def extract_paragraphs(text: str) -> list[tuple[float, str]]:
+    """Returns (timestamp_min, paragraph_text) pairs sorted by timestamp."""
+    out: list[tuple[float, str]] = []
+    for line in text.splitlines():
+        m = re.match(r"\[(\d+(?:\.\d+)?)\]\s+(.*)", line)
+        if m:
+            out.append((float(m.group(1)), m.group(2).strip()))
+    return sorted(out, key=lambda x: x[0])
+
+
+def check_transcript_density(
+    paragraphs: list[tuple[float, str]], max_median_gap_mins: float = 0.6
+) -> tuple[bool, float]:
+    """Returns (is_dense, median_gap).
+
+    A median gap > 0.6 min (36s) means the transcript was chunked too coarsely — chapters would
+    snap to large intervals instead of the ~30s granularity needed for accurate placement.
+    Re-transcribe with --chunk-seconds 20 to fix.
+    """
+    if len(paragraphs) < 3:
+        return True, 0.0
+    gaps = sorted(
+        [paragraphs[i + 1][0] - paragraphs[i][0] for i in range(len(paragraphs) - 1)]
     )
-    output = result.stderr  # ffmpeg writes filter output to stderr
-    times_s: list[float] = []
-    for line in output.splitlines():
-        if "silence_start:" in line:
-            m = re.search(r"silence_start:\s*([\d.]+)", line)
-            if m:
-                times_s.append(float(m.group(1)))
-    # Convert seconds → minutes; always include 0.0 as a valid anchor
-    minutes = sorted({0.0} | {t / 60.0 for t in times_s})
-    return minutes
+    median_gap = gaps[len(gaps) // 2]
+    return (median_gap <= max_median_gap_mins, median_gap)
 
 
-def prune_silence_anchors(anchors: list[float], min_gap: float) -> list[float]:
-    """Prunes anchors that are too close to the previous one."""
-    pruned: list[float] = []
-    for t in anchors:
-        if not pruned or t - pruned[-1] >= min_gap:
-            pruned.append(t)
-    return pruned
+def classify_content(
+    transcript: str, folder_name: str, duration_mins: float
+) -> ContentType:
+    """Classifies transcript as 'talk' or 'qa' using WPM, punctuation density, and folder hint."""
+    words = transcript.split()
+    word_count = len(words)
+    wpm = word_count / duration_mins if duration_mins > 0 else 0.0
+    qmarks = transcript.count("?")
+    qpm = qmarks / duration_mins if duration_mins > 0 else 0.0
+
+    folder_hint_qa = folder_name.lower() == "interview"
+
+    if folder_hint_qa and wpm > 110:
+        return "qa"
+    if wpm > 140 and qpm > 0.8:
+        return "qa"
+    return "talk"
 
 
-def compute_chapter_range(duration_mins: float, anchor_count: int) -> tuple[int, int]:
-    """Computes a reasonable min/max chapter range based on talk duration and anchors."""
-    target = max(3, min(12, round(duration_mins / 6)))
-    max_ch = min(anchor_count, target)
-    min_ch = min(3, max_ch)
-    return min_ch, max_ch
+def validate_chapters(
+    chapters: list[tuple[float, str]],
+    min_gap: float,
+    duration_mins: float,
+    min_count: int = MIN_CHAPTERS,
+) -> bool:
+    """Validates chapters meet YouTube platform requirements. Logs and returns False on failure."""
+    if not chapters:
+        pr.no("    Validation failed: chapter list is empty")
+        return False
+    if chapters[0][0] != 0.0:
+        pr.no(
+            f"    Validation failed: first chapter timestamp is {chapters[0][0]:.2f}, expected 0.0"
+        )
+        return False
+    if len(chapters) < min_count:
+        pr.no(
+            f"    Validation failed: only {len(chapters)} chapters (minimum {min_count})"
+        )
+        return False
+
+    # YouTube policy: chapters must be at least 10s apart, including end of video
+    YT_MIN_GAP_MINS = 10.0 / 60.0
+
+    if duration_mins > 0 and (duration_mins - chapters[-1][0] < YT_MIN_GAP_MINS):
+        pr.no(
+            f"    Validation failed: last chapter is too close to end ({duration_mins - chapters[-1][0]:.2f} min < {YT_MIN_GAP_MINS:.2f})"
+        )
+        return False
+
+    for i in range(1, len(chapters)):
+        if chapters[i][0] <= chapters[i - 1][0]:
+            pr.no(
+                f"    Validation failed: timestamps not strictly ascending at index {i} ({chapters[i - 1][0]:.2f} → {chapters[i][0]:.2f})"
+            )
+            return False
+        gap = chapters[i][0] - chapters[i - 1][0]
+        if gap < YT_MIN_GAP_MINS:
+            pr.no(
+                f"    Validation failed: chapters {i - 1} and {i} are too close ({gap:.2f} min)"
+            )
+            return False
+        if gap < min_gap:
+            # This is our internal quality preference, not a hard platform failure usually,
+            # but we treat it as a failure for consistency with merge logic.
+            pr.no(
+                f"    Validation failed: chapters {i - 1} and {i} are {gap:.2f} min apart (min {min_gap})"
+            )
+            return False
+    return True
 
 
 def snap_to_nearest(
@@ -218,31 +227,27 @@ def parse_lm_response(
             seen.add(ts)
             deduped.append((ts, name))
 
-    # Filter out chapters closer than MIN_CHAPTER_GAP_MINS
-    filtered: list[tuple[float, str]] = []
-    for ts, name in deduped:
-        if not filtered or ts - filtered[-1][0] >= MIN_CHAPTER_GAP_MINS:
-            filtered.append((ts, name))
-        else:
-            pr.amber(
-                f"    Dropping '{name}' [{ts:.2f}] — too close to previous chapter"
-            )
-    return filtered
+    return deduped
 
 
 def generate_chapters(
-    transcript_text: str,
+    transcript: str,
     lang: str,
-    silence_times: list[float] | None = None,
+    silence_pairs: list[tuple[float, float]] | None,
     duration_mins: float = 0.0,
-) -> str:
-    """Calls Gemini API to generate chapter suggestions."""
-    if silence_times:
-        instruction = build_silence_instruction(silence_times, lang, duration_mins)
+    content_type: ContentType = "talk",
+    paragraphs: list[tuple[float, str]] | None = None,
+) -> str | None:
+    """Calls Gemini API to generate chapters from transcript."""
+    if silence_pairs is not None:
+        instruction = build_silence_instruction(
+            silence_pairs, lang, duration_mins, content_type, paragraphs=paragraphs
+        )
+
     else:
         instruction = SYSTEM_INSTRUCTIONS_PARAGRAPHS[lang]
     return generate_with_timeout(
-        contents=build_cacheable_contents(transcript_text),
+        contents=build_cacheable_contents(transcript),
         system_instruction=instruction,
         max_output_tokens=4096,
     )
@@ -266,8 +271,10 @@ def insert_chapters_block(
     review_path: Path, source_name: str, chapters: list[tuple[float, str]]
 ) -> bool:
     """Inserts the chapters block into the review file for the specified source."""
+    from tools.uploader_common import minutes_to_hms
+
     content = review_path.read_text(encoding="utf-8")
-    chapter_lines = "\n".join(f"[{ts:.2f}] {name}" for ts, name in chapters)
+    chapter_lines = "\n".join(f"[{minutes_to_hms(ts)}] {name}" for ts, name in chapters)
     block = f"**Chapters:**\n{chapter_lines}"
 
     # Insert after **Suggested Tags:** line within this source's section
@@ -308,7 +315,60 @@ def main() -> None:
         default=0,
         help="Process only the first N transcript files (0=unlimited).",
     )
+    parser.add_argument(
+        "--silence-min-dur",
+        type=float,
+        default=SILENCE_MIN_DURATION_S,
+        help=f"Minimum silence duration in seconds to count as a topic-break candidate (default: {SILENCE_MIN_DURATION_S})",
+    )
+    parser.add_argument(
+        "--snap-tolerance",
+        type=float,
+        default=SILENCE_SNAP_TOLERANCE_MINS,
+        help=f"Tolerance in minutes for snapping LLM timestamps to anchors (default: {SILENCE_SNAP_TOLERANCE_MINS})",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print verbose diagnostics at every filter stage.",
+    )
+    parser.add_argument(
+        "--silence-noise-db",
+        type=int,
+        default=SILENCE_NOISE_DB,
+        help=f"Noise floor (dB) below which audio counts as silent (default: {SILENCE_NOISE_DB})",
+    )
+    parser.add_argument(
+        "--diagnose-only",
+        action="store_true",
+        help="Run silence detection and diagnostics but skip LLM call and chapter write.",
+    )
+    parser.add_argument(
+        "--debug-log",
+        action="store_true",
+        help="Write the full --debug trace to temp/yt_chapters_debug_<stem>.log per file",
+    )
+    parser.add_argument(
+        "--silence-mode",
+        action="store_true",
+        help="Use ffmpeg silence detection to constrain chapter anchors (experimental). Default: paragraph mode.",
+    )
     args = parser.parse_args()
+
+    debug_buffer: list[str] = []
+
+    def dbg(msg: str) -> None:
+        line = f"    [debug] {msg}"
+        if args.debug:
+            pr.amber(line)
+        if args.debug_log:
+            debug_buffer.append(line)
+
+    def _flush_debug_log(file_path: Path, buf: list[str]) -> None:
+        Path("temp").mkdir(exist_ok=True)
+        log_path = Path("temp") / f"yt_chapters_debug_{file_path.stem}.log"
+        log_path.write_text("\n".join(buf), encoding="utf-8")
+        buf.clear()
 
     from tools.uploader_common import find_latest_review
 
@@ -383,72 +443,194 @@ def main() -> None:
                 pr.no(f"    No timestamps found in {file_path.name}, skipping")
                 continue
 
+            paragraphs = extract_paragraphs(transcript)
+            is_dense, median_gap = check_transcript_density(paragraphs)
+            if not is_dense:
+                pr.no(
+                    f"    Transcript too sparse (median gap {median_gap:.2f} min = {median_gap * 60:.0f}s, "
+                    "threshold 36s)"
+                )
+                continue
+
             duration_mins = max(available) if available else 0.0
+
+            content_type = classify_content(transcript, folder_name, duration_mins)
+            pr.green(f"    Content type: {content_type}")
+
+            active_min_gap = 1.0 if content_type == "qa" else MIN_CHAPTER_GAP_MINS
 
             try:
                 # Look for audio in audio/{folder_name}/
                 audio_path = audio_base / folder_name / (file_path.stem + ".mp3")
-                silence_times: list[float] | None = None
-                if audio_path.exists():
-                    for noise_db in SILENCE_NOISE_DB_LEVELS:
-                        detected = detect_silences(audio_path, noise_db=noise_db)
-                        pruned = prune_silence_anchors(detected, MIN_CHAPTER_GAP_MINS)
-                        if len(pruned) >= MIN_CHAPTERS:
-                            silence_times = pruned
-                            pr.green(
-                                f"    Found {len(detected)} silence anchors → {len(pruned)} after pruning"
-                                f" (threshold={noise_db}dB)"
-                            )
-                            break
-                        pr.amber(
-                            f"    Only {len(pruned)} pruned silences at {noise_db}dB — trying next threshold"
-                        )
-                    if silence_times is None:
-                        pr.amber("    No sufficient silences found — using paragraphs")
-                else:
-                    pr.amber(f"    Audio not found: {audio_path} — using paragraphs")
+                silence_pairs: list[tuple[float, float]] | None = None
+                if args.silence_mode and audio_path.exists():
+                    duration_mins = get_audio_duration(audio_path)
+                    raw_pairs = detect_silences(
+                        audio_path,
+                        noise_db=args.silence_noise_db,
+                        min_dur_s=args.silence_min_dur,
+                    )
+                    dbg(
+                        f"raw silences: {len(raw_pairs)} (min_dur={args.silence_min_dur}s)"
+                    )
 
-                active_silence_times = silence_times
+                    # Diagnostic pass: histogram of all silences >= 2s
+                    if args.debug:
+                        diag_pairs = detect_silences(
+                            audio_path, noise_db=args.silence_noise_db, min_dur_s=2.0
+                        )
+                        dbg(f"all silences ≥2s: {len(diag_pairs)}")
+                        dbg(f"histogram: {silence_histogram(diag_pairs)}")
+                        for s_mid_min, s_dur in diag_pairs:
+                            dbg(f"  silence @ [{s_mid_min:.2f}min] dur={s_dur:.2f}s")
+
+                    # Light dedup: collapse near-duplicate midpoints (< 0.3 min apart)
+                    raw_midpoints = [m for m, _ in raw_pairs]
+                    deduped_midpoints = prune_silence_anchors(
+                        raw_midpoints, SILENCE_DEDUP_GAP_MINS
+                    )
+                    dbg(f"after dedup: {len(deduped_midpoints)}")
+
+                    # Snap each silence midpoint to the nearest transcript paragraph
+                    snapped_times = snap_silences_to_transcript(
+                        deduped_midpoints, available
+                    )
+                    dbg(f"snapped to transcript: {len(snapped_times)}")
+
+                    snap_pre_filter = len(snapped_times)
+
+                    filtered_times: list[float] = []
+                    for t in snapped_times:
+                        if t == 0.0:
+                            filtered_times.append(t)
+                            continue
+                        idx = next(
+                            (i for i, (ts, _) in enumerate(paragraphs) if ts == t),
+                            None,
+                        )
+                        if idx is None or idx == 0:
+                            filtered_times.append(t)
+                            continue
+                        prev_txt = paragraphs[idx - 1][1]
+                        curr_txt = paragraphs[idx][1]
+                        ok, reason = is_sentence_boundary(prev_txt, curr_txt)
+                        if ok:
+                            filtered_times.append(t)
+                        else:
+                            if args.debug:
+                                pr.amber(f"    Dropping anchor [{t:.2f}] — {reason}")
+                    snapped_times = filtered_times
+                    dbg(f"after sentence-boundary filter: {len(snapped_times)}")
+                    dbg(
+                        f"stage summary: raw={len(raw_pairs)} → dedup={len(deduped_midpoints)} "
+                        f"→ snap={snap_pre_filter} → post-sentence={len(snapped_times)}"
+                    )
+
+                    def nearest_dur(
+                        t: float, pairs: list[tuple[float, float]]
+                    ) -> float:
+                        return min(pairs, key=lambda x: abs(x[0] - t))[1]
+
+                    silence_pairs = [
+                        (t, nearest_dur(t, raw_pairs)) for t in snapped_times
+                    ]
+
+                    pr.green(
+                        f"    Found {len(silence_pairs)} transcript-snapped anchors"
+                    )
+                    if len(silence_pairs) < MIN_CHAPTERS:
+                        pr.amber("    Insufficient silence anchors — using paragraphs")
+                        silence_pairs = None
+                else:
+                    if not audio_path.exists():
+                        pr.amber(
+                            f"    Audio not found: {audio_path} — using paragraphs"
+                        )
+
+                if args.diagnose_only:
+                    pr.amber("    --diagnose-only: skipping LLM call")
+                    if args.debug_log and debug_buffer:
+                        _flush_debug_log(file_path, debug_buffer)
+                    continue
+
+                active_silence_times = (
+                    [m for m, _ in silence_pairs] if silence_pairs else None
+                )
+                dbg(f"final anchors → LLM: {active_silence_times}")
                 pr.bip()
                 response = generate_chapters(
-                    transcript, args.lang, silence_times, duration_mins
+                    transcript,
+                    args.lang,
+                    silence_pairs,
+                    duration_mins,
+                    content_type,
+                    paragraphs=paragraphs,
                 )
-                if not response and silence_times is not None:
+                if not response and silence_pairs is not None:
                     pr.amber(
                         "    Empty response in silence mode — retrying with paragraphs"
                     )
                     active_silence_times = None
                     response = generate_chapters(
-                        transcript, args.lang, None, duration_mins
+                        transcript,
+                        args.lang,
+                        None,
+                        duration_mins,
+                        content_type,
+                        paragraphs=paragraphs,
                     )
 
                 if not response:
                     pr.no("    Empty response from LLM")
+                    if args.debug_log and debug_buffer:
+                        _flush_debug_log(file_path, debug_buffer)
                     continue
+                dbg(f"LLM raw response: {response[:500]!r}")
             except concurrent.futures.TimeoutError:
                 pr.amber(f"    Timeout on {file_path.name} — skipping")
+                if args.debug_log and debug_buffer:
+                    _flush_debug_log(file_path, debug_buffer)
                 continue
 
             snap_anchors = active_silence_times if active_silence_times else available
-            snap_tol = (
-                SILENCE_SNAP_TOLERANCE_MINS
-                if active_silence_times
-                else SNAP_TOLERANCE_MINS
-            )
+            snap_tol = args.snap_tolerance
             chapters = parse_lm_response(response, snap_anchors, tolerance=snap_tol)
+            dbg(f"parsed chapters: {[(ts, n) for ts, n in chapters]}")
+            chapters = merge_close_chapters(
+                chapters, transcript, snap_anchors, active_min_gap
+            )
+            dbg(f"after merge: {[(ts, n) for ts, n in chapters]}")
 
             if len(chapters) < MIN_CHAPTERS:
                 pr.no(f"    Only {len(chapters)} valid chapters generated — skipping")
+                continue
+
+            # Final safety: if last chapter is too close to end, drop it
+            if duration_mins > 0 and (duration_mins - chapters[-1][0] < (10.0 / 60.0)):
+                pr.amber(
+                    f"    Dropping last chapter '{chapters[-1][1]}' — too close to end"
+                )
+                chapters.pop()
+
+            if not validate_chapters(chapters, active_min_gap, duration_mins):
+                pr.no(
+                    f"    Chapter validation failed for {file_path.name} — skipping write"
+                )
                 continue
 
             ok = insert_chapters_block(review_path, file_path.name, chapters)
             if ok:
                 pr.yes(f"    {len(chapters)} chapters written")
 
+            if args.debug_log and debug_buffer:
+                _flush_debug_log(file_path, debug_buffer)
+
             if len(all_pending) > 1 and i < len(all_pending):
                 time.sleep(3)
         except Exception as e:
             pr.no(f"    Error on {file_path.name}: {e}")
+            if args.debug_log and debug_buffer:
+                _flush_debug_log(file_path, debug_buffer)
 
     pr.green("Done.")
 
