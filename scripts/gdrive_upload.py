@@ -285,6 +285,7 @@ def main():
                 make_history_key(path, album),
                 file_id,
                 "Google Drive video",
+                section="video",
             )
         except Exception as e:
             pr.no(f"Drive upload failed for {path.name}: {e}")
@@ -317,6 +318,7 @@ def main():
                         audio_key,
                         audio_id,
                         "Google Drive audio",
+                        section="audio",
                     )
                 except Exception as e:
                     pr.no(f"Audio upload failed for {audio_path.name}: {e}")

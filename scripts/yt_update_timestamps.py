@@ -51,9 +51,9 @@ def get_youtube_client(token_path: Path):
 
 
 def description_has_chapters(description: str) -> bool:
-    """Returns True if any line in description starts with "0:" (YouTube chapter format)."""
+    """Returns True if any line in description starts with "0:" or "00:" (YouTube chapter format)."""
     for line in description.splitlines():
-        if re.match(r"^0:\d{2}", line.strip()):
+        if re.match(r"^00?:\d{2}", line.strip()):
             return True
     return False
 
@@ -76,6 +76,11 @@ def main():
     )
     parser.add_argument(
         "--dry-run", action="store_true", help="Do not update, just list"
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force update even if description already has chapters",
     )
     parser.add_argument(
         "--limit", type=int, default=0, help="Process only first N videos"
@@ -129,7 +134,9 @@ def main():
                 continue
 
             snippet = items[0]["snippet"]
-            if description_has_chapters(snippet.get("description", "")):
+            if not args.force and description_has_chapters(
+                snippet.get("description", "")
+            ):
                 pr.amber(f"  {video_id} ({stem}): already has chapters — skipping")
                 skipped += 1
                 continue

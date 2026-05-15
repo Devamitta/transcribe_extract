@@ -35,8 +35,8 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="output/transcribed",
-        help="Directory to save transcription markdown files",
+        default=None,
+        help="Directory to save transcription markdown files (default: output/transcribed/<input-dir-name>)",
     )
     parser.add_argument(
         "--context",
@@ -60,7 +60,12 @@ def main():
 
     chunk_seconds = float(args.chunk_seconds)
     audio_dir = Path(args.input_dir)
-    output_dir = Path(args.output_dir)
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+    elif audio_dir.is_relative_to("audio"):
+        output_dir = Path("output/transcribed") / audio_dir.relative_to("audio")
+    else:
+        output_dir = Path("output/transcribed")
 
     # Scans recursively for raw MP3s
     audio_files = sorted(list(audio_dir.rglob("*.mp3")))

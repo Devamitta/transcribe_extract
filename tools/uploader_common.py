@@ -74,24 +74,47 @@ def parse_tags_for_api(tags_str: str) -> list[str]:
     return [t.lstrip("#") for t in tags_str.split() if t.startswith("#")]
 
 
+def hms_to_minutes(hms: str) -> float:
+    """Convert M:SS, MM:SS, or H:MM:SS to decimal minutes."""
+    parts = hms.split(":")
+    if len(parts) == 3:  # H:MM:SS
+        return int(parts[0]) * 60.0 + int(parts[1]) + int(parts[2]) / 60.0
+    elif len(parts) == 2:  # MM:SS
+        return int(parts[0]) + int(parts[1]) / 60.0
+    return float(hms)  # Fallback to decimal minutes
+
+
 def parse_chapters_str(raw: str) -> list[tuple[float, str]]:
-    """Parse a multiline '[X.X] Name' block from the review file."""
+    """Parse a multiline '[X.X]' or '[MM:SS]' block from the review file."""
     result: list[tuple[float, str]] = []
     for line in raw.strip().splitlines():
-        m = re.match(r"\[(\d+(?:\.\d+)?)\]\s+(.+)", line.strip())
+        m = re.match(r"\[([\d.:]+)\]\s+(.+)", line.strip())
         if m:
-            result.append((float(m.group(1)), m.group(2).strip()))
+            ts_str = m.group(1)
+            name = m.group(2).strip()
+            if ":" in ts_str:
+                ts = hms_to_minutes(ts_str)
+            else:
+                ts = float(ts_str)
+            result.append((ts, name))
     return result
+
+
+def minutes_to_hms(mins: float) -> str:
+    """Convert decimal minutes to M:SS or H:MM:SS format."""
+    total_s = int(round(mins * 60))
+    h, rem = divmod(total_s, 3600)
+    m, s = divmod(rem, 60)
+    if h > 0:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{m}:{s:02d}"
 
 
 def chapters_to_youtube(chapters: list[tuple[float, str]]) -> str:
     """Convert [(float_minutes, name), ...] to YouTube chapter format (M:SS or H:MM:SS)."""
     lines: list[str] = []
     for mins, name in chapters:
-        total_s = int(round(mins * 60))
-        h, rem = divmod(total_s, 3600)
-        m, s = divmod(rem, 60)
-        ts = f"{h}:{m:02d}:{s:02d}" if h > 0 else f"{m}:{s:02d}"
+        ts = minutes_to_hms(mins)
         lines.append(f"{ts} {name}")
     return "\n".join(lines)
 
@@ -245,9 +268,10 @@ def confirm_and_save_nested(
     key: str,
     platform_id: str,
     platform_name: str,
+    section: str | None = None,
 ) -> None:
     mark_uploaded(history, key, platform_id)
-    save_nested_history(history_path, language, history)
+    save_nested_history(history_path, language, history, section)
     pr.yes(f"Uploaded to {platform_name}: {key} (ID: {platform_id})")
 
 

@@ -94,7 +94,7 @@ def upload_video(
         "snippet": {
             "title": title,
             "description": description,
-            "categoryId": "22",  # People & Blogs
+            "categoryId": "27",  # Education
             "tags": tags,
             "defaultLanguage": lang,
             "defaultAudioLanguage": lang,

@@ -56,8 +56,8 @@ def main():
     parser.add_argument(
         "--transcript-dir",
         type=str,
-        required=True,
-        help="Directory containing MD transcripts",
+        default=None,
+        help="Directory containing MD transcripts (default: output/transcribed/<audio-dir-name>)",
     )
     parser.add_argument(
         "--threshold",
@@ -69,7 +69,12 @@ def main():
     args = parser.parse_args()
 
     audio_dir = Path(args.audio_dir)
-    transcript_dir = Path(args.transcript_dir)
+    if args.transcript_dir:
+        transcript_dir = Path(args.transcript_dir)
+    elif audio_dir.is_relative_to("audio"):
+        transcript_dir = Path("output/transcribed") / audio_dir.relative_to("audio")
+    else:
+        transcript_dir = Path("output/transcribed")
 
     if not transcript_dir.exists():
         print(f"Error: Transcript directory '{transcript_dir}' does not exist.")

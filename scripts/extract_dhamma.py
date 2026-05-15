@@ -129,7 +129,7 @@ def main() -> None:
             pr.yes(f"saved → {out_path}")
         else:
             pr.no(f"no Dhamma points found in '{fp.name}'")
-        
+
         finalize_temp(temp_path)
 
         if idx < len(queue) - 1:
