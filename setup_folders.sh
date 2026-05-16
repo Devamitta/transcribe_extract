@@ -9,15 +9,13 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 echo ">>> Creating directory structure <<<"
 
-# Audio input directories
-mkdir -p audio/english
-mkdir -p audio/russian
-mkdir -p audio/sangha
-mkdir -p audio/interview
+# Input staging directory
+mkdir -p input
 
-# Video input directories
-mkdir -p video/english
-mkdir -p video/russian
+# Namespaced output directories
+mkdir -p output/audio
+mkdir -p output/video
+mkdir -p output/thumbnails
 
 # Output directories — transcription & correction
 mkdir -p output/transcribed
@@ -27,14 +25,6 @@ mkdir -p output/polished
 
 # Output directories — batch pipeline
 mkdir -p output/batch_input
-
-# Output directories — YouTube/GDrive upload assets
-mkdir -p output/english_audio
-mkdir -p output/english_thumbnails
-mkdir -p output/english_youtube
-mkdir -p output/russian_audio
-mkdir -p output/russian_thumbnails
-mkdir -p output/russian_youtube
 
 # Reports and reviews
 mkdir -p reports/semantic

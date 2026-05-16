@@ -164,7 +164,11 @@ def generate_metadata(text: str, lang: str) -> str:
 
 
 def process_files(
-    md_files: list[Path], lang: str, output_file_path: str, folder_name: str
+    md_files: list[Path],
+    lang: str,
+    output_file_path: str,
+    folder_name: str,
+    speaker_name: str | None = None,
 ) -> None:
     """Processes a list of markdown files and appends results to the review file."""
     output_file = Path(output_file_path)
@@ -194,8 +198,13 @@ def process_files(
     pr.green(f"[{folder_name}] Processing {len(pending)} files → '{output_file}'.")
     total = len(pending)
 
-    # Speaker suffix based on lang
-    speaker_suffix = " | Бхиккху Дэвамитта" if lang == "ru" else " | Bhikkhu Devamitta"
+    # Speaker suffix based on lang or override
+    if speaker_name:
+        speaker_suffix = f" | {speaker_name}"
+    else:
+        speaker_suffix = (
+            " | Бхиккху Дэвамитта" if lang == "ru" else " | Bhikkhu Devamitta"
+        )
 
     for i, file_path in enumerate(pending, 1):
         pr.green(f"  {i}/{total} '{file_path.name}'...")
@@ -281,6 +290,11 @@ def main() -> None:
         default=0,
         help="Process only the first N transcript files (0=unlimited).",
     )
+    parser.add_argument(
+        "--name",
+        type=str,
+        help="Speaker name override for titles",
+    )
     args = parser.parse_args()
 
     transcribed_base = Path("output/transcribed")
@@ -302,8 +316,11 @@ def main() -> None:
             return
 
         folder_name = args.folder or file_path.parent.name
-        out_file_path = args.output_file or f"reviews/{folder_name}_review.md"
-        process_files([file_path], args.lang, out_file_path, folder_name)
+        lang_folder = LANG_TO_FOLDER.get(args.lang, "english")
+        out_file_path = args.output_file or f"reviews/{lang_folder}_review.md"
+        process_files(
+            [file_path], args.lang, out_file_path, folder_name, speaker_name=args.name
+        )
         return
 
     # Determine folders to process
@@ -318,16 +335,14 @@ def main() -> None:
 
     # Phase 1: Collect all pending files across all folders
     all_pending_groups: list[tuple[list[Path], str, str]] = []
+    lang_folder = LANG_TO_FOLDER.get(args.lang, "english")
     for folder_path in folders:
         folder_name = folder_path.name
         md_files = sorted(list(folder_path.rglob("*.md")))
         if not md_files:
             continue
 
-        if args.output_file and args.folder:
-            out_file_path = args.output_file
-        else:
-            out_file_path = f"reviews/{folder_name}_review.md"
+        out_file_path = args.output_file or f"reviews/{lang_folder}_review.md"
 
         output_file = Path(out_file_path)
         already_done: set[str] = set()
@@ -357,7 +372,9 @@ def main() -> None:
 
     # Phase 3: Process
     for pending, folder_name, out_file_path in all_pending_groups:
-        process_files(pending, args.lang, out_file_path, folder_name)
+        process_files(
+            pending, args.lang, out_file_path, folder_name, speaker_name=args.name
+        )
 
 
 if __name__ == "__main__":

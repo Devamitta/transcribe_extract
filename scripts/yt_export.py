@@ -2,13 +2,11 @@
 
 import argparse
 import re
-import sys
 import subprocess
 from datetime import datetime
 from pathlib import Path
 
 from tools.printer import printer as pr
-from tools.uploader_common import find_latest_review
 
 LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 
@@ -32,43 +30,6 @@ def parse_date(date_str: str) -> datetime | None:
         return None
 
 
-def check_approvals(review_file: Path, folder_name: str) -> bool:
-    """Checks if all entries with recording dates are approved. Returns True if all OK."""
-    if not review_file.exists():
-        return True
-
-    content = review_file.read_text(encoding="utf-8")
-    sections = re.split(r"\n---", content)
-
-    unapproved = []
-    # Skip header
-    for section in sections[1:]:
-        source_m = re.search(r"## Source: (.+)", section)
-        if not source_m:
-            continue
-
-        source = source_m.group(1).strip()
-        # Skip entries without a recording date (they are ignored by export anyway)
-        date_m = re.search(r"\*\*Recording Date:\*\*\s*(\d.*)", section)
-        if not date_m:
-            continue
-
-        approved_m = re.search(r"\*\*Approved:\*\*\s*(yes|no)", section, re.IGNORECASE)
-        if not approved_m or approved_m.group(1).lower() != "yes":
-            unapproved.append(source)
-
-    if unapproved:
-        pr.no("Export blocked: entries not yet approved:")
-        for source in unapproved:
-            pr.amber(f"  - {source}")
-        pr.amber(
-            f"Open reviews/{folder_name}_review.md, set Approved: yes for each reviewed entry, then re-run."
-        )
-        return False
-
-    return True
-
-
 def rename_step(
     review_file: Path,
     transcript_dir: Path,
@@ -90,8 +51,16 @@ def rename_step(
         source_match = re.search(r"## Source: (.+)", section)
         date_match = re.search(r"\*\*Recording Date:\*\* (.+)", section)
         title_match = re.search(r"\*\*Suggested Title:\*\* (.+)", section)
+        approved_match = re.search(
+            r"\*\*Approved:\*\*\s*(yes|no)", section, re.IGNORECASE
+        )
+
         if not source_match:
             continue
+
+        if not approved_match or approved_match.group(1).lower() != "yes":
+            continue
+
         source = source_match.group(1).strip()
         date_raw = date_match.group(1).strip() if date_match else ""
         title_raw = title_match.group(1).strip() if title_match else ""
@@ -205,11 +174,23 @@ def main() -> None:
         default=0,
         help="Process only the first N dated items (0=unlimited).",
     )
+    parser.add_argument(
+        "--name",
+        type=str,
+        help="Artist name override for metadata",
+    )
     args = parser.parse_args()
 
     transcribed_base = Path("output/transcribed")
-    audio_base = Path("audio")
-    video_base = Path("video")
+    audio_base = Path("output/audio")
+    video_base = Path("output/video")
+
+    # Artist name based on lang or override
+    artist_name = args.name
+    if not artist_name:
+        artist_name = (
+            "Бхиккху Дэвамитта" if args.lang == "ru" else "Bhikkhu Devamitta"
+        )
 
     if args.folder:
         folder_names = [args.folder]
@@ -229,15 +210,12 @@ def main() -> None:
         source_audio_dir = audio_base / folder_name
         video_dir = video_base / folder_name
 
-        review_path = args.review_file or find_latest_review(
-            f"{folder_name}_review*.md"
-        )
-        if not review_path or not review_path.exists():
-            pr.amber(f"  No review file found for '{folder_name}'. skipping.")
-            continue
+        lang_folder = LANG_TO_FOLDER.get(args.lang or "en", "english")
+        review_path = args.review_file or Path("reviews") / f"{lang_folder}_review.md"
 
-        if not args.dry_run and not check_approvals(review_path, folder_name):
-            sys.exit(1)
+        if not review_path or not review_path.exists():
+            pr.amber(f"  No review file found at '{review_path}'. skipping.")
+            continue
 
         # Step 1: Rename source files in their original folders
         rename_step(
@@ -252,11 +230,13 @@ def main() -> None:
         if args.dry_run:
             continue
 
-        # Determine output directory
+        # Determine output directory (same as source for in-place embed)
         output_dir = args.output_dir
         if not output_dir:
-            suffix = "_video_upload" if args.video_mode else "_audio"
-            output_dir = Path("output") / f"{folder_name}{suffix}"
+            if args.video_mode:
+                output_dir = Path("output/video") / folder_name
+            else:
+                output_dir = Path("output/audio") / folder_name
 
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -269,8 +249,14 @@ def main() -> None:
             title_match = re.search(r"\*\*Suggested Title:\*\* (.*)", section)
             desc_match = re.search(r"\*\*Suggested Description:\*\* (.*)", section)
             date_match = re.search(r"\*\*Recording Date:\*\* (.*)", section)
+            approved_m = re.search(
+                r"\*\*Approved:\*\*\s*(yes|no)", section, re.IGNORECASE
+            )
 
             if not (source_match and title_match and desc_match):
+                continue
+
+            if not approved_m or approved_m.group(1).lower() != "yes":
                 continue
 
             recording_date = date_match.group(1).strip() if date_match else ""
@@ -300,12 +286,11 @@ def main() -> None:
 
         if args.video_mode:
             source_file = video_dir / f"{source_stem}.mp4"
-            dest_file = output_dir / f"{source_stem}.mp4"
         else:
             source_file = source_audio_dir / f"{source_stem}.mp3"
-            dest_file = output_dir / f"{source_stem}.mp3"
 
         if source_file.exists():
+            tmp_file = source_file.with_suffix(".tmp" + source_file.suffix)
             cmd = [
                 "ffmpeg",
                 "-y",
@@ -318,18 +303,23 @@ def main() -> None:
                 "-metadata",
                 f"title={item['title']}",
                 "-metadata",
-                "artist=Devamitta Bhikkhu",
+                f"artist={artist_name}",
                 "-metadata",
                 f"date={item['recording_date']}",
+                "-metadata",
+                f"description={item['description']}",
                 "-c",
                 "copy",
-                str(dest_file),
+                str(tmp_file),
             ]
             try:
                 subprocess.run(cmd, check=True, capture_output=True, text=True)
+                tmp_file.rename(source_file)
                 exported += 1
             except subprocess.CalledProcessError as e:
                 pr.no(f"  ffmpeg failed for {source_file.name}: {e.stderr}")
+                if tmp_file.exists():
+                    tmp_file.unlink()
                 errors += 1
         else:
             pr.amber(f"  Source file not found: {source_file}")

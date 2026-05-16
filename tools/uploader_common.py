@@ -120,7 +120,7 @@ def chapters_to_youtube(chapters: list[tuple[float, str]]) -> str:
 
 
 def find_audio_for_mp4(
-    mp4_path: Path, audio_dir: Path = Path("audio/russian")
+    mp4_path: Path, audio_dir: Path = Path("output/audio")
 ) -> Path | None:
     mp3 = audio_dir / f"{mp4_path.stem}.mp3"
     return mp3 if mp3.exists() else None

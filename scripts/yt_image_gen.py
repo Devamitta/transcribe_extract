@@ -7,7 +7,6 @@ from pathlib import Path
 from tools.image_gen import generate_image
 from tools.printer import printer as pr
 from tools.provider import generate_content, get_working_key
-from tools.uploader_common import find_latest_review
 
 
 SYSTEM_INSTRUCTIONS: dict[str, str] = {
@@ -178,15 +177,14 @@ def main() -> None:
 
     # Pass 1: collect all approved talks from all folders
     all_talks: list[tuple[str, Path, dict]] = []
+    lang_folder = LANG_TO_FOLDER.get(args.lang, "english")
     for folder_name in folder_names:
-        output_dir = args.output_dir or Path("output") / f"{folder_name}_thumbnails"
-        review_path = args.review_file or find_latest_review(
-            f"{folder_name}_review*.md"
-        )
+        output_dir = args.output_dir or Path("output/thumbnails") / folder_name
+        review_path = args.review_file or Path("reviews") / f"{lang_folder}_review.md"
 
         if not review_path or not review_path.exists():
             if args.folder:
-                pr.no(f"  Review file not found for folder '{folder_name}'.")
+                pr.no(f"  Review file not found at '{review_path}'.")
             continue
 
         talks = parse_review(review_path)

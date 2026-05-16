@@ -374,10 +374,8 @@ def main() -> None:
         log_path.write_text("\n".join(buf), encoding="utf-8")
         buf.clear()
 
-    from tools.uploader_common import find_latest_review
-
     transcribed_base = Path("output/transcribed")
-    audio_base = Path("audio")
+    audio_base = Path("output/audio")
 
     if not transcribed_base.exists():
         pr.no(f"Base directory not found: {transcribed_base}")
@@ -399,16 +397,14 @@ def main() -> None:
 
     # Phase 1: collect all pending files across all folders
     all_pending: list[tuple[Path, str, Path]] = []
+    lang_folder = LANG_TO_FOLDER.get(args.lang, "english")
     for folder_path in folders:
         folder_name = folder_path.name
-        if args.review_file and args.folder:
-            review_path = args.review_file
-        else:
-            review_path = find_latest_review(f"{folder_name}_review*.md")
+        review_path = args.review_file or Path("reviews") / f"{lang_folder}_review.md"
 
         if not review_path or not review_path.exists():
             if args.folder:
-                pr.no(f"No review file found for folder '{folder_name}'.")
+                pr.no(f"No review file found at '{review_path}'.")
             continue
 
         if args.file:

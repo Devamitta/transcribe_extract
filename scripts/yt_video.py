@@ -7,7 +7,6 @@ from datetime import datetime
 from pathlib import Path
 
 from tools.printer import printer as pr
-from tools.uploader_common import find_latest_review
 
 LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 
@@ -121,20 +120,17 @@ def main() -> None:
 
     # Pass 1: collect all approved talks from all folders
     all_talks: list[tuple[str, dict, Path, Path, Path]] = []
+    lang_folder = LANG_TO_FOLDER.get(args.lang or "en", "english")
     for folder_name in folder_names:
-        review_path = args.review_file or find_latest_review(
-            f"{folder_name}_review*.md"
-        )
+        review_path = args.review_file or Path("reviews") / f"{lang_folder}_review.md"
         if not review_path or not review_path.exists():
             if args.folder:
-                pr.no(f"  Review file not found for folder '{folder_name}'.")
+                pr.no(f"  Review file not found at '{review_path}'.")
             continue
 
-        audio_dir = args.audio_dir or Path("output") / f"{folder_name}_audio"
-        thumbnails_dir = (
-            args.thumbnails_dir or Path("output") / f"{folder_name}_thumbnails"
-        )
-        output_dir = args.output_dir or Path("output") / f"{folder_name}_youtube"
+        audio_dir = args.audio_dir or Path("output/audio") / folder_name
+        thumbnails_dir = args.thumbnails_dir or Path("output/thumbnails") / folder_name
+        output_dir = args.output_dir or Path("output/video") / folder_name
         output_dir.mkdir(parents=True, exist_ok=True)
 
         talks = parse_review(review_path)

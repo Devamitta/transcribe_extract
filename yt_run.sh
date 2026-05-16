@@ -1,9 +1,8 @@
 #!/bin/bash
 # Unified YouTube pipeline for English and Russian talks (audio or video input).
-# Usage: ./yt_run.sh --lang ru|en [folder] [--video-mode] [--from-export] [--gdrive] [--dry-run] [--context CONTEXT]
-#   --lang: required; ru or en
-#   folder: optional; defaults to 'russian' (ru) or 'english' (en)
-#   --video-mode: ingest from .mp4 instead of .mp3; exports metadata back into mp4 and uploads
+# Usage: ./yt_run.sh [--lang ru|en] [--folder folder] [--from-export] [--gdrive] [--dry-run] [--context CONTEXT]
+#   --lang: optional; ru or en (defaults to en for review file selection)
+#   --folder: optional; specific folder in input/ to scan
 #   --from-export: skip transcription/metadata steps (assume review already done)
 #   --gdrive: also upload to Google Drive (default: YouTube only)
 #   --dry-run: pass --dry-run to upload steps
@@ -12,8 +11,8 @@ set -e
 
 LANG=""
 FOLDER=""
+NAME=""
 FROM_EXPORT=0
-VIDEO_MODE=0
 DRY_RUN=0
 GDRIVE=0
 CONTEXT=""
@@ -21,9 +20,10 @@ CONTEXT=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --lang)        LANG="$2";    shift 2 ;;
+    --folder)      FOLDER="$2";  shift 2 ;;
+    --name)        NAME="$2";    shift 2 ;;
     --context)     CONTEXT="$2"; shift 2 ;;
     --from-export) FROM_EXPORT=1; shift ;;
-    --video-mode)  VIDEO_MODE=1;  shift ;;
     --dry-run)     DRY_RUN=1;     shift ;;
     --gdrive)      GDRIVE=1;      shift ;;
     -*) shift ;;
@@ -31,15 +31,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [ -z "$LANG" ]; then
-  echo "Usage: ./yt_run.sh --lang ru|en [folder] [--video-mode] [--from-export] [--gdrive] [--dry-run] [--context CONTEXT]"
-  exit 1
+# Resolve EFFECTIVE_FOLDER for paths
+if [ -n "$FOLDER" ]; then
+  EFFECTIVE_FOLDER="$FOLDER"
+elif [ -n "$LANG" ]; then
+  [ "$LANG" = "ru" ] && EFFECTIVE_FOLDER="russian" || EFFECTIVE_FOLDER="english"
+else
+  EFFECTIVE_FOLDER=""   # scan input/ root; preserve subfolder structure
 fi
 
-if [ -z "$FOLDER" ]; then
-  [ "$LANG" = "ru" ] && FOLDER="russian" || FOLDER="english"
-fi
+# Default LANG to en for review file only
+[ -z "$LANG" ] && LANG="en"
 
+# Default CONTEXT
 if [ -z "$CONTEXT" ]; then
   [ "$LANG" = "ru" ] && CONTEXT="russian" || CONTEXT="dhamma"
 fi
@@ -48,74 +52,97 @@ DRY_RUN_FLAG=""
 [ "$DRY_RUN" -eq 1 ] && DRY_RUN_FLAG="--dry-run"
 
 if [ "$FROM_EXPORT" -eq 0 ]; then
-  if [ "$VIDEO_MODE" -eq 1 ]; then
-    # 1. Ingest video files (extract audio for transcription)
-    uv run python scripts/yt_ingest.py --folder "$FOLDER"
-  else
-    # 1. Convert non-MP3 audio to MP3 in-place
-    uv run python scripts/yt_audio_convert.py --folder "$FOLDER"
+  # 1. Unified ingest
+  INGEST_ARGS=""
+  [ -n "$FOLDER" ] && INGEST_ARGS="--folder $FOLDER"
+  [ -z "$FOLDER" ] && [ -n "$LANG" ] && INGEST_ARGS="--lang $LANG"
+  uv run python scripts/yt_ingest_unified.py $INGEST_ARGS
+
+  # 2. Auto-detect video mode
+  VIDEO_MODE=0
+  VID_DIR="output/video/$EFFECTIVE_FOLDER"
+  if [ -d "$VID_DIR" ] && [ -n "$(find "$VID_DIR" -name "*.mp4" -print -quit)" ]; then
+    VIDEO_MODE=1
   fi
 
-  # 2. Transcribe MP3 files using MLX Whisper
+  # 3. Transcribe
+  AUDIO_INPUT="output/audio"
+  [ -n "$EFFECTIVE_FOLDER" ] && AUDIO_INPUT="output/audio/$EFFECTIVE_FOLDER"
   caffeinate -i nice -n 10 uv run python scripts/transcribe.py \
-    --input-dir "audio/$FOLDER" \
+    --input-dir "$AUDIO_INPUT" \
     --context "$CONTEXT" --chunk-seconds 20
 
-  # 3. Generate metadata suggestions
-  uv run python scripts/yt_metadata.py --lang "$LANG" --folder "$FOLDER"
+  # 4. Metadata
+  uv run python scripts/yt_metadata.py --lang "$LANG" \
+    ${FOLDER:+--folder "$FOLDER"} \
+    ${NAME:+--name "$NAME"}
 
-  # 4. Generate AI chapter timestamps
-  uv run python scripts/yt_chapters.py --lang "$LANG" --folder "$FOLDER"
+  # 5. Chapters
+  uv run python scripts/yt_chapters.py --lang "$LANG" \
+    ${FOLDER:+--folder "$FOLDER"}
+
+  LANG_FOLDER="english"
+  [ "$LANG" = "ru" ] && LANG_FOLDER="russian"
 
   echo ""
   echo "----------------------------------------------------------------"
   echo "METADATA GENERATED."
-  echo "Please open reviews/${FOLDER}_review.md"
-  echo "1. Fill in the 'Recording Date' (DD-MM-YYYY) for approved talks."
-  echo "2. Review and edit titles and descriptions."
-  echo "3. Press Enter here when finished to continue with export."
+  echo "Please open reviews/${LANG_FOLDER}_review.md"
+  echo "Fill Recording Date, review titles/descriptions, then press Enter."
   echo "----------------------------------------------------------------"
   read -r _
 fi
 
-if [ "$VIDEO_MODE" -eq 1 ]; then
-  # 5. Embed metadata into source .mp4 and move to upload folder
-  uv run python scripts/yt_export.py --folder "$FOLDER" --video-mode
-
-  # 6. Upload to YouTube
-  uv run python scripts/yt_upload.py --lang "$LANG" --folder "$FOLDER" \
-    --input-dir "output/${FOLDER}_video_upload" $DRY_RUN_FLAG
-
-  if [ "$GDRIVE" -eq 1 ]; then
-    # 7. Upload to Google Drive
-    uv run python scripts/gdrive_upload.py --lang "$LANG" --folder "$FOLDER" \
-      --input-dir "output/${FOLDER}_video_upload" $DRY_RUN_FLAG
+# 2. Re-detect video mode if FROM_EXPORT is true
+if [ "$FROM_EXPORT" -eq 1 ]; then
+  VIDEO_MODE=0
+  VID_DIR="output/video/$EFFECTIVE_FOLDER"
+  if [ -d "$VID_DIR" ] && [ -n "$(find "$VID_DIR" -name "*.mp4" -print -quit)" ]; then
+    VIDEO_MODE=1
   fi
-else
-  # 5. Rename files by date and export with metadata
-  uv run python scripts/yt_export.py --folder "$FOLDER"
+fi
 
-  # 6. Generate thumbnail images
-  uv run python scripts/yt_image_gen.py --lang "$LANG" --folder "$FOLDER"
+# 6. Export (rename + embed metadata in-place)
+EXPORT_FLAGS=""
+[ "$VIDEO_MODE" -eq 1 ] && EXPORT_FLAGS="--video-mode"
+uv run python scripts/yt_export.py --lang "$LANG" \
+  ${FOLDER:+--folder "$FOLDER"} \
+  ${NAME:+--name "$NAME"} \
+  $EXPORT_FLAGS $DRY_RUN_FLAG
 
-  echo ""
-  echo "----------------------------------------------------------------"
-  echo "IMAGES GENERATED."
-  echo "Please review the thumbnails in output/${FOLDER}_thumbnails/"
-  echo "Press Enter when finished to continue with video creation."
-  echo "----------------------------------------------------------------"
-  read -r _
+if [ "$VIDEO_MODE" -eq 0 ]; then
+  # 7. Thumbnails
+  while true; do
+    uv run python scripts/yt_image_gen.py --lang "$LANG" \
+      ${FOLDER:+--folder "$FOLDER"}
 
-  # 7. Create MP4 videos
-  uv run python scripts/yt_video.py --folder "$FOLDER"
+    echo ""
+    echo "----------------------------------------------------------------"
+    echo "IMAGES GENERATED."
+    THUMB_DIR="output/thumbnails"
+    [ -n "$EFFECTIVE_FOLDER" ] && THUMB_DIR="output/thumbnails/$EFFECTIVE_FOLDER"
+    echo "Review thumbnails in $THUMB_DIR"
+    echo "Press Enter to continue, or 'r' to re-run image generation."
+    echo "----------------------------------------------------------------"
+    read -r user_input
+    if [ "$user_input" != "r" ] && [ "$user_input" != "R" ]; then
+      break
+    fi
+  done
 
-  # 8. Upload to YouTube
-  uv run python scripts/yt_upload.py --lang "$LANG" --folder "$FOLDER" $DRY_RUN_FLAG
+  # 8. Create MP4 videos → output/video/
+  uv run python scripts/yt_video.py --lang "$LANG" \
+    ${FOLDER:+--folder "$FOLDER"}
+fi
 
-  if [ "$GDRIVE" -eq 1 ]; then
-    # 9. Upload to Google Drive
-    uv run python scripts/gdrive_upload.py --lang "$LANG" --folder "$FOLDER" $DRY_RUN_FLAG
-  fi
+# 9. Upload to YouTube (from output/video/)
+uv run python scripts/yt_upload.py --lang "$LANG" \
+  ${FOLDER:+--folder "$FOLDER"} $DRY_RUN_FLAG
+
+if [ "$GDRIVE" -eq 1 ]; then
+  # 10. Upload to Google Drive
+  uv run python scripts/gdrive_upload.py --lang "$LANG" \
+    ${FOLDER:+--folder "$FOLDER"} $DRY_RUN_FLAG
 fi
 
 echo ""

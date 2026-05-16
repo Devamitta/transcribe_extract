@@ -17,7 +17,6 @@ from tools.uploader_common import (
     build_description,
     confirm_and_save_nested,
     find_audio_for_mp4,
-    find_latest_review,
     find_mp4s_with_album,
     gdrive_folder_env_key,
     load_nested_history,
@@ -36,6 +35,7 @@ GDRIVE_HISTORY_PATH = Path("output/gdrive_history.json")
 LEGACY_VIDEO_HISTORY = Path("output/gdrive_video_history.json")
 LEGACY_AUDIO_HISTORY = Path("output/gdrive_audio_history.json")
 DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder"
+LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 
 
 def get_google_client(service: str, version: str):
@@ -169,17 +169,15 @@ def main():
     )
 
     all_to_upload: list[tuple[Path, str | None, dict, Path, Path]] = []
-
+    lang_folder = LANG_TO_FOLDER.get(args.lang or "en", "english")
     for folder_name in folder_names:
-        review_path = args.review_file or find_latest_review(
-            f"{folder_name}_review*.md"
-        )
+        review_path = args.review_file or Path("reviews") / f"{lang_folder}_review.md"
         if not review_path or not review_path.exists():
             continue
 
         review = parse_review(review_path)
-        input_dir = args.input_dir or Path("output") / f"{folder_name}_youtube"
-        audio_dir = args.audio_dir or Path("output") / f"{folder_name}_audio"
+        input_dir = args.input_dir or Path("output/video") / folder_name
+        audio_dir = args.audio_dir or Path("output/audio") / folder_name
 
         if not input_dir.exists():
             continue

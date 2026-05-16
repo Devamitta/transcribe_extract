@@ -15,7 +15,6 @@ from tools.printer import printer as pr
 from tools.uploader_common import (
     build_description,
     confirm_and_save_nested,
-    find_latest_review,
     find_mp4s_with_album,
     load_nested_history,
     make_history_key,
@@ -161,16 +160,14 @@ def main():
 
     # Gather all pending uploads from selected folders
     all_to_upload: list[tuple[Path, str | None, dict]] = []
-
+    lang_folder = LANG_TO_FOLDER.get(args.lang or "en", "english")
     for folder_name in folder_names:
-        review_path = args.review_file or find_latest_review(
-            f"{folder_name}_review*.md"
-        )
+        review_path = args.review_file or Path("reviews") / f"{lang_folder}_review.md"
         if not review_path or not review_path.exists():
             continue
 
         review = parse_review(review_path)
-        input_dir = args.input_dir or Path("output") / f"{folder_name}_youtube"
+        input_dir = args.input_dir or Path("output/video") / folder_name
 
         if not input_dir.exists():
             continue
