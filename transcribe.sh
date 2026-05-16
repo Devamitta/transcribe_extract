@@ -21,7 +21,7 @@ run_context() {
   echo ""
   echo ">>> Audio Transcription (${ctx} context) <<<"
   if ! caffeinate -i uv run python scripts/transcribe.py \
-    --input-dir "audio/${ctx}" \
+    --input-dir "input/${ctx}" \
     --context "$ctx" \
     "${EXTRA_ARGS[@]}"; then
     echo "Error during ${ctx} transcription."
@@ -30,7 +30,7 @@ run_context() {
   echo ""
   echo ">>> Verifying Transcription Completeness <<<"
   if ! uv run python scripts/verify_duration.py \
-    --audio-dir "audio/${ctx}"; then
+    --audio-dir "input/${ctx}"; then
     echo "Warning: Some transcripts may be truncated. Check the report above."
   fi
 }

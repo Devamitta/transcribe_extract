@@ -33,7 +33,7 @@ uv sync
 ```bash
 ./setup_folders.sh
 ```
-Creates all required `audio/`, `video/`, `output/`, and `reports/` subdirectories, and generates a `.env` template in the project root. Run once after cloning.
+Creates all required `input/`, `video/`, `output/`, and `reports/` subdirectories, and generates a `.env` template in the project root. Run once after cloning.
 
 ### 6. Fill in `.env`
 
@@ -50,10 +50,10 @@ Converts raw audio into Markdown format, using context-specific Pali glossaries 
 
 | Scope | Command | Input | Output |
 | :--- | :--- | :--- | :--- |
-| **All** | `./transcribe.sh` | `audio/sangha/`, `audio/interview/`, `audio/dhamma/` | `output/transcribed/` |
-| **Saṅgha** | `./transcribe.sh --context sangha` | `audio/sangha/` | `output/transcribed/sangha/` |
-| **Interview** | `./transcribe.sh --context interview` | `audio/interview/` | `output/transcribed/interview/` |
-| **Dhamma** | `./transcribe.sh --context dhamma` | `audio/dhamma/` | `output/transcribed/dhamma/` |
+| **All** | `./transcribe.sh` | `input/` | `output/transcribed/` |
+| **Saṅgha** | `./transcribe.sh --context sangha` | `input/sangha/` | `output/transcribed/sangha/` |
+| **Interview** | `./transcribe.sh --context interview` | `input/interview/` | `output/transcribed/interview/` |
+| **Dhamma** | `./transcribe.sh --context dhamma` | `input/dhamma/` | `output/transcribed/dhamma/` |
 
 **Direct script:**
 ```bash
@@ -89,8 +89,7 @@ Multi-stage pipeline for publishing Dhamma talks to YouTube and Google Drive (En
 
 ## Project Structure
 
-- `audio/` — Raw audio input (`sangha/`, `interview/`, `russian/`, `english/`)
-- `video/` — Raw video input (`russian/`, `english/`)
+- `input/` — Raw input files (`sangha/`, `interview/`, `russian/`, `english/`)
 - `output/` — All pipeline outputs (transcripts, extractions, upload assets)
 - `scripts/` — Runnable pipeline scripts
 - `tools/` — Shared modules imported by scripts
