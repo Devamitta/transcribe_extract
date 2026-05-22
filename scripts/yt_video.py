@@ -108,7 +108,7 @@ def main() -> None:
 
     transcribed_base = Path("output/transcribed")
 
-    if args.folder:
+    if args.folder is not None:
         folder_names = [args.folder]
     elif args.lang:
         folder_names = [LANG_TO_FOLDER[args.lang]]

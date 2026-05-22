@@ -1,10 +1,18 @@
 """Shared utilities for YouTube and Google Drive upload scripts."""
 
 import json
+import pickle
 import re
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
+
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
 from tools.printer import printer as pr
 
@@ -13,6 +21,60 @@ BIO_LINKS: dict[str, str] = {
     "ru": "Инфо о Бхантэ devamitta.github.io/bio",
     "en": "Info about Bhante devamitta.github.io/bio-en",
 }
+
+
+def get_google_client(
+    service: str,
+    version: str,
+    token_path: Path,
+    scopes: list[str],
+    client_secret: Path = Path("client_secret.json"),
+):
+    """Authenticates and returns a Google API client using OAuth2 with token caching."""
+    creds: Credentials | None = None
+    if token_path.exists():
+        with token_path.open("rb") as f:
+            creds = pickle.load(f)
+        # Force re-auth if cached token is missing any required scope
+        if creds and creds.scopes and not set(scopes).issubset(creds.scopes):
+            pr.amber(
+                f"Token {token_path.name} missing required scopes — re-authenticating"
+            )
+            creds = None
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            if not client_secret.exists():
+                pr.no(f"Missing {client_secret}. Follow output/UPLOAD_SETUP.md")
+                raise SystemExit(1)
+            flow = InstalledAppFlow.from_client_secrets_file(str(client_secret), scopes)
+            creds = flow.run_local_server(port=0)  # type: ignore[assignment]
+        with token_path.open("wb") as f:
+            pickle.dump(creds, f)
+    return build(service, version, credentials=creds)
+
+
+def check_api_probe(youtube: Any) -> tuple[bool, str]:
+    """Probe the API with a 1-unit call to detect quota exhaustion."""
+    _quota_reasons: frozenset[str] = frozenset({"quotaExceeded", "dailyLimitExceeded"})
+    try:
+        youtube.channels().list(part="id", mine=True).execute()
+        return True, "API accessible — uploads should work"
+    except HttpError as e:
+        try:
+            content = json.loads(e.content)
+            reasons = {
+                err.get("reason", "")
+                for err in content.get("error", {}).get("errors", [])
+            }
+        except Exception:
+            reasons = set()
+        if reasons & _quota_reasons:
+            return False, "Daily quota exceeded — uploads are blocked today"
+        return False, f"API error ({e.status_code}) — check credentials or permissions"
+    except Exception as e:
+        return False, f"Connection error: {e}"
 
 
 def gdrive_folder_env_key(lang: str) -> str:

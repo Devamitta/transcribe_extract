@@ -91,12 +91,16 @@ def main() -> None:
         folder = LANG_TO_FOLDER[args.lang]
         targets = [(input_base / folder, folder)]
     else:
-        # Scan all immediate subfolders
-        targets = [(d, d.name) for d in sorted(input_base.iterdir()) if d.is_dir()]
-        # Also include the root if there are files there
-        root_files = [f for f in input_base.iterdir() if f.is_file()]
+        # Root media files present → scope to root only (avoid touching sibling subfolders).
+        root_files = [
+            f
+            for f in input_base.iterdir()
+            if f.is_file() and f.suffix.lower() in VIDEO_EXTS | AUDIO_EXTS | {".mp3"}
+        ]
         if root_files:
-            targets.insert(0, (input_base, ""))
+            targets = [(input_base, "")]
+        else:
+            targets = [(d, d.name) for d in sorted(input_base.iterdir()) if d.is_dir()]
 
     remaining = args.limit if args.limit > 0 else 999999
 
@@ -216,7 +220,7 @@ def main() -> None:
 
         if video_found:
             pr.amber(
-                f"  Video files moved to output/video/{folder_name}/. "
+                f"  Video files moved to output/video/{folder_name + '/' if folder_name else ''}. "
                 f"Pipeline will auto-select video mode."
             )
 

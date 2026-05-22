@@ -126,7 +126,7 @@ def main():
         pr.no(f"No history found for language '{args.lang}'.")
         return
 
-    folder_name = args.folder or LANG_TO_FOLDER[args.lang]
+    folder_name = args.folder if args.folder is not None else LANG_TO_FOLDER[args.lang]
     review_path = find_latest_review(f"{folder_name}_review*.md")
     if not review_path or not review_path.exists():
         pr.no("Review file not found.")

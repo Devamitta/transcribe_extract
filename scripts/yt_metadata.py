@@ -188,7 +188,7 @@ def _write_dry_run_entry(
         f"**Approved:** yes\n"
         f"**Media:** {media}\n"
         f"**Suggested Title:** {title}\n"
-        f"**Suggested Description:** {dry_run_desc}\n"
+        f"**Suggested Description:** {dry_run_desc}\n\n"
         f"**Suggested Tags:** #dhamma\n"
     )
     output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -298,7 +298,7 @@ def process_files(
                 f"**Approved:** no\n"
                 f"**Media:** {media}\n"
                 f"**Suggested Title:** {title}\n"
-                f"**Suggested Description:** {description}\n"
+                f"**Suggested Description:** {description}\n\n"
                 f"**Suggested Tags:** {tags}\n"
             )
             with output_file.open("a", encoding="utf-8") as fh:

@@ -100,6 +100,15 @@ def rename_step(
         new_stem = f"{iso_date} - {sanitize_filename(title_raw)}"
 
         if old_stem == new_stem:
+            # Already correctly named; still record path so the upload filter works on re-runs.
+            if video_mode:
+                _mp4 = video_dir / f"{old_stem}.mp4"
+                if _mp4.exists():
+                    renamed_media_paths.append(_mp4)
+            else:
+                _mp3 = source_audio_dir / f"{old_stem}.mp3"
+                if _mp3.exists():
+                    renamed_media_paths.append(_mp3)
             skipped += 1
             continue
         new_md_name = f"{new_stem}.md"
@@ -131,6 +140,13 @@ def rename_step(
                     old_mp4.rename(new_mp4)
                     log_stub(new_mp4)
                     renamed_media_paths.append(new_mp4)
+            else:
+                # Real files in dry-run: record current path so upload filter
+                # can match the file as it exists on disk (not yet renamed).
+                if video_mode:
+                    renamed_media_paths.append(old_mp4)
+                else:
+                    renamed_media_paths.append(old_mp3)
             renamed.append((source_name, new_md_name))
             continue
 
@@ -364,7 +380,11 @@ def main() -> None:
         for section in sections[1:]:
             source_match = re.search(r"## Source: (.*)", section)
             title_match = re.search(r"\*\*Suggested Title:\*\* (.*)", section)
-            desc_match = re.search(r"\*\*Suggested Description:\*\* (.*)", section)
+            desc_match = re.search(
+                r"\*\*Suggested Description:\*\*\s*(.*?)(?=\n\*\*Suggested Tags:|\Z)",
+                section,
+                re.DOTALL,
+            )
             date_match = re.search(r"\*\*Recording Date:\*\* (.*)", section)
             approved_m = re.search(
                 r"\*\*Approved:\*\*\s*(yes|no)", section, re.IGNORECASE
@@ -399,7 +419,8 @@ def main() -> None:
         )
 
     if not all_items:
-        pr.no("No dated items found to process.")
+        if not args.dry_run:
+            pr.no("No dated items found to process.")
         return
 
     exported, errors = 0, 0

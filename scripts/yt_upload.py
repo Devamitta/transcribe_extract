@@ -1,23 +1,20 @@
 """Batch-uploads Dhamma MP4s to YouTube with playlist and history support."""
 
 import argparse
-import pickle
 import unicodedata
 from datetime import datetime
 from pathlib import Path
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
 from tools.printer import printer as pr
 from tools.uploader_common import (
     BIO_LINKS,
     build_description,
+    check_api_probe,
     confirm_and_save_nested,
     find_mp4s_with_album,
+    get_google_client,
     load_nested_history,
     make_history_key,
     match_mp4_to_review,
@@ -29,6 +26,7 @@ from tools.uploader_common import (
 CLIENT_SECRET = Path("client_secret.json")
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube",
 ]
 HISTORY_PATH = Path("output/youtube_history.json")
 DEFAULT_BATCH = 6
@@ -39,26 +37,6 @@ TOKEN_PATHS: dict[str, Path] = {
 }
 
 LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
-
-
-def get_google_client(service: str, version: str, token_path: Path):
-    """Authenticates and returns a Google API client."""
-    creds: Credentials | None = None
-    if token_path.exists():
-        with token_path.open("rb") as f:
-            creds = pickle.load(f)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            if not CLIENT_SECRET.exists():
-                pr.no(f"Missing {CLIENT_SECRET}. Follow output/UPLOAD_SETUP.md")
-                raise SystemExit(1)
-            flow = InstalledAppFlow.from_client_secrets_file(str(CLIENT_SECRET), SCOPES)
-            creds = flow.run_local_server(port=0)  # type: ignore[assignment]
-        with token_path.open("wb") as f:
-            pickle.dump(creds, f)
-    return build(service, version, credentials=creds)
 
 
 def find_existing_playlist(youtube, title: str) -> str | None:
@@ -199,27 +177,38 @@ def main():
         pr.green("Everything already uploaded.")
         return
 
-    # Restrict to specific files if a created-log was provided
+    # Restrict to specific files if a created-log was provided.
+    # Normalize to NFC on both sides: log paths are NFC (built from review strings),
+    # but find_mp4s_with_album returns NFD paths from macOS APFS.
     if args.files_from_log and args.files_from_log.exists():
         log_content = args.files_from_log.read_text(encoding="utf-8")
-        specific: set[Path] = {
-            Path(line.strip()) for line in log_content.splitlines() if line.strip()
+        specific: set[str] = {
+            unicodedata.normalize("NFC", line.strip())
+            for line in log_content.splitlines()
+            if line.strip()
         }
         if specific:
-            all_to_upload = [t for t in all_to_upload if t[0] in specific]
+            all_to_upload = [
+                t
+                for t in all_to_upload
+                if unicodedata.normalize("NFC", str(t[0])) in specific
+            ]
 
     if not all_to_upload:
         pr.green("No new uploads for this run.")
         return
 
-    # Sort all pending uploads chronologically by recording date
+    # Sort all pending uploads by recording date.
+    # When filtering by log (--from-export re-run), sort newest first so the current video
+    # (which has the most recent recording date) is uploaded before any backlog.
     def _parse_date(t: tuple[Path, str | None, dict]) -> datetime:
         try:
             return datetime.strptime(t[2]["recording_date"], "%d-%m-%Y")
         except (ValueError, KeyError):
             return datetime.min
 
-    all_to_upload.sort(key=_parse_date)
+    newest_first = bool(args.files_from_log and args.files_from_log.exists())
+    all_to_upload.sort(key=_parse_date, reverse=newest_first)
 
     if args.limit > 0:
         to_upload = all_to_upload[: args.limit]
@@ -254,9 +243,17 @@ def main():
             )
             pr.white(f"  Tags:           {', '.join(api_tags)}")
             pr.white(f"  Description:\n{desc}")
+        pr.green("Probing YouTube API for quota status...")
+        pr.bip()
+        yt_probe = get_google_client("youtube", "v3", token_path, SCOPES, CLIENT_SECRET)
+        ok, msg = check_api_probe(yt_probe)
+        if ok:
+            pr.yes(msg)
+        else:
+            pr.no(msg)
         return
 
-    youtube = get_google_client("youtube", "v3", token_path)
+    youtube = get_google_client("youtube", "v3", token_path, SCOPES, CLIENT_SECRET)
     playlist_cache: dict[str, str] = {}
 
     for path, album, meta in to_upload:
@@ -266,6 +263,7 @@ def main():
             meta["description"],
             tags_str,
             chapters=meta.get("chapters", ""),
+            bio_link=BIO_LINKS.get(args.lang),
         )
         api_tags = parse_tags_for_api(tags_str)
         pr.white(f"Uploading: {meta['title']}...")
