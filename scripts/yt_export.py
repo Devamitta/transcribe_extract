@@ -284,21 +284,6 @@ def main() -> None:
         )
         sort_review_file(review_path, args.dry_run)
 
-        stats_content = review_path.read_text(encoding="utf-8")
-        stats_sections = re.split(r"\n---", stats_content)[1:]
-        total = sum(1 for s in stats_sections if re.search(r"## Source:", s))
-        with_date = sum(
-            1 for s in stats_sections if re.search(r"\*\*Recording Date:\*\* \S", s)
-        )
-        approved = sum(
-            1
-            for s in stats_sections
-            if re.search(r"\*\*Approved:\*\*\s*yes", s, re.IGNORECASE)
-        )
-        pr.green(
-            f"  Entries: {total} total | {with_date} with date | {approved} approved"
-        )
-
         if args.dry_run:
             continue
 
