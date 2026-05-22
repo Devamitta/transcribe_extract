@@ -296,6 +296,7 @@ def main():
             )
         except Exception as e:
             pr.no(f"Upload failed for {path.name}: {e}")
+            raise SystemExit(1)
 
     pr.green("Session complete.")
 

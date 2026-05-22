@@ -289,7 +289,7 @@ def main():
             )
         except Exception as e:
             pr.no(f"Drive upload failed for {path.name}: {e}")
-            continue
+            raise SystemExit(1)
 
         audio_path = find_audio_for_mp4(path, audio_dir)
         if audio_path:
@@ -322,6 +322,7 @@ def main():
                     )
                 except Exception as e:
                     pr.no(f"Audio upload failed for {audio_path.name}: {e}")
+                    raise SystemExit(1)
 
     pr.green("Session complete.")
 

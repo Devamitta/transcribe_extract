@@ -26,8 +26,9 @@ DATE_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}")
 
 def sanitize_filename(name: str) -> str:
     """Removes invalid filename characters and cleans up whitespace."""
-    sanitized = re.sub(r'[\\/:*?"<>]', "", name)
-    sanitized = sanitized.replace("|", "-")
+    sanitized = name.replace("|", "-")
+    sanitized = re.sub(r"\s*:\s*", " - ", sanitized)
+    sanitized = re.sub(r'[\\/:*?"<>]', "", sanitized)
     sanitized = re.sub(r"\s{2,}", " ", sanitized)
     return sanitized.strip(". ")
 
