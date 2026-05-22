@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import mlx_whisper
-
 from tools.glossary import DHAMMA, SANGHA, VINAYA
 from tools.printer import printer as pr
 
@@ -68,6 +67,11 @@ def main():
         default=60,
         help="Paragraph flush interval in seconds (default: 60). Use 30 for finer YouTube chapter timestamps.",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print what would be transcribed; create stubs for pipeline propagation.",
+    )
     args = parser.parse_args()
 
     chunk_seconds = float(args.chunk_seconds)
@@ -76,8 +80,8 @@ def main():
         audio_dir = Path(args.input_dir)
         if args.output_dir:
             output_dir = Path(args.output_dir)
-        elif audio_dir.is_relative_to("audio"):
-            output_dir = Path("output/transcribed") / audio_dir.relative_to("audio")
+        elif audio_dir.is_relative_to("input"):
+            output_dir = Path("output/transcribed") / audio_dir.relative_to("input")
         else:
             output_dir = Path("output/transcribed")
     elif args.lang:
@@ -115,6 +119,19 @@ def main():
         pr.yes(f"All {len(audio_files)} transcripts up to date — nothing to do.")
         return
     audio_files = pending
+
+    if args.dry_run:
+        from tools.dry_run import create_stub, is_pipeline_dry_run
+
+        pr.green(f"[DRY RUN] Input:  {audio_dir}")
+        pr.green(f"[DRY RUN] Output: {output_dir}")
+        for audio_path in audio_files:
+            relative_path = audio_path.relative_to(audio_dir)
+            output_path = output_dir / relative_path.with_suffix(".md")
+            pr.white(f"  {audio_path} → {output_path}")
+            if is_pipeline_dry_run():
+                create_stub(output_path)
+        return
 
     COOLDOWN_RATIO = 0.30
     MIN_COOLDOWN = 10

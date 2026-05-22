@@ -6,6 +6,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from tools.dry_run import create_stub, is_pipeline_dry_run
 from tools.printer import printer as pr
 
 LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
@@ -181,9 +182,9 @@ def main() -> None:
             continue
 
         if args.dry_run:
-            pr.green(
-                f"    DRY RUN: {audio_path.name} + {image_path.name} → {output_mp4.name}"
-            )
+            pr.white(f"  [DRY RUN] {audio_path} + {image_path} → {output_mp4}")
+            if is_pipeline_dry_run():
+                create_stub(output_mp4)
             continue
 
         # ffmpeg command

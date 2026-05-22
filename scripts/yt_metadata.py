@@ -4,8 +4,10 @@ import argparse
 import concurrent.futures
 import re
 import time
+import unicodedata
 from pathlib import Path
 
+from tools.dry_run import is_pipeline_dry_run
 from tools.glossary import TAG_POOL_EN, TAG_POOL_RU, TAG_SYNC_GROUPS
 from tools.printer import printer as pr
 from tools.provider import (
@@ -13,6 +15,7 @@ from tools.provider import (
     generate_with_timeout,
     get_working_key,
 )
+from tools.uploader_common import BIO_LINKS
 
 
 TAG_POOLS: dict[str, list[str]] = {
@@ -71,13 +74,11 @@ Additional rules for both formats:
 - Output in Russian.
 
 DESCRIPTION REQUIREMENTS:
-- Write exactly 2–3 sentences. No more, no less.
 - Tone: modest, clear, grounded — for a sincere practitioner, not a casual browser.
 - Use humble, impersonal sentence openers. GOOD examples: "Объясняется...", "В этой беседе разбирается...", "Рассматривается...", "Раскрывается...".
 - AVOID self-important or formal openers such as: "В этом учении объясняется...", "Данное учение посвящено...", "Это учение раскрывает...".
-- Sentence 1: What the talk covers — using a modest opener as above.
-- Sentence 2: What the listener will understand, see more clearly, or be able to apply after listening.
-- Sentence 3 (optional but preferred): One notable analogy, framing, or insight from this talk.
+- Write exactly 2–3 sentences (overview, what the listener gains, one notable analogy or insight).
+- If the talk covers multiple distinct topics or chapters: after the 2–3 sentences, add a bullet list of 3–8 main topics covered (each bullet ≤ 10 words, no hashtags).
 - Do NOT use marketing language.
 - NEVER mention "личная история". Focus on the Dhamma point being illustrated.
 - NEVER reference the speaker directly. Keep descriptions impersonal and focused on the Dhamma.
@@ -130,13 +131,11 @@ Additional rules for both formats:
 - Output in English.
 
 DESCRIPTION REQUIREMENTS:
-- Write exactly 2–3 sentences. No more, no less.
 - Tone: modest, clear, grounded — for a sincere practitioner, not a casual browser.
 - Use humble, impersonal sentence openers. GOOD examples: "The talk explains...", "This session explores...", "An examination of...", "A reflection on...".
 - AVOID self-important or formal openers such as: "This teaching explains...", "This lecture is dedicated to...", "This talk reveals...".
-- Sentence 1: What the talk covers — using a modest opener as above.
-- Sentence 2: What the listener will understand, see more clearly, or be able to apply after listening.
-- Sentence 3 (optional but preferred): One notable analogy, framing, or insight from this talk.
+- Write exactly 2–3 sentences (overview, what the listener gains, one notable analogy or insight).
+- If the talk covers multiple distinct topics or chapters: after the 2–3 sentences, add a bullet list of 3–8 main topics covered (each bullet ≤ 10 words, no hashtags).
 - Do NOT include any hashtags in the description text. Tags go on the TAGS line only.
 - Output in English.
 
@@ -163,12 +162,56 @@ def generate_metadata(text: str, lang: str) -> str:
     )
 
 
+def _write_dry_run_entry(
+    output_file: Path,
+    file_path: Path,
+    lang: str,
+    media: str,
+    speaker_name: str | None,
+    bio_link: str | None = None,
+) -> None:
+    """Writes a clearly-marked stub entry to the review file for pipeline dry-run."""
+    speaker = speaker_name or (
+        " | Бхиккху Дэвамитта" if lang == "ru" else " | Bhikkhu Devamitta"
+    )
+    if speaker_name and not speaker_name.startswith(" |"):
+        speaker = f" | {speaker_name}"
+    nfc_name = unicodedata.normalize("NFC", file_path.name)
+    title = f"[DRY_RUN] {file_path.stem}{speaker}"
+    dry_run_desc = "[DRY_RUN] Dry run pipeline trace."
+    if bio_link:
+        dry_run_desc = f"{dry_run_desc}\n\n{bio_link}"
+    section = (
+        f"\n--- \n"
+        f"## Source: {nfc_name}\n"
+        f"**Recording Date:** 01-01-2000\n"
+        f"**Approved:** yes\n"
+        f"**Media:** {media}\n"
+        f"**Suggested Title:** {title}\n"
+        f"**Suggested Description:** {dry_run_desc}\n"
+        f"**Suggested Tags:** #dhamma\n"
+    )
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    if not output_file.exists():
+        header_lang = "Russian" if lang == "ru" else "English"
+        output_file.write_text(
+            f"# {header_lang} Audio Metadata Review (dry-run)\n"
+            "Dry run stub — will be removed after pipeline completes.\n",
+            encoding="utf-8",
+        )
+    with output_file.open("a", encoding="utf-8") as fh:
+        fh.write(section)
+
+
 def process_files(
     md_files: list[Path],
     lang: str,
     output_file_path: str,
     folder_name: str,
     speaker_name: str | None = None,
+    media: str = "audio",
+    dry_run: bool = False,
+    bio_link: str | None = None,
 ) -> None:
     """Processes a list of markdown files and appends results to the review file."""
     output_file = Path(output_file_path)
@@ -177,12 +220,29 @@ def process_files(
     already_done: set[str] = set()
     if output_file.exists():
         existing = output_file.read_text(encoding="utf-8")
-        already_done = set(re.findall(r"## Source: (.+)", existing))
+        already_done = {
+            unicodedata.normalize("NFC", s)
+            for s in re.findall(r"## Source: (.+)", existing)
+        }
 
-    pending = [f for f in md_files if f.name not in already_done]
+    pending = [
+        f for f in md_files if unicodedata.normalize("NFC", f.name) not in already_done
+    ]
 
     if not pending:
         pr.green(f"[{folder_name}] All files already processed.")
+        return
+
+    if dry_run:
+        pr.green(f"[DRY RUN] Input:  {pending[0].parent if pending else 'N/A'}")
+        pr.green(f"[DRY RUN] Output: {output_file}")
+        for f in pending:
+            pr.white(f"  {f} → {output_file}")
+        if is_pipeline_dry_run():
+            for f in pending:
+                _write_dry_run_entry(
+                    output_file, f, lang, media, speaker_name, bio_link
+                )
         return
 
     # Write header only for a fresh file
@@ -228,12 +288,15 @@ def process_files(
                     tags = line[len("TAGS:") :].strip()
 
             tags = enrich_tags(tags, lang)
+            if bio_link:
+                description = f"{description}\n\n{bio_link}"
 
             section = (
                 f"\n--- \n"
-                f"## Source: {file_path.name}\n"
+                f"## Source: {unicodedata.normalize('NFC', file_path.name)}\n"
                 f"**Recording Date:** \n"
                 f"**Approved:** no\n"
+                f"**Media:** {media}\n"
                 f"**Suggested Title:** {title}\n"
                 f"**Suggested Description:** {description}\n"
                 f"**Suggested Tags:** {tags}\n"
@@ -258,9 +321,9 @@ def main() -> None:
     parser.add_argument(
         "--lang",
         type=str,
-        required=True,
+        default=None,
         choices=["ru", "en"],
-        help="Language of the talk (ru|en).",
+        help="Language of the talk (ru|en). Omit to skip bio link and use English defaults.",
     )
     parser.add_argument(
         "--folder",
@@ -295,14 +358,33 @@ def main() -> None:
         type=str,
         help="Speaker name override for titles",
     )
+    parser.add_argument(
+        "--video-mode",
+        action="store_true",
+        help="Mark new entries as Media: video instead of audio.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print what would be processed; create stub review entries for pipeline propagation.",
+    )
     args = parser.parse_args()
+    media = "video" if args.video_mode else "audio"
+
+    # lang may be None when called without --lang; fall back to "en" for processing
+    processing_lang: str = args.lang or "en"
+    bio_link: str | None = (
+        BIO_LINKS.get(args.lang)
+        if args.lang is not None and args.name is None
+        else None
+    )
 
     transcribed_base = Path("output/transcribed")
     if not transcribed_base.exists():
         pr.no(f"Base directory not found: {transcribed_base}")
         return
 
-    if not get_working_key():
+    if not args.dry_run and not get_working_key():
         pr.no("All API keys failed. Exiting.")
         return
 
@@ -316,18 +398,25 @@ def main() -> None:
             return
 
         folder_name = args.folder or file_path.parent.name
-        lang_folder = LANG_TO_FOLDER.get(args.lang, "english")
+        lang_folder = LANG_TO_FOLDER.get(processing_lang, "english")
         out_file_path = args.output_file or f"reviews/{lang_folder}_review.md"
         process_files(
-            [file_path], args.lang, out_file_path, folder_name, speaker_name=args.name
+            [file_path],
+            processing_lang,
+            out_file_path,
+            folder_name,
+            speaker_name=args.name,
+            media=media,
+            dry_run=args.dry_run,
+            bio_link=bio_link,
         )
         return
 
     # Determine folders to process
-    if args.folder:
+    if args.folder is not None:
         folders = [transcribed_base / args.folder]
     else:
-        folders = [transcribed_base / LANG_TO_FOLDER[args.lang]]
+        folders = [transcribed_base / LANG_TO_FOLDER.get(processing_lang, "english")]
 
     if not folders:
         pr.no("No subfolders found to process.")
@@ -335,10 +424,10 @@ def main() -> None:
 
     # Phase 1: Collect all pending files across all folders
     all_pending_groups: list[tuple[list[Path], str, str]] = []
-    lang_folder = LANG_TO_FOLDER.get(args.lang, "english")
+    lang_folder = LANG_TO_FOLDER.get(processing_lang, "english")
     for folder_path in folders:
         folder_name = folder_path.name
-        md_files = sorted(list(folder_path.rglob("*.md")))
+        md_files = sorted(list(folder_path.glob("*.md")))
         if not md_files:
             continue
 
@@ -348,9 +437,16 @@ def main() -> None:
         already_done: set[str] = set()
         if output_file.exists():
             existing = output_file.read_text(encoding="utf-8")
-            already_done = set(re.findall(r"## Source: (.+)", existing))
+            already_done = {
+                unicodedata.normalize("NFC", s)
+                for s in re.findall(r"## Source: (.+)", existing)
+            }
 
-        pending = [f for f in md_files if f.name not in already_done]
+        pending = [
+            f
+            for f in md_files
+            if unicodedata.normalize("NFC", f.name) not in already_done
+        ]
         if pending:
             all_pending_groups.append((pending, folder_name, out_file_path))
 
@@ -373,7 +469,14 @@ def main() -> None:
     # Phase 3: Process
     for pending, folder_name, out_file_path in all_pending_groups:
         process_files(
-            pending, args.lang, out_file_path, folder_name, speaker_name=args.name
+            pending,
+            processing_lang,
+            out_file_path,
+            folder_name,
+            speaker_name=args.name,
+            media=media,
+            dry_run=args.dry_run,
+            bio_link=bio_link,
         )
 
 

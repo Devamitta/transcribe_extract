@@ -8,7 +8,11 @@ from pathlib import Path
 
 from tools.printer import printer as pr
 
-BIO_LINK = "Инфо о Бхантэ devamitta.github.io/bio"
+
+BIO_LINKS: dict[str, str] = {
+    "ru": "Инфо о Бхантэ devamitta.github.io/bio",
+    "en": "Info about Bhante devamitta.github.io/bio-en",
+}
 
 
 def gdrive_folder_env_key(lang: str) -> str:
@@ -32,7 +36,11 @@ def parse_review(review_path: Path) -> dict[str, dict[str, str]]:
         date_m = re.search(r"\*\*Recording Date:\*\*\s*(.*)", section)
         approved_m = re.search(r"\*\*Approved:\*\*\s*(yes|no)", section, re.IGNORECASE)
         title_m = re.search(r"\*\*Suggested Title:\*\*\s*(.*)", section)
-        desc_m = re.search(r"\*\*Suggested Description:\*\*\s*(.*)", section)
+        desc_m = re.search(
+            r"\*\*Suggested Description:\*\*\s*(.*?)(?=\n\*\*Suggested Tags:|\Z)",
+            section,
+            re.DOTALL,
+        )
         tags_m = re.search(r"\*\*Suggested Tags:\*\*\s*(.*)", section)
         chapters_m = re.search(
             r"\*\*Chapters:\*\*\n((?:\[[\d:.]+\][^\n]+\n?)+)", section
@@ -53,14 +61,18 @@ def parse_review(review_path: Path) -> dict[str, dict[str, str]]:
 
 
 def build_description(
-    recording_date: str, description: str, tags: str = "", chapters: str = ""
+    recording_date: str,
+    description: str,
+    tags: str = "",
+    chapters: str = "",
+    bio_link: str | None = None,
 ) -> str:
     date_and_desc = (
         f"{recording_date}\n{description}" if recording_date else description
     )
-    parts: list[str] = []
-    parts.append(date_and_desc)
-    parts.append(BIO_LINK)
+    parts: list[str] = [date_and_desc]
+    if bio_link and bio_link not in description:
+        parts.append(bio_link)
     if tags:
         parts.append(tags)
     if chapters:
@@ -148,7 +160,11 @@ def load_nested_history(
         try:
             data = json.loads(history_path.read_text(encoding="utf-8"))
             if data and isinstance(data, dict):
-                is_nested = language in data
+                # Treat as nested if ANY key looks like a language code (2 lowercase letters).
+                # Checking only 'language in data' fails when the file already has {"en": {...}}
+                # and we load with language="ru" — it would re-wrap the whole file.
+                _known_lang_codes: frozenset[str] = frozenset({"ru", "en"})
+                is_nested = any(k in _known_lang_codes for k in data)
                 if not is_nested:
                     full_history = {language: data}
                     history_path.write_text(

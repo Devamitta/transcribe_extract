@@ -3,6 +3,8 @@
 import argparse
 import subprocess
 from pathlib import Path
+
+from tools.dry_run import create_stub, is_pipeline_dry_run, log_stub
 from tools.printer import printer as pr
 
 VIDEO_EXTS = {".mp4", ".mkv", ".mov"}
@@ -69,6 +71,11 @@ def main() -> None:
     parser.add_argument(
         "--limit", type=int, default=0, help="Limit number of files processed"
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print what would be ingested; create stubs for pipeline propagation.",
+    )
     args = parser.parse_args()
 
     input_base = Path("input")
@@ -131,6 +138,19 @@ def main() -> None:
 
                 video_out.mkdir(parents=True, exist_ok=True)
 
+                if args.dry_run:
+                    pr.white(f"  [DRY RUN] {file}")
+                    pr.white(f"    → audio: {dest_mp3}")
+                    pr.white(f"    → video: {dest_video}")
+                    if is_pipeline_dry_run():
+                        file.rename(dest_video)
+                        log_stub(dest_video)
+                        create_stub(dest_mp3)
+                    video_found = True
+                    remaining -= 1
+                    total_processed += 1
+                    continue
+
                 if dest_mp3.exists():
                     pr.white_tmr(f"  {file.name}")
                     file.rename(dest_video)
@@ -155,6 +175,15 @@ def main() -> None:
                     pr.white(f"  Skipping {file.name} (exists in output)")
                     continue
 
+                if args.dry_run:
+                    pr.white(f"  [DRY RUN] {file} → {dest}")
+                    if is_pipeline_dry_run():
+                        file.rename(dest)
+                        log_stub(dest)
+                    remaining -= 1
+                    total_processed += 1
+                    continue
+
                 file.rename(dest)
                 pr.white(f"  moved: {file.name}")
                 remaining -= 1
@@ -164,6 +193,15 @@ def main() -> None:
                 dest_mp3 = audio_out / file.with_suffix(".mp3").name
                 if dest_mp3.exists():
                     pr.white(f"  Skipping {file.name} (mp3 exists)")
+                    continue
+
+                if args.dry_run:
+                    pr.white(f"  [DRY RUN] {file} → {dest_mp3}")
+                    if is_pipeline_dry_run():
+                        create_stub(dest_mp3)
+                        file.unlink()
+                    remaining -= 1
+                    total_processed += 1
                     continue
 
                 pr.white_tmr(f"  {file.name}")

@@ -6,6 +6,7 @@ import argparse
 import concurrent.futures
 import re
 import time
+import unicodedata
 from pathlib import Path
 
 from tools.printer import printer as pr
@@ -258,12 +259,55 @@ def generate_chapters(
 
 
 def already_has_chapters(review_text: str, source_name: str) -> bool:
-    """Checks if a review entry already has a chapters block."""
+    """Checks if a review entry already has a timed chapters block."""
     sections = re.split(r"\n---", review_text)
     for section in sections:
         if f"## Source: {source_name}" in section:
-            return "**Chapters:**" in section
+            if "**Chapters:**" not in section:
+                return False
+            # Only counts as "has chapters" if at least one line has a timestamp
+            m = re.search(
+                r"\*\*Chapters:\*\*\n(.*?)(?=\n\*\*|\n##|\Z)", section, re.DOTALL
+            )
+            if not m:
+                return False
+            return bool(re.search(r"^\[[\d:]+\]", m.group(1), re.MULTILINE))
     return False
+
+
+def has_untimed_chapters(review_text: str, source_name: str) -> bool:
+    """Checks if a review entry has a chapters block with names but no timestamps."""
+    sections = re.split(r"\n---", review_text)
+    for section in sections:
+        if f"## Source: {source_name}" in section:
+            if "**Chapters:**" not in section:
+                return False
+            m = re.search(
+                r"\*\*Chapters:\*\*\n(.*?)(?=\n\*\*|\n##|\Z)", section, re.DOTALL
+            )
+            if not m:
+                return False
+            block = m.group(1).strip()
+            if not block:
+                return False
+            # Has content but no [HH:MM:SS] timestamps → untimed
+            return not bool(re.search(r"^\[[\d:]+\]", block, re.MULTILINE))
+    return False
+
+
+def parse_untimed_chapter_names(review_text: str, source_name: str) -> list[str]:
+    """Returns the list of untimed chapter names from the review entry."""
+    sections = re.split(r"\n---", review_text)
+    for section in sections:
+        if f"## Source: {source_name}" in section:
+            m = re.search(
+                r"\*\*Chapters:\*\*\n(.*?)(?=\n\*\*|\n##|\Z)", section, re.DOTALL
+            )
+            if m:
+                return [
+                    line.strip() for line in m.group(1).splitlines() if line.strip()
+                ]
+    return []
 
 
 def has_review_entry(review_text: str, source_name: str) -> bool:
@@ -290,6 +334,92 @@ def insert_chapters_block(
         return False
     review_path.write_text(new_content, encoding="utf-8")
     return True
+
+
+def replace_untimed_chapters_block(
+    review_path: Path, source_name: str, chapters: list[tuple[float, str]]
+) -> bool:
+    """Replaces an untimed **Chapters:** block with timestamped chapters."""
+    from tools.uploader_common import minutes_to_hms
+
+    content = review_path.read_text(encoding="utf-8")
+    chapter_lines = "\n".join(f"[{minutes_to_hms(ts)}] {name}" for ts, name in chapters)
+    timed_block = f"**Chapters:**\n{chapter_lines}"
+
+    # Replace the existing untimed block (names without [HH:MM:SS] prefix)
+    pattern = r"(\*\*Chapters:\*\*\n)((?:(?!\[[\d:]+\])(?!\*\*).+\n?)*)"
+
+    def _in_source_section(text: str) -> bool:
+        # Verify the match is within the correct source section
+        return f"## Source: {source_name}" in text
+
+    # Scope replacement to the correct source section by splitting on ---
+    sections = content.split("\n---")
+    replaced = False
+    for idx, section in enumerate(sections):
+        if f"## Source: {source_name}" in section:
+            new_section, n = re.subn(pattern, timed_block + "\n", section, count=1)
+            if n > 0:
+                sections[idx] = new_section
+                replaced = True
+                break
+
+    if not replaced:
+        pr.no(f"    Could not locate untimed **Chapters:** block for {source_name}")
+        return False
+
+    review_path.write_text("\n---".join(sections), encoding="utf-8")
+    return True
+
+
+def build_timestamp_finding_instruction(chapter_names: list[str], lang: str) -> str:
+    """Builds a system instruction for finding timestamps for pre-defined chapter names."""
+    names_block = "\n".join(f"{i + 1}. {name}" for i, name in enumerate(chapter_names))
+    if lang == "ru":
+        return f"""You are given a list of chapter names and a timestamped transcript of a Russian Buddhist Dhamma talk.
+
+Your task: assign each chapter name to the exact transcript timestamp where that topic begins.
+
+Chapter names (in order):
+{names_block}
+
+Transcript format:
+[X.X] paragraph text...
+
+X.X is the paragraph start time in MINUTES (decimal). These are the ONLY valid timestamps.
+
+Rules:
+- Output exactly one line per chapter, in the same order as the input list
+- The FIRST chapter MUST use timestamp [0.0]
+- Copy timestamps EXACTLY as they appear in the transcript — do NOT invent new ones
+- Each chapter must span at least 2 minutes of content
+
+Output format — one chapter per line, nothing else, no explanations, no markdown:
+[0.0] {chapter_names[0] if chapter_names else "Название первой главы"}
+[X.X] {chapter_names[1] if len(chapter_names) > 1 else "Название следующей главы"}
+"""
+    return f"""You are given a list of chapter names and a timestamped transcript of an English Buddhist Dhamma talk.
+
+Your task: assign each chapter name to the exact transcript timestamp where that topic begins.
+
+Chapter names (in order):
+{names_block}
+
+Transcript format:
+[X.X] paragraph text...
+
+X.X is the paragraph start time in MINUTES (decimal). These are the ONLY valid timestamps.
+
+Rules:
+- Output exactly one line per chapter, in the same order as the input list
+- The FIRST chapter MUST use timestamp [0.0]
+- Copy timestamps EXACTLY as they appear in the transcript — do NOT invent new ones
+- Each chapter must span at least 2 minutes of content
+
+Output format — one chapter per line, nothing else, no explanations, no markdown:
+[0.0] {chapter_names[0] if chapter_names else "Name of the first chapter"}
+[X.X] {chapter_names[1] if len(chapter_names) > 1 else "Name of the next chapter"}
+"""
 
 
 def main() -> None:
@@ -357,6 +487,11 @@ def main() -> None:
         action="store_true",
         help="Use ffmpeg silence detection to constrain chapter anchors (experimental). Default: paragraph mode.",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print what would be processed; skip API calls and review edits.",
+    )
     args = parser.parse_args()
 
     debug_buffer: list[str] = []
@@ -381,7 +516,7 @@ def main() -> None:
         pr.no(f"Base directory not found: {transcribed_base}")
         return
 
-    if not get_working_key():
+    if not args.dry_run and not get_working_key():
         pr.no("All API keys failed. Exiting.")
         return
 
@@ -396,7 +531,8 @@ def main() -> None:
         return
 
     # Phase 1: collect all pending files across all folders
-    all_pending: list[tuple[Path, str, Path]] = []
+    # tuple: (file_path, folder_name, review_path, untimed_mode)
+    all_pending: list[tuple[Path, str, Path, bool]] = []
     lang_folder = LANG_TO_FOLDER.get(args.lang, "english")
     for folder_path in folders:
         folder_name = folder_path.name
@@ -417,13 +553,16 @@ def main() -> None:
 
         review_text = review_path.read_text(encoding="utf-8")
         for f in md_files:
-            if not has_review_entry(review_text, f.name):
+            nfc_name = unicodedata.normalize("NFC", f.name)
+            if not has_review_entry(review_text, nfc_name):
                 if args.folder:
                     pr.amber(f"  Skipping {f.name} — no review entry found")
-            elif already_has_chapters(review_text, f.name):
+            elif already_has_chapters(review_text, nfc_name):
                 pass
+            elif has_untimed_chapters(review_text, nfc_name):
+                all_pending.append((f, folder_name, review_path, True))
             else:
-                all_pending.append((f, folder_name, review_path))
+                all_pending.append((f, folder_name, review_path, False))
 
     if args.limit > 0:
         all_pending = all_pending[: args.limit]
@@ -432,10 +571,23 @@ def main() -> None:
         pr.green("Nothing to do.")
         return
 
+    if args.dry_run:
+        lang_folder = LANG_TO_FOLDER.get(args.lang, "english")
+        review_file = Path("reviews") / f"{lang_folder}_review.md"
+        pr.green(f"[DRY RUN] Input:  output/transcribed/{lang_folder}/")
+        pr.green(f"[DRY RUN] Output: {review_file} (chapters block)")
+        for file_path, _folder, _review, _untimed in all_pending:
+            pr.white(f"  {file_path} → {review_file}")
+        return
+
     # Phase 2: process
     pr.green_title(f"Generating chapters for {len(all_pending)} files...")
-    for i, (file_path, folder_name, review_path) in enumerate(all_pending, 1):
-        pr.green(f"  [{i}/{len(all_pending)}] {file_path.name}")
+    for i, (file_path, folder_name, review_path, untimed_mode) in enumerate(
+        all_pending, 1
+    ):
+        mode_label = "timing" if untimed_mode else "generate"
+        pr.green(f"  [{i}/{len(all_pending)}] {file_path.name} ({mode_label})")
+        nfc_name = unicodedata.normalize("NFC", file_path.name)
         try:
             transcript = file_path.read_text(encoding="utf-8")
             available = extract_timestamps(transcript)
@@ -463,6 +615,75 @@ def main() -> None:
 
             active_min_gap = 1.0 if content_type == "qa" else MIN_CHAPTER_GAP_MINS
 
+            # --- Untimed mode: user pre-filled chapter names, find timestamps ---
+            if untimed_mode:
+                review_text = review_path.read_text(encoding="utf-8")
+                chapter_names = parse_untimed_chapter_names(review_text, nfc_name)
+                if not chapter_names:
+                    pr.no(f"    No chapter names found for {file_path.name}, skipping")
+                    continue
+                pr.green(
+                    f"    Finding timestamps for {len(chapter_names)} pre-defined chapters"
+                )
+                instruction = build_timestamp_finding_instruction(
+                    chapter_names, args.lang
+                )
+                pr.bip()
+                try:
+                    response = generate_with_timeout(
+                        contents=build_cacheable_contents(transcript),
+                        system_instruction=instruction,
+                        max_output_tokens=2048,
+                    )
+                except concurrent.futures.TimeoutError:
+                    pr.amber(f"    Timeout on {file_path.name} — skipping")
+                    if args.debug_log and debug_buffer:
+                        _flush_debug_log(file_path, debug_buffer)
+                    continue
+
+                if not response:
+                    pr.no("    Empty response from LLM")
+                    if args.debug_log and debug_buffer:
+                        _flush_debug_log(file_path, debug_buffer)
+                    continue
+
+                dbg(f"LLM raw response: {response[:500]!r}")
+                chapters = parse_lm_response(
+                    response, available, tolerance=args.snap_tolerance
+                )
+                dbg(f"parsed chapters: {[(ts, n) for ts, n in chapters]}")
+
+                if len(chapters) < MIN_CHAPTERS:
+                    pr.no(f"    Only {len(chapters)} valid chapters — skipping")
+                    continue
+
+                if duration_mins > 0 and (
+                    duration_mins - chapters[-1][0] < (10.0 / 60.0)
+                ):
+                    pr.amber(
+                        f"    Dropping last chapter '{chapters[-1][1]}' — too close to end"
+                    )
+                    chapters.pop()
+
+                if not validate_chapters(chapters, active_min_gap, duration_mins):
+                    pr.no(
+                        f"    Chapter validation failed for {file_path.name} — skipping write"
+                    )
+                    continue
+
+                ok = replace_untimed_chapters_block(review_path, nfc_name, chapters)
+                if ok:
+                    pr.yes(
+                        f"    {len(chapters)} chapters timed ({minutes_to_hms(duration_mins)})"
+                    )
+
+                if args.debug_log and debug_buffer:
+                    _flush_debug_log(file_path, debug_buffer)
+                if len(all_pending) > 1 and i < len(all_pending):
+                    time.sleep(3)
+                continue
+
+            # --- Normal mode: generate chapters from scratch ---
             try:
                 # Look for audio in audio/{folder_name}/
                 audio_path = audio_base / folder_name / (file_path.stem + ".mp3")
@@ -509,7 +730,7 @@ def main() -> None:
                             filtered_times.append(t)
                             continue
                         idx = next(
-                            (i for i, (ts, _) in enumerate(paragraphs) if ts == t),
+                            (j for j, (ts, _) in enumerate(paragraphs) if ts == t),
                             None,
                         )
                         if idx is None or idx == 0:
@@ -622,7 +843,7 @@ def main() -> None:
                 )
                 continue
 
-            ok = insert_chapters_block(review_path, file_path.name, chapters)
+            ok = insert_chapters_block(review_path, nfc_name, chapters)
             if ok:
                 pr.yes(
                     f"    {len(chapters)} chapters written ({minutes_to_hms(duration_mins)})"

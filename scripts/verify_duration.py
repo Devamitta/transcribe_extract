@@ -5,6 +5,7 @@ import argparse
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -65,16 +66,41 @@ def main():
         default=120.0,
         help="Threshold in seconds to flag truncation (default: 120s)",
     )
+    parser.add_argument(
+        "--recent-minutes",
+        type=int,
+        default=None,
+        help="Only check transcripts modified within the last N minutes (for pipelines where old audio is gone)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print what would be verified without running ffprobe.",
+    )
 
     args = parser.parse_args()
 
     audio_dir = Path(args.audio_dir)
     if args.transcript_dir:
         transcript_dir = Path(args.transcript_dir)
-    elif audio_dir.is_relative_to("audio"):
-        transcript_dir = Path("output/transcribed") / audio_dir.relative_to("audio")
+    elif audio_dir.is_relative_to("input"):
+        transcript_dir = Path("output/transcribed") / audio_dir.relative_to("input")
     else:
         transcript_dir = Path("output/transcribed")
+
+    if args.dry_run:
+        print(f"[DRY RUN] Audio:       {audio_dir}")
+        print(f"[DRY RUN] Transcripts: {transcript_dir}")
+        if transcript_dir.exists():
+            for t in sorted(transcript_dir.rglob("*.md")):
+                rel = t.relative_to(transcript_dir)
+                a = audio_dir / rel.with_suffix(".mp3")
+                if not a.exists():
+                    a = audio_dir / t.with_suffix(".mp3").name
+                print(f"  {a} ↔ {t}")
+        else:
+            print("  (transcript dir not yet present — pending transcription)")
+        return
 
     if not transcript_dir.exists():
         print(f"Error: Transcript directory '{transcript_dir}' does not exist.")
@@ -86,6 +112,15 @@ def main():
     if not transcript_files:
         print(f"No transcripts found in '{transcript_dir}'.")
         return
+
+    if args.recent_minutes is not None:
+        cutoff = time.time() - args.recent_minutes * 60
+        transcript_files = [f for f in transcript_files if f.stat().st_mtime >= cutoff]
+        if not transcript_files:
+            print(
+                f"No transcripts modified in the last {args.recent_minutes} minutes — nothing to verify."
+            )
+            return
 
     print("\n--- Duration Verification Report ---")
     print(

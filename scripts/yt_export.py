@@ -6,6 +6,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from tools.dry_run import is_pipeline_dry_run, is_stub, log_stub
 from tools.printer import printer as pr
 
 LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
@@ -48,10 +49,10 @@ def rename_step(
     video_dir: Path,
     video_mode: bool,
     dry_run: bool,
-) -> None:
+) -> list[Path]:
     """Rename source files in original folders to 'YYYY-MM-DD - Suggested Title'."""
     if not review_file.exists():
-        return
+        return []
 
     content = review_file.read_text(encoding="utf-8")
     sections = re.split(r"\n---", content)
@@ -86,11 +87,12 @@ def rename_step(
         dated.append((source, parsed.strftime("%Y-%m-%d"), parsed, title_raw))
 
     if not dated:
-        return
+        return []
 
     dated.sort(key=lambda x: x[2])
 
     renamed: list[tuple[str, str]] = []
+    renamed_media_paths: list[Path] = []
     skipped = 0
 
     for source_name, iso_date, _dt, title_raw in dated:
@@ -113,7 +115,22 @@ def rename_step(
         new_mp4 = video_dir / f"{new_stem}.mp4"
 
         if dry_run:
-            pr.green(f"      [dry-run] {source_name} → {new_md_name}")
+            pr.white(f"  [DRY RUN] {old_md} → {new_md}")
+            if video_mode:
+                pr.white(f"           {old_mp4} → {new_mp4}")
+            pr.white(f"           {old_mp3} → {new_mp3}")
+            if is_pipeline_dry_run() and is_stub(old_md):
+                old_md.rename(new_md)
+                log_stub(new_md)
+                if is_stub(old_mp3):
+                    old_mp3.rename(new_mp3)
+                    log_stub(new_mp3)
+                    if not video_mode:
+                        renamed_media_paths.append(new_mp3)
+                if video_mode and is_stub(old_mp4):
+                    old_mp4.rename(new_mp4)
+                    log_stub(new_mp4)
+                    renamed_media_paths.append(new_mp4)
             renamed.append((source_name, new_md_name))
             continue
 
@@ -124,9 +141,12 @@ def rename_step(
         old_md.rename(new_md)
         if old_mp3.exists():
             old_mp3.rename(new_mp3)
+            if not video_mode:
+                renamed_media_paths.append(new_mp3)
 
         if video_mode and old_mp4.exists():
             old_mp4.rename(new_mp4)
+            renamed_media_paths.append(new_mp4)
 
         pr.green(f"  {source_name} → {new_md_name}")
         renamed.append((source_name, new_md_name))
@@ -139,9 +159,26 @@ def rename_step(
             )
         review_file.write_text(updated, encoding="utf-8")
 
+    if renamed and dry_run and is_pipeline_dry_run():
+        # Update source names in the review file so downstream dry-run scripts find the renamed stubs.
+        # Only touches sections that carry the [DRY_RUN] marker — real entries are never modified.
+        sections = content.split("\n---")
+        changed = False
+        for idx, section in enumerate(sections):
+            for old_name, new_name in renamed:
+                if f"## Source: {old_name}" in section and "[DRY_RUN]" in section:
+                    sections[idx] = section.replace(
+                        f"## Source: {old_name}", f"## Source: {new_name}"
+                    )
+                    changed = True
+        if changed:
+            review_file.write_text("\n---".join(sections), encoding="utf-8")
+
     if renamed:
         verb = "Would rename" if dry_run else "Renamed"
         pr.green(f"{verb} {len(renamed)} file(s)")
+
+    return renamed_media_paths
 
 
 def sort_review_file(review_file: Path, dry_run: bool) -> None:
@@ -238,6 +275,11 @@ def main() -> None:
         type=str,
         help="Artist name override for metadata",
     )
+    parser.add_argument(
+        "--created-log",
+        type=Path,
+        help="Write renamed media file paths to this file (one per line).",
+    )
     args = parser.parse_args()
 
     transcribed_base = Path("output/transcribed")
@@ -249,7 +291,7 @@ def main() -> None:
     if not artist_name:
         artist_name = "Бхиккху Дэвамитта" if args.lang == "ru" else "Bhikkhu Devamitta"
 
-    if args.folder:
+    if args.folder is not None:
         folder_names = [args.folder]
     elif args.lang:
         folder_names = [LANG_TO_FOLDER[args.lang]]
@@ -261,6 +303,7 @@ def main() -> None:
         return
 
     all_items: list[tuple[str, dict, Path, Path, Path]] = []
+    all_renamed_media: list[Path] = []
 
     for folder_name in folder_names:
         transcript_dir = transcribed_base / folder_name
@@ -275,7 +318,7 @@ def main() -> None:
             continue
 
         # Step 1: Rename source files in their original folders
-        rename_step(
+        renamed_media = rename_step(
             review_path,
             transcript_dir,
             source_audio_dir,
@@ -283,6 +326,7 @@ def main() -> None:
             args.video_mode,
             args.dry_run,
         )
+        all_renamed_media.extend(renamed_media)
         sort_review_file(review_path, args.dry_run)
 
         stats_content = review_path.read_text(encoding="utf-8")
@@ -347,6 +391,12 @@ def main() -> None:
     # Apply global limit
     if args.limit > 0:
         all_items = all_items[: args.limit]
+
+    if args.created_log and all_renamed_media:
+        args.created_log.write_text(
+            "\n".join(str(p) for p in all_renamed_media) + "\n",
+            encoding="utf-8",
+        )
 
     if not all_items:
         pr.no("No dated items found to process.")

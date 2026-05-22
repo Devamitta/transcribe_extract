@@ -2,6 +2,7 @@
 
 import argparse
 import pickle
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from googleapiclient.http import MediaFileUpload
 
 from tools.printer import printer as pr
 from tools.uploader_common import (
+    BIO_LINKS,
     build_description,
     confirm_and_save_nested,
     find_mp4s_with_album,
@@ -121,7 +123,7 @@ def main():
     parser.add_argument(
         "--lang",
         type=str,
-        required=True,
+        default="en",
         choices=["ru", "en"],
         help="Language of the talk (ru|en).",
     )
@@ -144,9 +146,14 @@ def main():
     )
     parser.add_argument("--review-file", type=Path, help="Manual review file path")
     parser.add_argument("--input-dir", type=Path, help="Override MP4 directory")
+    parser.add_argument(
+        "--files-from-log",
+        type=Path,
+        help="Only upload files listed in this log (one path per line).",
+    )
     args = parser.parse_args()
 
-    if args.folder:
+    if args.folder is not None:
         folder_names = [args.folder]
     else:
         folder_names = [LANG_TO_FOLDER[args.lang]]
@@ -192,6 +199,19 @@ def main():
         pr.green("Everything already uploaded.")
         return
 
+    # Restrict to specific files if a created-log was provided
+    if args.files_from_log and args.files_from_log.exists():
+        log_content = args.files_from_log.read_text(encoding="utf-8")
+        specific: set[Path] = {
+            Path(line.strip()) for line in log_content.splitlines() if line.strip()
+        }
+        if specific:
+            all_to_upload = [t for t in all_to_upload if t[0] in specific]
+
+    if not all_to_upload:
+        pr.green("No new uploads for this run.")
+        return
+
     # Sort all pending uploads chronologically by recording date
     def _parse_date(t: tuple[Path, str | None, dict]) -> datetime:
         try:
@@ -221,10 +241,11 @@ def main():
                 meta["description"],
                 tags_str,
                 chapters=meta.get("chapters", ""),
+                bio_link=BIO_LINKS.get(args.lang),
             )
             api_tags = parse_tags_for_api(tags_str)
             iso_date = parse_recording_date(meta["recording_date"])
-            pr.white(f"\n  File:           {path.name}")
+            pr.white(f"\n  File:           {path}")
             pr.white(f"  Playlist:       {album or '(none)'}")
             pr.white(f"  Title:          {meta['title']}")
             pr.white(f"  Language:       {args.lang}")
@@ -285,6 +306,21 @@ def main():
                     },
                 ).execute()
                 pr.white(f"Added to playlist: {album}")
+
+            # Thumbnail upload logic
+            cover_stem = unicodedata.normalize("NFC", path.stem)
+            cover_path = Path("output/covers") / path.parent.name / f"{cover_stem}.jpg"
+            if cover_path.exists():
+                try:
+                    youtube.thumbnails().set(
+                        videoId=video_id,
+                        media_body=MediaFileUpload(
+                            str(cover_path), mimetype="image/jpeg", resumable=True
+                        ),
+                    ).execute()
+                    pr.yes(f"    Thumbnail set: {cover_path.name}")
+                except Exception as thumb_err:
+                    pr.amber(f"    Thumbnail upload failed (non-fatal): {thumb_err}")
 
             confirm_and_save_nested(
                 HISTORY_PATH,

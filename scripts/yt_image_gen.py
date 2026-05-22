@@ -4,6 +4,7 @@ import argparse
 import re
 from pathlib import Path
 
+from tools.dry_run import create_stub, is_pipeline_dry_run
 from tools.image_gen import generate_image
 from tools.printer import printer as pr
 from tools.provider import generate_content, get_working_key
@@ -159,10 +160,16 @@ def main() -> None:
         default=0,
         help="Process only the first N talks (0=unlimited).",
     )
+    parser.add_argument(
+        "--created-log",
+        type=str,
+        default=None,
+        help="Path to a file where created image paths are appended (one per line).",
+    )
 
     args = parser.parse_args()
 
-    if args.folder:
+    if args.folder is not None:
         folder_names = [args.folder]
     else:
         folder_names = [LANG_TO_FOLDER[args.lang]]
@@ -230,7 +237,14 @@ def main() -> None:
             continue
 
         if args.dry_run:
-            pr.green(f"  DRY RUN: {title} -> {out_path.name}")
+            review_path_used = (
+                args.review_file
+                or Path("reviews")
+                / f"{LANG_TO_FOLDER.get(args.lang, 'english')}_review.md"
+            )
+            pr.white(f"  [DRY RUN] {review_path_used} → {out_path}")
+            if is_pipeline_dry_run():
+                create_stub(out_path)
             continue
 
         if args.show_prompts:
@@ -245,6 +259,9 @@ def main() -> None:
 
         try:
             generate_image(prompt, out_path)
+            if args.created_log:
+                with open(args.created_log, "a") as log_f:
+                    log_f.write(str(out_path) + "\n")
             pr.yes(f"    Created: {out_path.name}")
             created += 1
         except Exception as e:
