@@ -108,7 +108,7 @@ def rename_step(
             else:
                 _mp3 = source_audio_dir / f"{old_stem}.mp3"
                 if _mp3.exists():
-                    renamed_media_paths.append(video_dir / f"{old_stem}.mp4")
+                    renamed_media_paths.append(_mp3)
             skipped += 1
             continue
         new_md_name = f"{new_stem}.md"
@@ -140,6 +140,13 @@ def rename_step(
                     old_mp4.rename(new_mp4)
                     log_stub(new_mp4)
                     renamed_media_paths.append(new_mp4)
+            else:
+                # Real files in dry-run: record current path so upload filter
+                # can match the file as it exists on disk (not yet renamed).
+                if video_mode:
+                    renamed_media_paths.append(old_mp4)
+                else:
+                    renamed_media_paths.append(old_mp3)
             renamed.append((source_name, new_md_name))
             continue
 

@@ -1,7 +1,6 @@
 """Batch-uploads Dhamma MP4s to YouTube with playlist and history support."""
 
 import argparse
-import pickle
 import unicodedata
 from datetime import datetime
 from pathlib import Path
@@ -13,6 +12,7 @@ from tools.uploader_common import (
     BIO_LINKS,
     build_description,
     check_api_probe,
+    confirm_and_save_nested,
     find_mp4s_with_album,
     get_google_client,
     load_nested_history,
@@ -196,27 +196,37 @@ def main():
         pr.green("Everything already uploaded.")
         return
 
-    # Restrict to specific files if a created-log was provided
+    # Restrict to specific files if a created-log was provided.
+    # Normalize to NFC on both sides: log paths are NFC (built from review strings),
+    # but find_mp4s_with_album returns NFD paths from macOS APFS.
     if args.files_from_log and args.files_from_log.exists():
         log_content = args.files_from_log.read_text(encoding="utf-8")
-        specific: set[Path] = {
-            Path(line.strip()) for line in log_content.splitlines() if line.strip()
+        specific: set[str] = {
+            unicodedata.normalize("NFC", line.strip())
+            for line in log_content.splitlines()
+            if line.strip()
         }
         if specific:
-            all_to_upload = [t for t in all_to_upload if t[0] in specific]
+            all_to_upload = [
+                t
+                for t in all_to_upload
+                if unicodedata.normalize("NFC", str(t[0])) in specific
+            ]
 
     if not all_to_upload:
         pr.green("No new uploads for this run.")
         return
 
-    # Sort all pending uploads chronologically by recording date
+    # Sort all pending uploads by recording date.
+    # When filtering by log (--from-export re-run), sort newest first so the current video
+    # (which has the most recent recording date) is uploaded before any backlog.
     def _parse_date(t: tuple[Path, str | None, dict]) -> datetime:
         try:
             return datetime.strptime(t[2]["recording_date"], "%d-%m-%Y")
         except (ValueError, KeyError):
             return datetime.min
 
-    newest_first = bool(specific)
+    newest_first = bool(args.files_from_log and args.files_from_log.exists())
     all_to_upload.sort(key=_parse_date, reverse=newest_first)
 
     if args.limit > 0:

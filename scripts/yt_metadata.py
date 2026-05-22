@@ -188,7 +188,7 @@ def _write_dry_run_entry(
         f"**Approved:** yes\n"
         f"**Media:** {media}\n"
         f"**Suggested Title:** {title}\n"
-        f"**Suggested Description:** {dry_run_desc}\n"
+        f"**Suggested Description:** {dry_run_desc}\n\n"
         f"**Suggested Tags:** #dhamma\n"
     )
     output_file.parent.mkdir(parents=True, exist_ok=True)
