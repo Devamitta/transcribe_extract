@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Syncs personal/reviews commits to origin/master, stripping reviews/ from every commit.
+# Syncs personal/reviews commits to origin/master, stripping reviews/, kamma/, and AGENTS.md.
 #
-# Run from personal/reviews branch. Reviews-only commits are skipped.
-# Mixed commits (code + reviews/) land on master with reviews/ stripped.
+# Run from personal/reviews branch. Commits that only touch excluded paths are skipped.
+# Mixed commits land on master with excluded paths stripped.
 # Tracking: git tag 'sync-point' is updated after each successful sync.
 
 set -euo pipefail
@@ -17,6 +17,24 @@ PERSONAL_BRANCH="personal/reviews"
 MASTER_BRANCH="master"
 PUBLIC_REMOTE="${PUBLIC_REMOTE:-origin}"
 SYNC_TAG="sync-point"
+EXCLUDED_RE='^(reviews/|kamma/|AGENTS\.md)'
+
+# Unstage all excluded-path changes from the index.
+# Files that exist in HEAD are restored; files not in HEAD are removed from the index.
+strip_excluded() {
+    local f
+    while IFS= read -r f; do
+        [[ -z "$f" ]] && continue
+        if git rev-parse --verify "HEAD:$f" &>/dev/null; then
+            git checkout HEAD -- "$f" 2>/dev/null || true
+        else
+            git rm --cached -- "$f" 2>/dev/null || true
+        fi
+    done < <(
+        { git diff --cached --name-only; git ls-files -u | cut -f2; } \
+        | sort -u | grep -E "$EXCLUDED_RE" || true
+    )
+}
 
 # 1. Verify branch
 current=$(git rev-parse --abbrev-ref HEAD)
@@ -50,10 +68,10 @@ skipped=0
 for sha in "${commits[@]}"; do
     msg=$(git log -1 --format="%s" "$sha")
 
-    # Skip commits that only touch reviews/
-    non_review=$(git diff-tree --no-commit-id -r --name-only "$sha" \
-        | grep -v '^reviews/' || true)
-    if [[ -z "$non_review" ]]; then
+    # Skip commits that only touch excluded paths
+    non_excluded=$(git diff-tree --no-commit-id -r --name-only "$sha" \
+        | grep -vE "$EXCLUDED_RE" || true)
+    if [[ -z "$non_excluded" ]]; then
         printf "  skip  %.7s  %s\n" "$sha" "$msg"
         skipped=$((skipped + 1))
         continue
@@ -63,21 +81,18 @@ for sha in "${commits[@]}"; do
     if ! git cherry-pick --no-commit "$sha" 2>/dev/null; then
         # Collect conflicted files
         conflicted=$(git diff --name-only --diff-filter=U 2>/dev/null || true)
-        non_review_conflicts=$(printf '%s\n' "$conflicted" | grep -v '^reviews/' | grep -v '^$' || true)
-        if [[ -n "$non_review_conflicts" ]]; then
+        non_excl_conflicts=$(printf '%s\n' "$conflicted" | grep -vE "$EXCLUDED_RE" | grep -v '^$' || true)
+        if [[ -n "$non_excl_conflicts" ]]; then
             printf "ERROR: Cherry-pick conflict on %.7s (%s).\n" "$sha" "$msg" >&2
-            printf "Conflicted files:\n%s\n" "$non_review_conflicts" >&2
+            printf "Conflicted files:\n%s\n" "$non_excl_conflicts" >&2
             printf "Resolve conflicts on master manually, then re-run.\n" >&2
-            git checkout "$PERSONAL_BRANCH"
+            git checkout -f "$PERSONAL_BRANCH"
             exit 1
         fi
-        # All conflicts are in reviews/ — resolve by keeping master version
-        git checkout HEAD -- reviews/ 2>/dev/null || true
-        git add reviews/ 2>/dev/null || true
     fi
 
-    # Strip reviews/ — restore master version (no-op if already resolved above)
-    git checkout HEAD -- reviews/ 2>/dev/null || true
+    # Strip all excluded paths from the index
+    strip_excluded
 
     # Skip if nothing left to commit (changes were already applied)
     if git diff --cached --quiet; then
@@ -102,5 +117,5 @@ fi
 git checkout "$PERSONAL_BRANCH"
 git tag -f "$SYNC_TAG" HEAD
 
-printf "\nDone. Transferred %d commit(s) to %s/%s, skipped %d (reviews only).\n" \
+printf "\nDone. Transferred %d commit(s) to %s/%s, skipped %d (excluded-path only).\n" \
     "$synced" "$PUBLIC_REMOTE" "$MASTER_BRANCH" "$skipped"
