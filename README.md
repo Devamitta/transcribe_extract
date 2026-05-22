@@ -46,53 +46,53 @@ Open the generated `.env` and fill in the values you need:
 
 ## 1. Transcription
 
-Converts raw audio into Markdown format, using context-specific Pali glossaries to improve accuracy.
+Drop MP3s into `input/sangha/` and run:
 
-| Scope | Command | Input | Output |
-| :--- | :--- | :--- | :--- |
-| **All** | `./transcribe.sh` | `input/` | `output/transcribed/` |
-| **Saṅgha** | `./transcribe.sh --context sangha` | `input/sangha/` | `output/transcribed/sangha/` |
-| **Interview** | `./transcribe.sh --context interview` | `input/interview/` | `output/transcribed/interview/` |
-| **Dhamma** | `./transcribe.sh --context dhamma` | `input/dhamma/` | `output/transcribed/dhamma/` |
-
-**Direct script (Dhamma/Saṅgha pipeline):**
 ```bash
-uv run python scripts/transcribe.py --input-dir <dir> --context <context>
+./scripts/cl/transcribe-sangha
 ```
 
-**Direct script (YouTube pipeline):**
-```bash
-uv run python scripts/transcribe.py --lang ru|en [--folder <subfolder>] --context russian --chunk-seconds 20
-```
+Transcribes with Saṅgha Pali vocabulary, then runs Pali correction. Output: `output/transcribed/sangha/`.
 
-**Options:**
-- `--lang`: `ru` or `en` — resolves input/output to `output/audio/<folder>` and `output/transcribed/<folder>`
-- `--folder`: subfolder name override (used with `--lang`)
-- `--input-dir`: explicit input path (overrides `--lang`/`--folder`; used by `transcribe.sh`)
-- `--context`: `sangha`, `dhamma`, `vinaya`, `interview`, or `russian`
-- `--chunk-seconds`: paragraph flush interval (default 60; use 20 for YouTube chapter timestamps)
-- `--test-run`: transcribe only the first file found
-
-*Use `caffeinate -i nice -n 10` on macOS to prevent sleep and manage CPU priority.*
+Full reference (all contexts, flags, direct script): [docs/transcription.md](docs/transcription.md).
 
 ---
 
-## 2. Dhamma Extraction Pipeline
-
-Pāli correction → extraction → polishing. See [docs/pipeline-dhamma-extraction.md](docs/pipeline-dhamma-extraction.md).
-
----
-
-## 3. YouTube Pipeline
+## 2. YouTube Pipeline
 
 Multi-stage pipeline for publishing Dhamma talks to YouTube and Google Drive (English and Russian). See [docs/pipeline-youtube.md](docs/pipeline-youtube.md).
 
 **First-time setup:** configure OAuth credentials before running uploads — see [docs/upload-youtube.md](docs/upload-youtube.md) and [docs/upload-gdrive.md](docs/upload-gdrive.md).
 
-**Quick start:**
+**Quick run:**
+
+Drop files into `input/` and run:
 ```bash
-./yt_run.sh --lang ru|en [folder] [--video-mode] [--dry-run]
+./yt_run.sh --name "Tissa Thero"
 ```
+
+The pipeline auto-detects audio vs video from the file extension.
+
+**Audio mode** (`.mp3` input) — ingest → transcribe → metadata:
+1. **Pause 1** — optionally add chapter names to the review file before AI generates timestamps. Press Enter to continue.
+2. **Pause 2** — open `reviews/english_review.md`: fill in recording dates (`DD-MM-YYYY`), review titles/descriptions, set `Approved: yes`. Press Enter.
+3. **Pause 3** — review generated thumbnails in `output/thumbnails/`. Press Enter (or `r` to regenerate).
+4. **Done** — MP4 videos are created and uploaded to YouTube.
+
+**Video mode** (`.mp4` input) — ingest → transcribe → metadata:
+1. **Pause 1** — optionally add chapter names. Press Enter.
+2. **Pause 2** — fill dates, review metadata, approve. Press Enter.
+3. **Done** — videos are uploaded directly (no thumbnail step). Add `--cover` to also generate and set cover thumbnails.
+
+Add `--gdrive` to either mode to also upload to Google Drive.
+
+Full flag reference and per-stage details: [docs/pipeline-youtube.md](docs/pipeline-youtube.md).
+
+---
+
+## 3. Dhamma Extraction Pipeline
+
+Pāli correction → extraction → polishing. See [docs/pipeline-dhamma-extraction.md](docs/pipeline-dhamma-extraction.md).
 
 ---
 
@@ -116,9 +116,10 @@ Multi-stage pipeline for publishing Dhamma talks to YouTube and Google Drive (En
 
 | Pipeline | Doc |
 | :--- | :--- |
-| Dhamma extraction (Pāli correction, extraction, polishing) | [docs/pipeline-dhamma-extraction.md](docs/pipeline-dhamma-extraction.md) |
+| Transcription (all options, contexts, hallucination filter) | [docs/transcription.md](docs/transcription.md) |
 | YouTube pipeline (English & Russian) | [docs/pipeline-youtube.md](docs/pipeline-youtube.md) |
 | YouTube upload OAuth setup | [docs/upload-youtube.md](docs/upload-youtube.md) |
 | Google Drive upload setup | [docs/upload-gdrive.md](docs/upload-gdrive.md) |
+| Dhamma extraction (Pāli correction, extraction, polishing) | [docs/pipeline-dhamma-extraction.md](docs/pipeline-dhamma-extraction.md) |
 | Quality control (transcription loop + semantic eval) | [docs/quality-control.md](docs/quality-control.md) |
 | OpenAI Batch pipeline | [docs/batch-pipeline.md](docs/batch-pipeline.md) |

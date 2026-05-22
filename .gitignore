@@ -42,11 +42,6 @@ output/batch_jobs.json
 
 # Google API Credentials
 client_secret.json
-youtube_token.json
 youtube_token_ru.json
-youtube_token_ru_edit.json
 youtube_token_en.json
-youtube_token_en_edit.json
 gdrive_token.json
-
-
