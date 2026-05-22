@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import mlx_whisper
+
 from tools.glossary import DHAMMA, SANGHA, VINAYA
 from tools.printer import printer as pr
 
@@ -92,14 +93,12 @@ def main():
         audio_dir = Path(args.input_dir)
         if args.output_dir:
             output_dir = Path(args.output_dir)
-        elif audio_dir.is_relative_to("input"):
-            output_dir = Path("output/transcribed") / audio_dir.relative_to("input")
+        elif audio_dir.is_relative_to("audio"):
+            output_dir = Path("output/transcribed") / audio_dir.relative_to("audio")
         else:
             output_dir = Path("output/transcribed")
     elif args.lang:
-        lang_folder = (
-            args.folder if args.folder is not None else LANG_TO_FOLDER[args.lang]
-        )
+        lang_folder = args.folder or LANG_TO_FOLDER[args.lang]
         audio_dir = Path("output/audio") / lang_folder
         output_dir = (
             Path(args.output_dir)
@@ -133,22 +132,6 @@ def main():
         pr.yes(f"All {len(audio_files)} transcripts up to date — nothing to do.")
         return
     audio_files = pending
-
-    if args.limit > 0:
-        audio_files = audio_files[: args.limit]
-
-    if args.dry_run:
-        from tools.dry_run import create_stub, is_pipeline_dry_run
-
-        pr.green(f"[DRY RUN] Input:  {audio_dir}")
-        pr.green(f"[DRY RUN] Output: {output_dir}")
-        for audio_path in audio_files:
-            relative_path = audio_path.relative_to(audio_dir)
-            output_path = output_dir / relative_path.with_suffix(".md")
-            pr.white(f"  {audio_path} → {output_path}")
-            if is_pipeline_dry_run():
-                create_stub(output_path)
-        return
 
     COOLDOWN_RATIO = 0.30
     MIN_COOLDOWN = 10
@@ -340,10 +323,6 @@ def main():
 
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(formatted_transcript.strip())
-
-        if args.created_log:
-            with open(args.created_log, "a") as log_f:
-                log_f.write(str(output_path) + "\n")
 
         pr.yes(f"{audio_path.name} → {output_path.name}")
 
