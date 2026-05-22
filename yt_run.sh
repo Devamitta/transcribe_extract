@@ -1,11 +1,12 @@
 #!/bin/bash
 # Unified YouTube pipeline for English and Russian talks (audio or video input).
-# Usage: ./yt_run.sh [--lang ru|en] [--folder folder] [--from-export] [--video-mode] [--gdrive] [--dry-run] [--context CONTEXT]
+# Usage: ./yt_run.sh [--lang ru|en] [--folder folder] [--name NAME] [--from-export] [--video-mode] [--cover] [--gdrive] [--dry-run] [--context CONTEXT]
 #   --lang: optional; ru or en (defaults to en for review file selection)
 #   --folder: optional; specific folder in input/ to scan
 #   --name: optional; override speaker/artist name in titles and embedded metadata
 #   --from-export: skip transcription/metadata steps (assume review already done)
 #   --video-mode: treat source files as raw video (skip thumbnail+video generation); only needed with --from-export
+#   --cover: (video mode only) generate base + cover thumbnails and set them on YouTube after upload
 #   --gdrive: also upload to Google Drive (default: YouTube only)
 #   --dry-run [file]: trace the full pipeline without real processing; optional stub e.g. russian/test.mp4
 #   --context: whisper context tag; defaults to 'russian' (ru) or 'dhamma' (en)
@@ -20,6 +21,7 @@ DRY_RUN_STUB=""
 GDRIVE=0
 CONTEXT=""
 VIDEO_MODE_OVERRIDE=0
+COVER=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -29,7 +31,13 @@ while [[ $# -gt 0 ]]; do
     --context)     CONTEXT="$2"; shift 2 ;;
     --from-export) FROM_EXPORT=1; shift ;;
     --video-mode)  VIDEO_MODE_OVERRIDE=1; shift ;;
-    --dry-run)     DRY_RUN=1;     shift ;;
+    --cover)       COVER=1;       shift ;;
+    --dry-run)
+      DRY_RUN=1; shift
+      if [[ $# -gt 0 ]] && [[ "$1" != --* ]]; then
+        DRY_RUN_STUB="$1"; shift
+      fi
+      ;;
     --gdrive)      GDRIVE=1;      shift ;;
     --limit)       LIMIT="$2";   shift 2 ;;
     -*) shift ;;
@@ -98,8 +106,6 @@ fi
 
 DRY_RUN_FLAG=""
 DRY_RUN_CLEANUP="temp/.dry_run_cleanup"
-LIMIT_FLAG=""
-[ "$LIMIT" -gt 0 ] && LIMIT_FLAG="--limit $LIMIT"
 
 if [ "$DRY_RUN" -eq 1 ]; then
   DRY_RUN_FLAG="--dry-run"
@@ -130,44 +136,75 @@ fi
 if [ "$FROM_EXPORT" -eq 0 ]; then
   # 1. Detect video mode from input/ BEFORE ingest moves files to output/
   VIDEO_MODE=0
-  if [ -n "$EFFECTIVE_FOLDER" ]; then
-    INPUT_SCAN_DIR="input/$EFFECTIVE_FOLDER"
-  else
-    INPUT_SCAN_DIR="input"
-  fi
-  if [ -d "$INPUT_SCAN_DIR" ] && [ -n "$(find "$INPUT_SCAN_DIR" -name "*.mp4" -print -quit)" ]; then
+  INPUT_SCAN_DIR="input${EFFECTIVE_FOLDER:+/$EFFECTIVE_FOLDER}"
+  if [ -d "$INPUT_SCAN_DIR" ] && \
+      [ -n "$(find "$INPUT_SCAN_DIR" -maxdepth 1 -name "*.mp4" -print -quit 2>/dev/null)" ]; then
     VIDEO_MODE=1
   fi
+  EXPORT_FLAGS=""
+  [ "$VIDEO_MODE" -eq 1 ] && EXPORT_FLAGS="--video-mode"
 
   # 2. Unified ingest
   echo "→ Starting: yt_ingest_unified.py"
   INGEST_ARGS=""
-  [ -n "$FOLDER" ] && INGEST_ARGS="--folder $FOLDER"
-  [ -z "$FOLDER" ] && [ -n "$LANG" ] && INGEST_ARGS="--lang $LANG"
-  uv run python scripts/yt_ingest_unified.py $INGEST_ARGS
+  [ -n "$EFFECTIVE_FOLDER" ] && INGEST_ARGS="--folder $EFFECTIVE_FOLDER"
+  [ -z "$EFFECTIVE_FOLDER" ] && [ -n "$USER_LANG" ] && INGEST_ARGS="--lang $USER_LANG"
+  uv run python scripts/yt_ingest_unified.py $INGEST_ARGS $DRY_RUN_FLAG
 
   # 2b. Dedup check — resolve duplicate dates before transcription
   echo "→ Starting: yt_review_dedup.py"
-  uv run python scripts/yt_review_dedup.py --lang "$LANG"
+  uv run python scripts/yt_review_dedup.py --lang "$LANG" $DRY_RUN_FLAG
 
   # 3. Transcribe
   echo "→ Starting: transcribe.py (caffeinate, background priority)"
-  TRANSCRIBE_ARGS="--lang $LANG"
-  [ -n "$FOLDER" ] && TRANSCRIBE_ARGS="$TRANSCRIBE_ARGS --folder $FOLDER"
+  TRANSCRIBE_LOG=$(mktemp)
   caffeinate -i nice -n 10 uv run python scripts/transcribe.py \
-    $TRANSCRIBE_ARGS \
-    --context "$CONTEXT" --chunk-seconds 20
+    --lang "$LANG" \
+    --folder "$EFFECTIVE_FOLDER" \
+    --context "$CONTEXT" --chunk-seconds 20 --created-log "$TRANSCRIBE_LOG" $DRY_RUN_FLAG
+
+  # 3b. Verify transcription duration (only files created in this run)
+  echo "→ Starting: verify_duration.py"
+  AUDIO_SUBDIR="output/audio${EFFECTIVE_FOLDER:+/$EFFECTIVE_FOLDER}"
+  TRANSCRIPT_SUBDIR="output/transcribed${EFFECTIVE_FOLDER:+/$EFFECTIVE_FOLDER}"
+  if ! uv run python scripts/verify_duration.py \
+    --audio-dir "$AUDIO_SUBDIR" \
+    --transcript-dir "$TRANSCRIPT_SUBDIR" \
+    --created-log "$TRANSCRIBE_LOG" $DRY_RUN_FLAG; then
+    echo "Warning: Some transcripts may be truncated. Check the report above."
+  fi
+  rm -f "$TRANSCRIBE_LOG"
 
   # 4. Metadata
   echo "→ Starting: yt_metadata.py"
-  uv run python scripts/yt_metadata.py --lang "$LANG" \
-    ${FOLDER:+--folder "$FOLDER"} \
-    ${NAME:+--name "$NAME"}
+  METADATA_LANG_FLAG=""
+  [ -n "$USER_LANG" ] && METADATA_LANG_FLAG="--lang $USER_LANG"
+  uv run python scripts/yt_metadata.py $METADATA_LANG_FLAG \
+    --folder "$EFFECTIVE_FOLDER" \
+    ${NAME:+--name "$NAME"} \
+    $EXPORT_FLAGS $DRY_RUN_FLAG
+
+  echo ""
+  echo "----------------------------------------------------------------"
+  echo "OPTIONAL: Pre-fill chapter names for AI timing."
+  echo "Open reviews/${LANG_FOLDER}_review.md"
+  echo "After **Suggested Tags:** add a **Chapters:** block with one"
+  echo "chapter name per line (no timestamps — AI will find them):"
+  echo ""
+  echo "  **Chapters:**"
+  echo "  Introduction"
+  echo "  The Nature of Mind"
+  echo "  Questions and Answers"
+  echo ""
+  echo "Leave it out to let AI generate chapters automatically."
+  echo "Press Enter when ready."
+  echo "----------------------------------------------------------------"
+  [ "$DRY_RUN" -eq 1 ] || read -r _
 
   # 5. Chapters
   echo "→ Starting: yt_chapters.py"
   uv run python scripts/yt_chapters.py --lang "$LANG" \
-    --folder "$EFFECTIVE_FOLDER" $LIMIT_FLAG $DRY_RUN_FLAG
+    --folder "$EFFECTIVE_FOLDER" $DRY_RUN_FLAG
 
   echo ""
   echo "----------------------------------------------------------------"
@@ -175,11 +212,11 @@ if [ "$FROM_EXPORT" -eq 0 ]; then
   echo "Please open reviews/${LANG_FOLDER}_review.md"
   echo "Fill Recording Date, review titles/descriptions, then press Enter."
   echo "----------------------------------------------------------------"
-  read -r _
+  [ "$DRY_RUN" -eq 1 ] || read -r _
 
   # 5b. Dedup check — resolve any duplicates introduced after user review
   echo "→ Starting: yt_review_dedup.py (post-review check)"
-  uv run python scripts/yt_review_dedup.py --lang "$LANG"
+  uv run python scripts/yt_review_dedup.py --lang "$LANG" $DRY_RUN_FLAG
 fi
 
 # For FROM_EXPORT, input/ is already empty; default to audio mode unless --video-mode passed
@@ -187,8 +224,7 @@ if [ "$FROM_EXPORT" -eq 1 ]; then
   VIDEO_MODE=$VIDEO_MODE_OVERRIDE
 fi
 
-# 6. Export (rename + embed metadata in-place)
-echo "→ Starting: yt_export.py"
+# Shared flag passed to any script that needs to know video vs audio mode
 EXPORT_FLAGS=""
 [ "$VIDEO_MODE" -eq 1 ] && EXPORT_FLAGS="--video-mode"
 
@@ -223,14 +259,15 @@ uv run python scripts/yt_export.py --lang "$LANG" \
   --folder "$EFFECTIVE_FOLDER" \
   ${NAME:+--name "$NAME"} \
   --created-log "$EXPORT_LOG" \
-  $EXPORT_FLAGS $LIMIT_FLAG $DRY_RUN_FLAG
+  $EXPORT_FLAGS $DRY_RUN_FLAG
 
 # 7. Thumbnails — audio mode always; video mode only with --cover
 if [ "$VIDEO_MODE" -eq 0 ] || [ "$COVER" -eq 1 ]; then
   while true; do
+    THUMB_LOG=$(mktemp)
     echo "→ Starting: yt_image_gen.py"
     uv run python scripts/yt_image_gen.py --lang "$LANG" \
-      --folder "$EFFECTIVE_FOLDER" --created-log "$THUMB_LOG" $LIMIT_FLAG $DRY_RUN_FLAG
+      --folder "$EFFECTIVE_FOLDER" --created-log "$THUMB_LOG" $DRY_RUN_FLAG
 
     echo ""
     echo "----------------------------------------------------------------"
@@ -254,16 +291,16 @@ if [ "$VIDEO_MODE" -eq 0 ]; then
   # 8. Create MP4 videos → output/video/
   echo "→ Starting: yt_video.py"
   uv run python scripts/yt_video.py --lang "$LANG" \
-    --folder "$EFFECTIVE_FOLDER" $LIMIT_FLAG $DRY_RUN_FLAG
+    --folder "$EFFECTIVE_FOLDER" $DRY_RUN_FLAG
 fi
 
-if [ "$COVER" -eq 1 ]; then
-  # 7b. Cover thumbnails — only when --cover is passed (audio or video mode)
+if [ "$VIDEO_MODE" -eq 1 ] && [ "$COVER" -eq 1 ]; then
+  # 7b. Cover thumbnails (video mode + --cover only)
   while true; do
     COVER_LOG=$(mktemp)
     echo "→ Starting: yt_cover_gen.py"
     uv run python scripts/yt_cover_gen.py --lang "$LANG" \
-      --folder "$EFFECTIVE_FOLDER" --created-log "$COVER_LOG" $LIMIT_FLAG $DRY_RUN_FLAG
+      --folder "$EFFECTIVE_FOLDER" --created-log "$COVER_LOG" $DRY_RUN_FLAG
 
     echo ""
     echo "----------------------------------------------------------------"
@@ -285,14 +322,23 @@ fi
 
 # 9. Upload to YouTube (from output/video/)
 echo "→ Starting: yt_upload.py"
-uv run python scripts/yt_upload.py --lang "$LANG" \
-  ${FOLDER:+--folder "$FOLDER"} $DRY_RUN_FLAG
+UPLOAD_FILES_FLAG=""
+[ "$DRY_RUN" -ne 1 ] && [ -s "$EXPORT_LOG" ] && UPLOAD_FILES_FLAG="--files-from-log $EXPORT_LOG"
+if [ "$ALBUM_MODE" -eq 1 ]; then
+  # Album mode: scan output/video/ root so subdirectory names become playlist names
+  uv run python scripts/yt_upload.py --lang "$LANG" \
+    --input-dir "output/video/" $UPLOAD_FILES_FLAG $DRY_RUN_FLAG
+else
+  uv run python scripts/yt_upload.py --lang "$LANG" \
+    --folder "$EFFECTIVE_FOLDER" $UPLOAD_FILES_FLAG $DRY_RUN_FLAG
+fi
+rm -f "$EXPORT_LOG"
 
 if [ "$GDRIVE" -eq 1 ]; then
   # 10. Upload to Google Drive
   echo "→ Starting: gdrive_upload.py"
   uv run python scripts/gdrive_upload.py --lang "$LANG" \
-    --folder "$EFFECTIVE_FOLDER" $LIMIT_FLAG $DRY_RUN_FLAG
+    --folder "$EFFECTIVE_FOLDER" $DRY_RUN_FLAG
 fi
 
 if [ "$DRY_RUN" -eq 1 ]; then

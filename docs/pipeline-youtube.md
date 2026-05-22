@@ -7,7 +7,7 @@ A multi-stage pipeline for processing Dhamma talks (English and Russian) for You
 ## One-Command Execution
 
 ```bash
-./yt_run.sh [--lang ru|en] [--folder folder] [--name NAME] [--from-export] [--video-mode] [--cover] [--gdrive] [--dry-run] [--context CONTEXT] [--limit N]
+./yt_run.sh [--lang ru|en] [--folder folder] [--from-export] [--video-mode] [--cover] [--gdrive] [--dry-run] [--context CONTEXT]
 ```
 
 e.g. `./yt_run.sh --lang ru --gdrive`
@@ -21,11 +21,25 @@ e.g. `./yt_run.sh --lang ru --gdrive`
 | `--video-mode` | Force video mode when using `--from-export` (normally auto-detected from `.mp4` files in `input/`). |
 | `--cover` | (Video mode only) Generate base + cover thumbnails and set them on YouTube after upload. |
 | `--gdrive` | Also upload to Google Drive (default: YouTube only). |
-| `--dry-run [file]` | Trace the full pipeline without real processing. Optional stub file (e.g. `test.mp4`) is created in `input/` (or `input/<lang_folder>/` when `--lang` is set) so mode detection and path routing work end-to-end. All stubs and the stub review entry are cleaned up automatically at the end. |
+| `--dry-run [file]` | Trace the full pipeline without real processing. Optional stub file (e.g. `russian/test.mp4`) is created in `input/` so mode detection and path routing work end-to-end. All stubs and the stub review entry are cleaned up automatically at the end. |
 | `--context CONTEXT` | Whisper context tag. Defaults to `russian` (ru) or `dhamma` (en). English options: `dhamma`, `sangha`, `vinaya`, `interview`. |
 | `--limit N` | Optional. Cap all file-processing stages to the first N files. Passed through to every script that supports it (ingest, transcribe, metadata, chapters, export, thumbnail, video, upload, gdrive). Works in both normal and dry-run mode. |
 
 The pipeline auto-detects **Video Mode** if `.mp4` files are found in `input/` before ingestion runs.
+
+### Dry-run mode
+
+`--dry-run [stub_file]` runs the full pipeline without any real processing, API calls, or file mutations. Every stage prints its configured `input → output` paths for verification.
+
+```bash
+./yt_run.sh --dry-run russian/test.mp4   # traces video mode pipeline
+./yt_run.sh --dry-run english/test.mp3   # traces audio mode pipeline
+./yt_run.sh --dry-run                    # shows configured paths only (no stub)
+```
+
+**With a stub file**, the zero-byte file is created in `input/<path>` so the extension-based mode detection (`*.mp4` → video mode) works correctly. Each stage propagates the stub to its own output directory so the next stage can find it. At the end, all stubs and the temporary review entry (marked `[DRY_RUN]`) are removed automatically.
+
+Use this to verify that a new input file would be routed through the correct folders before committing to a real run.
 
 ### Dry-run mode
 
@@ -116,12 +130,9 @@ Checks that the last Whisper timestamp in each transcript is within 120 s of the
 Generates titles and descriptions using the configured LLM provider.
 
 ```bash
-uv run python scripts/yt_metadata.py [--lang ru|en] [--folder <folder>] [--name NAME] [--limit 5] [--video-mode]
+uv run python scripts/yt_metadata.py --lang ru|en [--folder <folder>] [--limit 5] [--video-mode]
 ```
 
-- `--lang` is optional (defaults to `None`). **The pipeline passes `--lang` to this script only when the user explicitly sets it** — running `./yt_run.sh` without `--lang` suppresses bio link injection. When `--lang` is provided and no `--name` override is set, a language-specific bio link is appended to the description in the review file (separated by a blank line):
-  - `ru` → `Инфо о Бхантэ devamitta.github.io/bio`
-  - `en` → `Info about Bhante devamitta.github.io/bio-en`
 - `--video-mode` marks new review entries with `**Media:** video` instead of the default `audio`. This field is used downstream by `yt_cover_gen.py` to filter which entries receive a cover thumbnail.
 
 Outputs are appended to `reviews/russian_review.md` or `reviews/english_review.md`.
@@ -172,9 +183,22 @@ uv run python scripts/yt_image_gen.py --lang ru|en [--folder <folder>]
 
 Output: `output/thumbnails/<folder>/`
 
-The pipeline pauses here for visual review. Pressing `r` lists the files created in this run, asks for confirmation, deletes them, then reruns the generator. Pressing Enter continues.
+### 3.3: Generate Cover Thumbnails (Video Mode + `--cover` only)
+Composites a text overlay (title, teacher name, AI-generated highlights) onto the base thumbnail to create a YouTube cover image.
 
-### 3.3: Create MP4 Videos (Audio Mode only)
+```bash
+uv run python scripts/yt_cover_gen.py --lang ru|en [--folder <folder>] [--limit N] [--dry-run] [--list-fonts]
+```
+
+- **Input:** `output/thumbnails/<folder>/` (FLUX images from 3.2)
+- **Output:** `output/covers/<folder>/`
+- Only processes entries where `**Media:** video` is set in the review file.
+- `--list-fonts` generates paginated font preview sheets (`temp/font_preview_<lang>_01.png`, …) and an index (`temp/font_list_<lang>.md`), then exits — useful for picking a font before the first run.
+- Font and overlay parameters are configurable via `.env` (`COVER_FONT_PATH`, `COVER_RU_FONT_PATH`, `COVER_GRADIENT_HEIGHT_PCT`, etc.); all have sensible defaults and the script works with no `.env` entries.
+
+The pipeline pauses after this step for visual review before upload begins.
+
+### 3.4: Create MP4 Videos (Audio Mode only)
 Combines thumbnails with MP3 audio files.
 
 ```bash

@@ -1,6 +1,7 @@
 """Batch-uploads Dhamma MP4s to YouTube with playlist and history support."""
 
 import argparse
+import pickle
 import unicodedata
 from datetime import datetime
 from pathlib import Path
@@ -195,21 +196,20 @@ def main():
         pr.green("Everything already uploaded.")
         return
 
-    # Restrict to specific files if a created-log was provided.
-    if specific:
-        all_to_upload = [
-            t
-            for t in all_to_upload
-            if unicodedata.normalize("NFC", str(t[0])) in specific
-        ]
+    # Restrict to specific files if a created-log was provided
+    if args.files_from_log and args.files_from_log.exists():
+        log_content = args.files_from_log.read_text(encoding="utf-8")
+        specific: set[Path] = {
+            Path(line.strip()) for line in log_content.splitlines() if line.strip()
+        }
+        if specific:
+            all_to_upload = [t for t in all_to_upload if t[0] in specific]
 
     if not all_to_upload:
         pr.green("No new uploads for this run.")
         return
 
-    # Sort all pending uploads by recording date.
-    # When filtering by log (--from-export re-run), sort newest first so the current video
-    # (which has the most recent recording date) is uploaded before any backlog.
+    # Sort all pending uploads chronologically by recording date
     def _parse_date(t: tuple[Path, str | None, dict]) -> datetime:
         try:
             return datetime.strptime(t[2]["recording_date"], "%d-%m-%Y")
@@ -315,7 +315,6 @@ def main():
                 pr.white(f"Added to playlist: {album}")
 
             # Thumbnail upload logic
-            thumb_was_set = False
             cover_stem = unicodedata.normalize("NFC", path.stem)
             cover_path = Path("output/covers") / path.parent.name / f"{cover_stem}.jpg"
             if cover_path.exists():
@@ -327,16 +326,17 @@ def main():
                         ),
                     ).execute()
                     pr.yes(f"    Thumbnail set: {cover_path.name}")
-                    thumb_was_set = True
                 except Exception as thumb_err:
                     pr.amber(f"    Thumbnail upload failed (non-fatal): {thumb_err}")
 
-            hist_key = make_history_key(path, album)
-            mark_uploaded(history, hist_key, video_id)
-            if thumb_was_set:
-                history[hist_key]["thumbnail_set"] = True  # type: ignore[assignment]
-            save_nested_history(HISTORY_PATH, args.lang, history)
-            pr.yes(f"Uploaded to YouTube: {hist_key} (ID: {video_id})")
+            confirm_and_save_nested(
+                HISTORY_PATH,
+                args.lang,
+                history,
+                make_history_key(path, album),
+                video_id,
+                "YouTube",
+            )
         except Exception as e:
             pr.no(f"Upload failed for {path.name}: {e}")
             raise SystemExit(1)

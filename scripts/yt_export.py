@@ -140,13 +140,6 @@ def rename_step(
                     old_mp4.rename(new_mp4)
                     log_stub(new_mp4)
                     renamed_media_paths.append(new_mp4)
-            else:
-                # Real files in dry-run: record current path so upload filter
-                # can match the file as it exists on disk (not yet renamed).
-                if video_mode:
-                    renamed_media_paths.append(old_mp4)
-                else:
-                    renamed_media_paths.append(old_mp3)
             renamed.append((source_name, new_md_name))
             continue
 
@@ -158,7 +151,7 @@ def rename_step(
         if old_mp3.exists():
             old_mp3.rename(new_mp3)
             if not video_mode:
-                renamed_media_paths.append(video_dir / f"{new_stem}.mp4")
+                renamed_media_paths.append(new_mp3)
 
         if video_mode and old_mp4.exists():
             old_mp4.rename(new_mp4)
@@ -195,54 +188,6 @@ def rename_step(
         pr.green(f"{verb} {len(renamed)} file(s)")
 
     return renamed_media_paths
-
-
-def sort_review_file(review_file: Path, dry_run: bool) -> None:
-    """Sort review file sections by recording date; undated entries go last."""
-    if not review_file.exists():
-        return
-
-    content = review_file.read_text(encoding="utf-8")
-    sections = re.split(r"\n---", content)
-
-    if len(sections) <= 2:
-        return
-
-    header = sections[0]
-    body_sections = sections[1:]
-
-    def sort_key(section: str) -> tuple[int, datetime]:
-        date_match = re.search(r"\*\*Recording Date:\*\* (.+)", section)
-        if not date_match:
-            return (1, datetime.min)
-        parsed = parse_date(date_match.group(1).strip())
-        if parsed is None:
-            return (1, datetime.min)
-        return (0, parsed)
-
-    sorted_sections = sorted(body_sections, key=sort_key)
-
-    sorted_content = "\n---".join([header] + sorted_sections)
-    mismatches = [
-        f"'{f}': {content.count(f)} → {sorted_content.count(f)}"
-        for f in SORT_SAFETY_FIELDS
-        if content.count(f) != sorted_content.count(f)
-    ]
-    if mismatches:
-        for msg in mismatches:
-            pr.no(f"  Sort safety check failed: {msg}")
-        return
-
-    if sorted_sections == body_sections:
-        pr.green("  Review file already sorted by date")
-        return
-
-    if dry_run:
-        pr.green("  [dry-run] Would sort review file by recording date")
-        return
-
-    review_file.write_text(sorted_content, encoding="utf-8")
-    pr.green("  Sorted review file by recording date")
 
 
 def sort_review_file(review_file: Path, dry_run: bool) -> None:
@@ -390,6 +335,7 @@ def main() -> None:
             args.video_mode,
             args.dry_run,
         )
+        all_renamed_media.extend(renamed_media)
         sort_review_file(review_path, args.dry_run)
 
         stats_content = review_path.read_text(encoding="utf-8")

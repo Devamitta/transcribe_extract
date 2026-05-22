@@ -574,9 +574,7 @@ def main() -> None:
     if args.dry_run:
         lang_folder = LANG_TO_FOLDER.get(args.lang, "english")
         review_file = Path("reviews") / f"{lang_folder}_review.md"
-        _scan_folder = args.folder if args.folder is not None else lang_folder
-        input_dir = transcribed_base / _scan_folder
-        pr.green(f"[DRY RUN] Input:  {input_dir}/")
+        pr.green(f"[DRY RUN] Input:  output/transcribed/{lang_folder}/")
         pr.green(f"[DRY RUN] Output: {review_file} (chapters block)")
         for file_path, _folder, _review, _untimed in all_pending:
             pr.white(f"  {file_path} → {review_file}")

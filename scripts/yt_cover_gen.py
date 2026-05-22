@@ -434,10 +434,8 @@ def main() -> None:
         generate_font_preview(Path("temp/font_preview.jpg"), cfg, args.lang)
         return
 
-    folder_name = args.folder if args.folder is not None else ""
-    review_path = args.review_file or Path(
-        f"reviews/{LANG_TO_FOLDER[args.lang]}_review.md"
-    )
+    folder_name = args.folder if args.folder is not None else LANG_TO_FOLDER[args.lang]
+    review_path = args.review_file or Path(f"reviews/{folder_name}_review.md")
     input_dir = args.input_dir or Path(f"output/thumbnails/{folder_name}")
     output_dir = args.output_dir or Path(f"output/covers/{folder_name}")
 

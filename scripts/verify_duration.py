@@ -5,6 +5,7 @@ import argparse
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -66,10 +67,10 @@ def main():
         help="Threshold in seconds to flag truncation (default: 120s)",
     )
     parser.add_argument(
-        "--created-log",
-        type=str,
+        "--recent-minutes",
+        type=int,
         default=None,
-        help="Path to file listing transcript paths created in this run (one per line); overrides directory scan.",
+        help="Only check transcripts modified within the last N minutes (for pipelines where old audio is gone)",
     )
     parser.add_argument(
         "--dry-run",
@@ -87,28 +88,23 @@ def main():
     else:
         transcript_dir = Path("output/transcribed")
 
-    if args.created_log:
-        log_path = Path(args.created_log)
-        if not log_path.exists() or log_path.stat().st_size == 0:
-            print("No transcripts were created in this run — nothing to verify.")
-            return
-        transcript_files = [
-            Path(p.strip()) for p in log_path.read_text().splitlines() if p.strip()
-        ]
-    else:
-        if args.dry_run:
-            print(f"[DRY RUN] Audio:       {audio_dir}")
-            print(f"[DRY RUN] Transcripts: {transcript_dir}")
-            if transcript_dir.exists():
-                for t in sorted(transcript_dir.glob("*.md")):
-                    rel = t.relative_to(transcript_dir)
-                    a = audio_dir / rel.with_suffix(".mp3")
-                    if not a.exists():
-                        a = audio_dir / t.with_suffix(".mp3").name
-                    print(f"  {a} ↔ {t}")
-            else:
-                print("  (transcript dir not yet present — pending transcription)")
-            return
+    if args.dry_run:
+        print(f"[DRY RUN] Audio:       {audio_dir}")
+        print(f"[DRY RUN] Transcripts: {transcript_dir}")
+        if transcript_dir.exists():
+            for t in sorted(transcript_dir.rglob("*.md")):
+                rel = t.relative_to(transcript_dir)
+                a = audio_dir / rel.with_suffix(".mp3")
+                if not a.exists():
+                    a = audio_dir / t.with_suffix(".mp3").name
+                print(f"  {a} ↔ {t}")
+        else:
+            print("  (transcript dir not yet present — pending transcription)")
+        return
+
+    if not transcript_dir.exists():
+        print(f"Error: Transcript directory '{transcript_dir}' does not exist.")
+        sys.exit(1)
 
         if not transcript_dir.exists():
             print(f"Error: Transcript directory '{transcript_dir}' does not exist.")
@@ -125,6 +121,15 @@ def main():
             a = audio_dir / t.with_suffix(".mp3").name
             print(f"  {a} ↔ {t}")
         return
+
+    if args.recent_minutes is not None:
+        cutoff = time.time() - args.recent_minutes * 60
+        transcript_files = [f for f in transcript_files if f.stat().st_mtime >= cutoff]
+        if not transcript_files:
+            print(
+                f"No transcripts modified in the last {args.recent_minutes} minutes — nothing to verify."
+            )
+            return
 
     print("\n--- Duration Verification Report ---")
     print(
