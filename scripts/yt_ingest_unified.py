@@ -4,7 +4,7 @@ import argparse
 import subprocess
 from pathlib import Path
 
-from tools.dry_run import create_stub, is_pipeline_dry_run, log_stub
+from tools.dry_run import create_stub, is_pipeline_dry_run
 from tools.printer import printer as pr
 
 VIDEO_EXTS = {".mp4", ".mkv", ".mov"}
@@ -147,8 +147,7 @@ def main() -> None:
                     pr.white(f"    → audio: {dest_mp3}")
                     pr.white(f"    → video: {dest_video}")
                     if is_pipeline_dry_run():
-                        file.rename(dest_video)
-                        log_stub(dest_video)
+                        create_stub(dest_video)
                         create_stub(dest_mp3)
                     video_found = True
                     remaining -= 1
@@ -182,8 +181,7 @@ def main() -> None:
                 if args.dry_run:
                     pr.white(f"  [DRY RUN] {file} → {dest}")
                     if is_pipeline_dry_run():
-                        file.rename(dest)
-                        log_stub(dest)
+                        create_stub(dest)
                     remaining -= 1
                     total_processed += 1
                     continue
@@ -203,7 +201,6 @@ def main() -> None:
                     pr.white(f"  [DRY RUN] {file} → {dest_mp3}")
                     if is_pipeline_dry_run():
                         create_stub(dest_mp3)
-                        file.unlink()
                     remaining -= 1
                     total_processed += 1
                     continue
