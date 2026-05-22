@@ -81,21 +81,18 @@ for sha in "${commits[@]}"; do
     if ! git cherry-pick --no-commit "$sha" 2>/dev/null; then
         # Collect conflicted files
         conflicted=$(git diff --name-only --diff-filter=U 2>/dev/null || true)
-        non_review_conflicts=$(printf '%s\n' "$conflicted" | grep -v '^reviews/' | grep -v '^$' || true)
-        if [[ -n "$non_review_conflicts" ]]; then
+        non_excl_conflicts=$(printf '%s\n' "$conflicted" | grep -vE "$EXCLUDED_RE" | grep -v '^$' || true)
+        if [[ -n "$non_excl_conflicts" ]]; then
             printf "ERROR: Cherry-pick conflict on %.7s (%s).\n" "$sha" "$msg" >&2
-            printf "Conflicted files:\n%s\n" "$non_review_conflicts" >&2
+            printf "Conflicted files:\n%s\n" "$non_excl_conflicts" >&2
             printf "Resolve conflicts on master manually, then re-run.\n" >&2
-            git checkout "$PERSONAL_BRANCH"
+            git checkout -f "$PERSONAL_BRANCH"
             exit 1
         fi
-        # All conflicts are in reviews/ — resolve by keeping master version
-        git checkout HEAD -- reviews/ 2>/dev/null || true
-        git add reviews/ 2>/dev/null || true
     fi
 
-    # Strip reviews/ — restore master version (no-op if already resolved above)
-    git checkout HEAD -- reviews/ 2>/dev/null || true
+    # Strip all excluded paths from the index
+    strip_excluded
 
     # Skip if nothing left to commit (changes were already applied)
     if git diff --cached --quiet; then
