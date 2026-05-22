@@ -92,7 +92,18 @@ def mark_completed_chunks(output_file: Path, completed: int) -> None:
     sf.write_text(str(completed))
 
 
-def main():
+def _try_correct(chunks: list[str], i: int, file_path: Path) -> str | None:
+    for attempt in range(3):
+        try:
+            return correct_pali_transcription(chunks[i], file_path)
+        except concurrent.futures.TimeoutError:
+            print(f"  Timeout (attempt {attempt + 1}/3)", flush=True)
+        except Exception as e:
+            print(f"  Error (attempt {attempt + 1}/3): {e}", flush=True)
+    return None
+
+
+def main() -> None:
     input_dir = Path("output/transcribed")
     output_dir = Path("output/corrected_pali")
     output_dir.mkdir(exist_ok=True, parents=True)
@@ -157,75 +168,93 @@ def main():
         total = len(chunks)
 
         completed = get_completed_chunks(final_output)
-        start = completed
 
         if final_output.exists() and completed >= total:
             print("  Skipping (already done).", flush=True)
             continue
-        elif completed > 0:
-            print(
-                f"  Resuming from chunk {completed + 1}/{total}",
-                flush=True,
-            )
-        else:
-            print("  Starting correction...", flush=True)
 
         if TEST_MODE:
             total = min(3, total)
 
+        # Load progress from temp file (new dict format; fall back to legacy list)
+        corrected: list[str] = []
+        failed_indices: set[int] = set()
+
         if temp_output.exists():
             try:
-                corrected = json.loads(temp_output.read_text())
-                if len(corrected) != start:
-                    start = len(corrected)
+                temp_data = json.loads(temp_output.read_text())
+                if isinstance(temp_data, dict):
+                    corrected = temp_data.get("corrected", [])
+                    failed_indices = set(temp_data.get("failed", []))
+                elif isinstance(temp_data, list):
+                    corrected = temp_data  # legacy format
             except json.JSONDecodeError:
-                # Fallback if temp file is corrupted
-                start = 0
-                corrected = []
-        elif start > 0 and final_output.exists():
-            # If we have a final file but need to resume, we'd need to re-chunk it
-            # which is complex. For now, let's just restart if no temp file.
-            start = 0
-            corrected = []
+                pass
+
+        start = len(corrected)
+
+        if start > 0:
+            label = f"  Resuming from chunk {start + 1}/{total}"
+            if failed_indices:
+                label += f" ({len(failed_indices)} chunks queued for retry)"
+            print(label, flush=True)
         else:
-            start = 0
-            corrected = []
-        failed = []
+            print("  Starting correction...", flush=True)
 
         print(f"  {total - start} chunks to process", flush=True)
 
+        def save_temp() -> None:
+            temp_output.write_text(
+                json.dumps({"corrected": corrected, "failed": sorted(failed_indices)})
+            )
+
+        # First pass: process all remaining chunks; use original text as placeholder on failure
         for i in range(start, total):
             print(f"  Chunk {i + 1}/{total}...", flush=True)
-            success = False
-            for attempt in range(3):
-                try:
-                    result = correct_pali_transcription(chunks[i], file_path)
-                    corrected.append(result.strip())
-                    temp_output.write_text(json.dumps(corrected))
-                    success = True
-                    break
-                except concurrent.futures.TimeoutError:
-                    if attempt == 2:
-                        print(f"  Timeout on chunk {i + 1} — giving up.", flush=True)
-                        failed.append(i + 1)
-                except Exception as e:
-                    if attempt == 2:
-                        print(f"  Failed: {e}", flush=True)
-                        failed.append(i + 1)
-            if not success:
-                break
+            result = _try_correct(chunks, i, file_path)
+            if result is not None:
+                corrected.append(result.strip())
+                failed_indices.discard(i)
+            else:
+                corrected.append(chunks[i])  # placeholder: keep original
+                failed_indices.add(i)
+                print(f"  Chunk {i + 1} queued for retry.", flush=True)
+            save_temp()
             time.sleep(2)
 
-        if failed:
-            mark_completed_chunks(final_output, len(corrected))
-            # Leave progress in temp_output, DO NOT write to final_output
-            print(f"Saved (partial) to temp file. Failed chunks: {failed}")
-        else:
-            mark_completed_chunks(final_output, total)
-            final_output.write_text("\n\n".join(corrected))
-            if temp_output.exists():
-                temp_output.unlink()
-            print(f"Saved to '{final_output}'.")
+        # Retry pass: up to 2 rounds for chunks that failed in the first pass
+        for retry_round in range(2):
+            if not failed_indices:
+                break
+            print(
+                f"  Retry round {retry_round + 1}: {len(failed_indices)} chunks...",
+                flush=True,
+            )
+            still_failed: set[int] = set()
+            for i in sorted(failed_indices):
+                print(f"  Retry chunk {i + 1}/{total}...", flush=True)
+                result = _try_correct(chunks, i, file_path)
+                if result is not None:
+                    corrected[i] = result.strip()
+                else:
+                    still_failed.add(i)
+                    print(f"  Chunk {i + 1} still failing.", flush=True)
+                save_temp()
+                time.sleep(2)
+            failed_indices = still_failed
+
+        if failed_indices:
+            print(
+                f"  Error: {len(failed_indices)} chunks failed after all retries: {sorted(failed_indices)}",
+                flush=True,
+            )
+            sys.exit(1)
+
+        mark_completed_chunks(final_output, total)
+        final_output.write_text("\n\n".join(corrected))
+        if temp_output.exists():
+            temp_output.unlink()
+        print(f"Saved to '{final_output}'.", flush=True)
 
         print("  Waiting 5s between files...", flush=True)
         time.sleep(5)

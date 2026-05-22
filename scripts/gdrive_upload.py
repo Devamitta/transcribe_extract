@@ -6,6 +6,7 @@ import pickle
 from pathlib import Path
 
 from dotenv import load_dotenv
+import google.auth.exceptions
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -46,8 +47,13 @@ def get_google_client(service: str, version: str):
             creds = pickle.load(f)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
+            try:
+                creds.refresh(Request())
+            except google.auth.exceptions.RefreshError:
+                pr.amber("Drive token revoked — re-authenticating")
+                TOKEN_PATH.unlink(missing_ok=True)
+                creds = None
+        if not creds or not creds.valid:
             if not CLIENT_SECRET.exists():
                 pr.no(f"Missing {CLIENT_SECRET}. Follow output/UPLOAD_SETUP.md")
                 raise SystemExit(1)

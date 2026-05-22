@@ -16,6 +16,7 @@ mkdir -p input
 mkdir -p output/audio
 mkdir -p output/video
 mkdir -p output/thumbnails
+mkdir -p output/covers
 
 # Output directories — transcription & correction
 mkdir -p output/transcribed
@@ -51,6 +52,19 @@ DEEPSEEK_API_KEY=
 # Google Drive upload — folder IDs from Drive URL
 GDRIVE_FOLDER_ID_RU=
 GDRIVE_FOLDER_ID_EN=
+
+# yt_cover_gen.py — YouTube cover thumbnail text overlay
+COVER_GRADIENT_HEIGHT_PCT=0.45
+COVER_GRADIENT_MAX_ALPHA=200
+COVER_BOTTOM_GRADIENT_HEIGHT_PCT=0.20
+COVER_FONT_PATH=
+COVER_RU_FONT_PATH=
+COVER_TITLE_SIZE_PCT=0.33
+COVER_TITLE_STROKE_PCT=0.10
+COVER_TEACHER_SIZE_PCT=0.07
+COVER_TEXT_X_PCT=0.04
+COVER_MAX_TEXT_W_PCT=0.85
+COVER_SHADOW_OFFSET=1
 EOF
     echo ".env template created — fill in your API keys before running pipelines."
 else
