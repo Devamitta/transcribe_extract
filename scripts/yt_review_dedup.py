@@ -72,9 +72,7 @@ def parse_review_entries(review_path: Path) -> list[dict[str, str]]:
         m = re.search(r"\*\*Suggested Description:\*\*\s*(.+)", section)
         if m:
             entry["description"] = m.group(1).strip()
-        chapters_m = re.search(
-            r"\*\*Chapters:\*\*\n((?:\[[^\]]+\][^\n]*\n?)+)", section
-        )
+        chapters_m = re.search(r"\*\*Chapters:\*\*\n((?:\[[^\]]+\][^\n]*\n?)+)", section)
         if chapters_m:
             entry["chapters"] = chapters_m.group(1).strip()
         if "source" in entry and entry.get("date_iso"):
@@ -156,9 +154,6 @@ def main() -> None:
 
     folder = LANG_TO_FOLDER[args.lang]
     review_path = Path("reviews") / f"{folder}_review.md"
-
-    if args.dry_run:
-        pr.green(f"[DRY RUN] Review: {review_path}")
 
     if not review_path.exists():
         pr.no(f"Review file not found: {review_path}")
