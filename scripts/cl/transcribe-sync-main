@@ -77,9 +77,9 @@ for sha in "${commits[@]}"; do
         continue
     fi
 
-    # Cherry-pick without committing
-    if ! git cherry-pick --no-commit "$sha" 2>/dev/null; then
-        # Collect conflicted files
+    # Cherry-pick without committing; prefer incoming version on conflicts
+    if ! git cherry-pick --no-commit -X theirs "$sha" 2>/dev/null; then
+        # -X theirs still fails for unresolvable conflicts (e.g. add/add on same path)
         conflicted=$(git diff --name-only --diff-filter=U 2>/dev/null || true)
         non_excl_conflicts=$(printf '%s\n' "$conflicted" | grep -vE "$EXCLUDED_RE" | grep -v '^$' || true)
         if [[ -n "$non_excl_conflicts" ]]; then
