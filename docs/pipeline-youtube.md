@@ -10,7 +10,7 @@ A multi-stage pipeline for processing Dhamma talks (English and Russian) for You
 ./yt_run.sh [--lang ru|en] [--folder folder] [--from-export] [--gdrive] [--dry-run] [--context CONTEXT]
 ```
 
-e.g. `./yt_run.sh --lang ru --folder sangha --gdrive`
+e.g. `./yt_run.sh --lang ru --gdrive`
 
 | Flag | Description |
 |---|---|
@@ -61,10 +61,13 @@ Transcribe audio files using MLX Whisper.
 
 ```bash
 caffeinate -i nice -n 10 uv run python scripts/transcribe.py \
-  --input-dir output/audio/<folder> \
+  --lang ru|en [--folder <folder>] \
   --context <context> \
   --chunk-seconds 20
 ```
+
+- `--lang` resolves input to `output/audio/<lang-folder>/` and output to `output/transcribed/<lang-folder>/` automatically.
+- `--folder` overrides the lang-derived subfolder name.
 
 Input: MP3 files in `output/audio/<folder>/`
 Output: Raw transcripts in `output/transcribed/<folder>/`

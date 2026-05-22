@@ -9,8 +9,8 @@ from typing import Any
 
 import mlx_whisper
 
-
 from tools.glossary import DHAMMA, SANGHA, VINAYA
+from tools.printer import printer as pr
 
 VOCAB_PROMPTS = {
     "sangha": f"Buddhist Saṅgha discussion. Pali terms: {', '.join(SANGHA)}",
@@ -20,23 +20,35 @@ VOCAB_PROMPTS = {
     "russian": "Буддийская лекция о Дхамме. Pali terms: Nibbāna, Satipaṭṭhāna, Dhamma, Saṅgha",
 }
 
+LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
+
 
 def main():
     parser = argparse.ArgumentParser(
         description="Transcribe raw audio files using MLX Whisper with context-specific Pali glossaries."
     )
-    # Changed default input dir to the raw audio folder
+    parser.add_argument(
+        "--lang",
+        type=str,
+        choices=["ru", "en"],
+        help="Language (ru|en); resolves input/output dirs to output/audio/<folder> and output/transcribed/<folder>.",
+    )
+    parser.add_argument(
+        "--folder",
+        type=str,
+        help="Subfolder name override (used with --lang to override the default lang folder).",
+    )
     parser.add_argument(
         "--input-dir",
         type=str,
-        default="audio",
-        help="Directory containing raw audio files (default: audio)",
+        default=None,
+        help="Explicit input directory (overrides --lang/--folder; defaults to audio/ when neither is given).",
     )
     parser.add_argument(
         "--output-dir",
         type=str,
         default=None,
-        help="Directory to save transcription markdown files (default: output/transcribed/<input-dir-name>)",
+        help="Explicit output directory (overrides all derivation).",
     )
     parser.add_argument(
         "--context",
@@ -59,30 +71,59 @@ def main():
     args = parser.parse_args()
 
     chunk_seconds = float(args.chunk_seconds)
-    audio_dir = Path(args.input_dir)
-    if args.output_dir:
-        output_dir = Path(args.output_dir)
-    elif audio_dir.is_relative_to("audio"):
-        output_dir = Path("output/transcribed") / audio_dir.relative_to("audio")
+
+    if args.input_dir:
+        audio_dir = Path(args.input_dir)
+        if args.output_dir:
+            output_dir = Path(args.output_dir)
+        elif audio_dir.is_relative_to("audio"):
+            output_dir = Path("output/transcribed") / audio_dir.relative_to("audio")
+        else:
+            output_dir = Path("output/transcribed")
+    elif args.lang:
+        lang_folder = args.folder or LANG_TO_FOLDER[args.lang]
+        audio_dir = Path("output/audio") / lang_folder
+        output_dir = (
+            Path(args.output_dir)
+            if args.output_dir
+            else Path("output/transcribed") / lang_folder
+        )
     else:
-        output_dir = Path("output/transcribed")
+        audio_dir = Path("audio")
+        output_dir = (
+            Path(args.output_dir) if args.output_dir else Path("output/transcribed")
+        )
 
     # Scans recursively for raw MP3s
     audio_files = sorted(list(audio_dir.rglob("*.mp3")))
 
     if not audio_files:
-        print(f"Error: No MP3 files found in '{audio_dir}'.")
+        pr.no(f"No MP3 files found in '{audio_dir}'.")
         return
 
     if args.test_run:
-        print("--- TEST RUN: Processing only the first file found ---")
+        pr.amber("TEST RUN: processing only the first file found.")
         audio_files = audio_files[:1]
 
-    cooldown_seconds = 180
+    # Filter to only files that need transcription before loading the model
+    pending = [
+        f
+        for f in audio_files
+        if not (output_dir / f.relative_to(audio_dir).with_suffix(".md")).exists()
+    ]
+    if not pending:
+        pr.yes(f"All {len(audio_files)} transcripts up to date — nothing to do.")
+        return
+    audio_files = pending
+
+    COOLDOWN_RATIO = 0.30
+    MIN_COOLDOWN = 10
+    MAX_COOLDOWN = 180
     prompt_context = VOCAB_PROMPTS[args.context]
 
-    print(f"Found {len(audio_files)} files to process.", flush=True)
-    print(f"Using Context: {args.context.upper()}", flush=True)
+    pr.green(
+        f"Transcribing {len(audio_files)} file(s) — context: {args.context.upper()}"
+    )
 
     for index, audio_path in enumerate(audio_files):
         # Mirror subfolder structure relative to input directory
@@ -90,14 +131,10 @@ def main():
         output_path = output_dir / relative_path.with_suffix(".md")
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        if output_path.exists():
-            continue
+        pr.green(f"[{index + 1}/{len(audio_files)}] {audio_path.name}")
 
-        print(
-            f"\n[{index + 1}/{len(audio_files)}] STARTING: {audio_path.name}",
-            flush=True,
-        )
-
+        transcribe_start = time.time()
+        pr.bip()
         result: dict[str, Any] = mlx_whisper.transcribe(
             str(audio_path),
             path_or_hf_repo="mlx-community/whisper-large-v3-turbo",
@@ -107,6 +144,7 @@ def main():
             no_speech_threshold=0.6,
             word_timestamps=False,
         )
+        transcribe_elapsed = time.time() - transcribe_start
 
         formatted_transcript = ""
         current_paragraph = ""
@@ -269,16 +307,20 @@ def main():
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(formatted_transcript.strip())
 
-        print(f"DONE: {audio_path.name} -> {output_path.name}", flush=True)
+        pr.yes(f"{audio_path.name} → {output_path.name}")
 
         if index < len(audio_files) - 1:
-            print(
-                f"Thermal pacing: Sleeping for {cooldown_seconds} seconds...",
-                flush=True,
+            cooldown = int(
+                max(
+                    MIN_COOLDOWN, min(MAX_COOLDOWN, transcribe_elapsed * COOLDOWN_RATIO)
+                )
             )
-            time.sleep(cooldown_seconds)
+            pr.amber(
+                f"Thermal pacing: {transcribe_elapsed:.0f}s work → {cooldown}s cooldown"
+            )
+            time.sleep(cooldown)
 
-    print(f"\nBatch processing complete. See {output_dir}", flush=True)
+    pr.green(f"Batch complete. Output: {output_dir}")
 
 
 if __name__ == "__main__":

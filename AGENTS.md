@@ -61,6 +61,13 @@ Individual scripts (run from project root):
 
 ## UI & Output
 - Use `tools/printer.py` for all CLI script output (e.g., `pr.green()`, `pr.yes()`, `pr.no()`, `pr.warning()`). Avoid bare `print()` calls.
+- **Printer timer pattern:** `pr.yes()` and `pr.no()` always append `print_bop()` — the elapsed time since the last `pr.bip()`. You MUST call `pr.bip()` immediately before the timed work begins, or the output will show `0.000`. Pattern:
+  ```python
+  pr.green("Transcribing foo.mp3")   # label
+  pr.bip()                            # start timer
+  do_work()
+  pr.yes("foo.mp3 → foo.md")         # prints result + correct elapsed
+  ```
 
 ## Documentation
 - When making a significant change to any pipeline (new flags, changed behaviour, new stages, renamed scripts), update the corresponding doc in `docs/`:

@@ -55,13 +55,22 @@ Converts raw audio into Markdown format, using context-specific Pali glossaries 
 | **Interview** | `./transcribe.sh --context interview` | `input/interview/` | `output/transcribed/interview/` |
 | **Dhamma** | `./transcribe.sh --context dhamma` | `input/dhamma/` | `output/transcribed/dhamma/` |
 
-**Direct script:**
+**Direct script (Dhamma/Saṅgha pipeline):**
 ```bash
 uv run python scripts/transcribe.py --input-dir <dir> --context <context>
 ```
 
+**Direct script (YouTube pipeline):**
+```bash
+uv run python scripts/transcribe.py --lang ru|en [--folder <subfolder>] --context russian --chunk-seconds 20
+```
+
 **Options:**
+- `--lang`: `ru` or `en` — resolves input/output to `output/audio/<folder>` and `output/transcribed/<folder>`
+- `--folder`: subfolder name override (used with `--lang`)
+- `--input-dir`: explicit input path (overrides `--lang`/`--folder`; used by `transcribe.sh`)
 - `--context`: `sangha`, `dhamma`, `vinaya`, `interview`, or `russian`
+- `--chunk-seconds`: paragraph flush interval (default 60; use 20 for YouTube chapter timestamps)
 - `--test-run`: transcribe only the first file found
 
 *Use `caffeinate -i nice -n 10` on macOS to prevent sleep and manage CPU priority.*
