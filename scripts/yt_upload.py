@@ -12,14 +12,15 @@ from tools.uploader_common import (
     BIO_LINKS,
     build_description,
     check_api_probe,
-    confirm_and_save_nested,
     find_mp4s_with_album,
     get_google_client,
     load_nested_history,
     make_history_key,
+    mark_uploaded,
     match_mp4_to_review,
     parse_review,
     parse_tags_for_api,
+    save_nested_history,
 )
 
 
@@ -143,6 +144,17 @@ def main():
     token_path = TOKEN_PATHS[args.lang]
     history = load_nested_history(HISTORY_PATH, args.lang)
 
+    # Pre-load specific file paths from log (NFC-normalized).
+    # Log paths are NFC (built from review strings); find_mp4s_with_album returns
+    # NFD paths (macOS APFS) — normalise both sides to NFC at comparison time.
+    specific: set[str] = set()
+    if args.files_from_log and args.files_from_log.exists():
+        specific = {
+            unicodedata.normalize("NFC", line.strip())
+            for line in args.files_from_log.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        }
+
     # Gather all pending uploads from selected folders
     all_to_upload: list[tuple[Path, str | None, dict]] = []
     lang_folder = LANG_TO_FOLDER.get(args.lang or "en", "english")
@@ -161,7 +173,13 @@ def main():
         for path, album in mp4s:
             key = make_history_key(path, album)
             if key in history and history[key].get("status") == "uploaded":
-                continue
+                # In dry-run with a files-from-log, bypass history for the specific
+                # file so the dry-run can show what the upload step would do even
+                # when the file is already in history (e.g. testing with a real file).
+                if not (
+                    args.dry_run and unicodedata.normalize("NFC", str(path)) in specific
+                ):
+                    continue
 
             meta = match_mp4_to_review(path, review)
             if meta:
@@ -178,21 +196,12 @@ def main():
         return
 
     # Restrict to specific files if a created-log was provided.
-    # Normalize to NFC on both sides: log paths are NFC (built from review strings),
-    # but find_mp4s_with_album returns NFD paths from macOS APFS.
-    if args.files_from_log and args.files_from_log.exists():
-        log_content = args.files_from_log.read_text(encoding="utf-8")
-        specific: set[str] = {
-            unicodedata.normalize("NFC", line.strip())
-            for line in log_content.splitlines()
-            if line.strip()
-        }
-        if specific:
-            all_to_upload = [
-                t
-                for t in all_to_upload
-                if unicodedata.normalize("NFC", str(t[0])) in specific
-            ]
+    if specific:
+        all_to_upload = [
+            t
+            for t in all_to_upload
+            if unicodedata.normalize("NFC", str(t[0])) in specific
+        ]
 
     if not all_to_upload:
         pr.green("No new uploads for this run.")
@@ -207,7 +216,7 @@ def main():
         except (ValueError, KeyError):
             return datetime.min
 
-    newest_first = bool(args.files_from_log and args.files_from_log.exists())
+    newest_first = bool(specific)
     all_to_upload.sort(key=_parse_date, reverse=newest_first)
 
     if args.limit > 0:
@@ -306,6 +315,7 @@ def main():
                 pr.white(f"Added to playlist: {album}")
 
             # Thumbnail upload logic
+            thumb_was_set = False
             cover_stem = unicodedata.normalize("NFC", path.stem)
             cover_path = Path("output/covers") / path.parent.name / f"{cover_stem}.jpg"
             if cover_path.exists():
@@ -317,17 +327,16 @@ def main():
                         ),
                     ).execute()
                     pr.yes(f"    Thumbnail set: {cover_path.name}")
+                    thumb_was_set = True
                 except Exception as thumb_err:
                     pr.amber(f"    Thumbnail upload failed (non-fatal): {thumb_err}")
 
-            confirm_and_save_nested(
-                HISTORY_PATH,
-                args.lang,
-                history,
-                make_history_key(path, album),
-                video_id,
-                "YouTube",
-            )
+            hist_key = make_history_key(path, album)
+            mark_uploaded(history, hist_key, video_id)
+            if thumb_was_set:
+                history[hist_key]["thumbnail_set"] = True  # type: ignore[assignment]
+            save_nested_history(HISTORY_PATH, args.lang, history)
+            pr.yes(f"Uploaded to YouTube: {hist_key} (ID: {video_id})")
         except Exception as e:
             pr.no(f"Upload failed for {path.name}: {e}")
             raise SystemExit(1)

@@ -18,6 +18,29 @@ from tools.provider import (
 from tools.uploader_common import BIO_LINKS
 
 
+DEFAULT_SPEAKER: dict[str, str] = {
+    "en": "Bhikkhu Devamitta",
+    "ru": "Бхиккху Дэвамитта",
+}
+
+
+def _name_in_stem(stem: str, name: str) -> bool:
+    """True if any word from name appears anywhere in stem (case-insensitive)."""
+    stem_lower = stem.lower()
+    return any(word.lower() in stem_lower for word in name.split())
+
+
+def _date_from_stem(stem: str) -> str:
+    """Extract DD-MM-YYYY from a stem starting with YYYY-MM-DD or DD-MM-YYYY."""
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", stem)
+    if m:
+        return f"{m.group(3)}-{m.group(2)}-{m.group(1)}"
+    m = re.match(r"^(\d{2})-(\d{2})-(\d{4})", stem)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+    return ""
+
+
 TAG_POOLS: dict[str, list[str]] = {
     "ru": TAG_POOL_RU,
     "en": TAG_POOL_EN,
@@ -171,20 +194,18 @@ def _write_dry_run_entry(
     bio_link: str | None = None,
 ) -> None:
     """Writes a clearly-marked stub entry to the review file for pipeline dry-run."""
-    speaker = speaker_name or (
-        " | Бхиккху Дэвамитта" if lang == "ru" else " | Bhikkhu Devamitta"
-    )
-    if speaker_name and not speaker_name.startswith(" |"):
-        speaker = f" | {speaker_name}"
     nfc_name = unicodedata.normalize("NFC", file_path.name)
-    title = f"[DRY_RUN] {file_path.stem}{speaker}"
+    speaker_suffix = ""
+    if speaker_name and not _name_in_stem(file_path.stem, speaker_name):
+        speaker_suffix = f" | {speaker_name}"
+    title = f"[DRY_RUN] {file_path.stem}{speaker_suffix}"
     dry_run_desc = "[DRY_RUN] Dry run pipeline trace."
     if bio_link:
         dry_run_desc = f"{dry_run_desc}\n\n{bio_link}"
     section = (
         f"\n--- \n"
         f"## Source: {nfc_name}\n"
-        f"**Recording Date:** 01-01-2000\n"
+        f"**Recording Date:** {_date_from_stem(file_path.stem) or '01-01-2000'}\n"
         f"**Approved:** yes\n"
         f"**Media:** {media}\n"
         f"**Suggested Title:** {title}\n"
@@ -258,13 +279,7 @@ def process_files(
     pr.green(f"[{folder_name}] Processing {len(pending)} files → '{output_file}'.")
     total = len(pending)
 
-    # Speaker suffix based on lang or override
-    if speaker_name:
-        speaker_suffix = f" | {speaker_name}"
-    else:
-        speaker_suffix = (
-            " | Бхиккху Дэвамитта" if lang == "ru" else " | Bhikkhu Devamitta"
-        )
+    speaker_suffix = f" | {speaker_name}" if speaker_name else ""
 
     for i, file_path in enumerate(pending, 1):
         pr.green(f"  {i}/{total} '{file_path.name}'...")
@@ -294,7 +309,7 @@ def process_files(
             section = (
                 f"\n--- \n"
                 f"## Source: {unicodedata.normalize('NFC', file_path.name)}\n"
-                f"**Recording Date:** \n"
+                f"**Recording Date:** {_date_from_stem(file_path.stem)}\n"
                 f"**Approved:** no\n"
                 f"**Media:** {media}\n"
                 f"**Suggested Title:** {title}\n"
@@ -379,6 +394,14 @@ def main() -> None:
         else None
     )
 
+    # Effective speaker: --name > lang default > None (no lang + no name = empty)
+    if args.name:
+        effective_speaker: str | None = args.name
+    elif args.lang:
+        effective_speaker = DEFAULT_SPEAKER[args.lang]
+    else:
+        effective_speaker = None
+
     transcribed_base = Path("output/transcribed")
     if not transcribed_base.exists():
         pr.no(f"Base directory not found: {transcribed_base}")
@@ -405,7 +428,7 @@ def main() -> None:
             processing_lang,
             out_file_path,
             folder_name,
-            speaker_name=args.name,
+            speaker_name=effective_speaker,
             media=media,
             dry_run=args.dry_run,
             bio_link=bio_link,
@@ -473,7 +496,7 @@ def main() -> None:
             processing_lang,
             out_file_path,
             folder_name,
-            speaker_name=args.name,
+            speaker_name=effective_speaker,
             media=media,
             dry_run=args.dry_run,
             bio_link=bio_link,

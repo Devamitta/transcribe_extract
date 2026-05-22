@@ -535,7 +535,7 @@ def main() -> None:
     all_pending: list[tuple[Path, str, Path, bool]] = []
     lang_folder = LANG_TO_FOLDER.get(args.lang, "english")
     for folder_path in folders:
-        folder_name = folder_path.name
+        folder_name = args.folder if args.folder is not None else folder_path.name
         review_path = args.review_file or Path("reviews") / f"{lang_folder}_review.md"
 
         if not review_path or not review_path.exists():
@@ -768,11 +768,8 @@ def main() -> None:
                     if len(silence_pairs) < MIN_CHAPTERS:
                         pr.amber("    Insufficient silence anchors — using paragraphs")
                         silence_pairs = None
-                else:
-                    if not audio_path.exists():
-                        pr.amber(
-                            f"    Audio not found: {audio_path} — using paragraphs"
-                        )
+                elif args.silence_mode:
+                    pr.amber(f"    Audio not found: {audio_path} — using paragraphs")
 
                 if args.diagnose_only:
                     pr.amber("    --diagnose-only: skipping LLM call")
