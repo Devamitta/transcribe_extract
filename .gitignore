@@ -13,7 +13,7 @@ wheels/
 
 # Output files
 output/
-audio/
+input/
 audio_processed/
 
 # Mac

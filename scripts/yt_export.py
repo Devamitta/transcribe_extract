@@ -10,6 +10,16 @@ from tools.printer import printer as pr
 
 LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 
+SORT_SAFETY_FIELDS: list[str] = [
+    "## Source:",
+    "**Recording Date:**",
+    "**Approved:**",
+    "**Suggested Title:**",
+    "**Suggested Description:**",
+    "**Suggested Tags:**",
+    "**Chapters:**",
+]
+
 
 DATE_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}")
 
@@ -133,6 +143,54 @@ def rename_step(
         pr.green(f"{verb} {len(renamed)} file(s)")
 
 
+def sort_review_file(review_file: Path, dry_run: bool) -> None:
+    """Sort review file sections by recording date; undated entries go last."""
+    if not review_file.exists():
+        return
+
+    content = review_file.read_text(encoding="utf-8")
+    sections = re.split(r"\n---", content)
+
+    if len(sections) <= 2:
+        return
+
+    header = sections[0]
+    body_sections = sections[1:]
+
+    def sort_key(section: str) -> tuple[int, datetime]:
+        date_match = re.search(r"\*\*Recording Date:\*\* (.+)", section)
+        if not date_match:
+            return (1, datetime.min)
+        parsed = parse_date(date_match.group(1).strip())
+        if parsed is None:
+            return (1, datetime.min)
+        return (0, parsed)
+
+    sorted_sections = sorted(body_sections, key=sort_key)
+
+    sorted_content = "\n---".join([header] + sorted_sections)
+    mismatches = [
+        f"'{f}': {content.count(f)} → {sorted_content.count(f)}"
+        for f in SORT_SAFETY_FIELDS
+        if content.count(f) != sorted_content.count(f)
+    ]
+    if mismatches:
+        for msg in mismatches:
+            pr.no(f"  Sort safety check failed: {msg}")
+        return
+
+    if sorted_sections == body_sections:
+        pr.green("  Review file already sorted by date")
+        return
+
+    if dry_run:
+        pr.green("  [dry-run] Would sort review file by recording date")
+        return
+
+    review_file.write_text(sorted_content, encoding="utf-8")
+    pr.green("  Sorted review file by recording date")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Rename source files and export approved audio or video with metadata."
@@ -188,9 +246,7 @@ def main() -> None:
     # Artist name based on lang or override
     artist_name = args.name
     if not artist_name:
-        artist_name = (
-            "Бхиккху Дэвамитта" if args.lang == "ru" else "Bhikkhu Devamitta"
-        )
+        artist_name = "Бхиккху Дэвамитта" if args.lang == "ru" else "Bhikkhu Devamitta"
 
     if args.folder:
         folder_names = [args.folder]
@@ -226,6 +282,7 @@ def main() -> None:
             args.video_mode,
             args.dry_run,
         )
+        sort_review_file(review_path, args.dry_run)
 
         if args.dry_run:
             continue
