@@ -72,6 +72,18 @@ def main():
         action="store_true",
         help="Print what would be transcribed; create stubs for pipeline propagation.",
     )
+    parser.add_argument(
+        "--created-log",
+        type=str,
+        default=None,
+        help="Path to a file where created transcript paths are appended (one per line).",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="Limit to first N pending files (0 = no limit).",
+    )
     args = parser.parse_args()
 
     chunk_seconds = float(args.chunk_seconds)
@@ -85,7 +97,9 @@ def main():
         else:
             output_dir = Path("output/transcribed")
     elif args.lang:
-        lang_folder = args.folder or LANG_TO_FOLDER[args.lang]
+        lang_folder = (
+            args.folder if args.folder is not None else LANG_TO_FOLDER[args.lang]
+        )
         audio_dir = Path("output/audio") / lang_folder
         output_dir = (
             Path(args.output_dir)
@@ -119,6 +133,9 @@ def main():
         pr.yes(f"All {len(audio_files)} transcripts up to date — nothing to do.")
         return
     audio_files = pending
+
+    if args.limit > 0:
+        audio_files = audio_files[: args.limit]
 
     if args.dry_run:
         from tools.dry_run import create_stub, is_pipeline_dry_run
@@ -323,6 +340,10 @@ def main():
 
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(formatted_transcript.strip())
+
+        if args.created_log:
+            with open(args.created_log, "a") as log_f:
+                log_f.write(str(output_path) + "\n")
 
         pr.yes(f"{audio_path.name} → {output_path.name}")
 
