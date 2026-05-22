@@ -203,7 +203,18 @@ def main() -> None:
         return
 
     # Pass 2: process
-    pr.green_title(f"Generating thumbnails for {len(all_talks)} talks...")
+    existing = sum(
+        1
+        for _, od, t in all_talks
+        if (
+            od / f"{t.get('source', sanitize_filename(t.get('title', 'Untitled')))}.jpg"
+        ).exists()
+        and not args.show_prompts
+    )
+    new_count = len(all_talks) - existing
+    pr.green_title(
+        f"Generating thumbnails for {new_count} of {len(all_talks)} talks ({existing} already exist)..."
+    )
     created, skipped, errors = 0, 0, 0
 
     for folder_name, output_dir, talk in all_talks:

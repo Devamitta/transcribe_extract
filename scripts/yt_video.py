@@ -149,7 +149,13 @@ def main() -> None:
         return
 
     # Pass 2: process
-    pr.green_title(f"Creating {len(all_talks)} videos...")
+    existing = sum(
+        1 for _, talk, _, _, od in all_talks if (od / f"{talk['source']}.mp4").exists()
+    )
+    new_count = len(all_talks) - existing
+    pr.green_title(
+        f"Creating {new_count} of {len(all_talks)} videos ({existing} already exist)..."
+    )
     created, skipped, errors = 0, 0, 0
 
     for folder_name, talk, audio_dir, thumbnails_dir, output_dir in all_talks:

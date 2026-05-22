@@ -208,6 +208,8 @@ def main():
     else:
         to_upload = all_to_upload
 
+    pr.green(f"{len(to_upload)} video(s) queued for YouTube upload.")
+
     if args.dry_run:
         pr.green_title(
             f"[DRY-RUN] Found {len(to_upload)} videos to upload (Token: {token_path.name}):"
