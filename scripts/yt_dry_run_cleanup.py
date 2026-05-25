@@ -4,6 +4,8 @@ import argparse
 import re
 from pathlib import Path
 
+from tools.printer import printer as pr
+
 LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 
 
@@ -29,8 +31,10 @@ def main() -> None:
     if removed == 0:
         return
 
+    pr.green(f"Removing {removed} dry-run stub(s) from {review_path}")
+    pr.bip()
     review_path.write_text("\n---".join(filtered), encoding="utf-8")
-    print(f"Removed {removed} dry-run stub section(s) from {review_path}")
+    pr.yes(f"Removed {removed} stub section(s)")
 
 
 if __name__ == "__main__":
