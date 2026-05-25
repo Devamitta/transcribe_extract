@@ -20,6 +20,7 @@ uv sync
 - `PROVIDER` — `openrouter`, `gemini`, `openai`, or `deepseek`
 - Matching API key — `OPENROUTER_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `DEEPSEEK_API_KEY`
 - `IMAGE_PROVIDER` — provider used for thumbnail generation
+- **Bio links:** set `BIO_EN` and `BIO_RU` to append a speaker bio to YouTube descriptions. Leave empty (default) for no bio.
 
 **YouTube OAuth** (first-time only): [docs/upload-youtube.md](docs/upload-youtube.md)
 
@@ -32,6 +33,8 @@ Drop MP3s into `input/sangha/` and run:
 ```bash
 ./scripts/cl/transcribe-sangha
 ```
+
+Output: `output/corrected_pali/sangha/`
 
 Full reference: [docs/transcription.md](docs/transcription.md)
 

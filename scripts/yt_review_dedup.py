@@ -1,8 +1,10 @@
 """Check review file for duplicate recording dates and interactively resolve conflicts."""
 
 import argparse
+import difflib
 import json
 import re
+import unicodedata
 from collections import defaultdict
 from pathlib import Path
 
@@ -10,6 +12,11 @@ from tools.printer import printer as pr
 
 LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 YT_HISTORY_PATH = Path("output/youtube_history.json")
+TITLE_SIMILARITY_THRESHOLD = 0.90
+
+
+def title_similarity(t1: str, t2: str) -> float:
+    return difflib.SequenceMatcher(None, t1.lower(), t2.lower()).ratio()
 
 
 def load_yt_history(lang: str) -> dict[str, dict]:
@@ -148,7 +155,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Find and resolve duplicate recording dates in the review file."
     )
-    parser.add_argument("--lang", required=True, choices=["ru", "en"])
+    parser.add_argument("--lang", default="en", choices=["ru", "en"])
     parser.add_argument(
         "--dry-run", action="store_true", help="Show conflicts, don't delete"
     )
@@ -164,95 +171,66 @@ def main() -> None:
         pr.no(f"Review file not found: {review_path}")
         return
 
-    output_dirs = [Path(t.format(folder=folder)) for t in OUTPUT_DIR_TEMPLATES]
     yt_history = load_yt_history(args.lang)
 
     found_any = False
 
-    # --- Check review file for duplicate recording dates ---
+    # --- Check review file for similar titles ---
     entries = parse_review_entries(review_path)
     if entries:
-        by_date: dict[str, list[dict[str, str]]] = defaultdict(list)
-        for entry in entries:
-            by_date[entry["date_iso"]].append(entry)
+        found_pairs: list[tuple[dict, dict, float]] = []
+        for i, ea in enumerate(entries):
+            for eb in entries[i + 1 :]:
+                title_a = ea.get("title", "")
+                title_b = eb.get("title", "")
+                if not title_a or not title_b:
+                    continue
+                ratio = title_similarity(title_a, title_b)
+                if ratio >= TITLE_SIMILARITY_THRESHOLD:
+                    found_pairs.append((ea, eb, ratio))
 
-        duplicates = {date: group for date, group in by_date.items() if len(group) > 1}
-
-        if duplicates:
+        if found_pairs:
             found_any = True
-            pr.green_title(f"Found {len(duplicates)} duplicate date(s) in review:")
+            pr.green_title(f"Found {len(found_pairs)} similar-title pair(s) in review:")
 
-            for date_iso, group in sorted(duplicates.items()):
-                pr.green(f"\nDate: {date_iso}  ({len(group)} entries)")
-
-                entry_files: list[dict[str, list[Path]]] = []
-                for entry in group:
-                    files = find_files_for_stem(entry["stem"], output_dirs)
-                    entry_files.append(files)
-
-                all_date_files = find_files_for_date(date_iso, output_dirs)
-
-                for idx, (entry, files) in enumerate(zip(group, entry_files), 1):
-                    yt_label = yt_status_label(entry["stem"], date_iso, yt_history)
-                    pr.white(
-                        f"  [{idx}] {entry.get('title', entry['stem'])}  {yt_label}"
-                    )
-                    pr.white(
-                        f"       Recording Date: {entry.get('recording_date', '')}"
-                    )
-                    pr.white(f"       Source: {entry['source']}")
-                    if entry.get("description"):
-                        pr.white(f"       Description: {entry['description']}")
-                    if entry.get("chapters"):
-                        pr.white("       Chapters:")
-                        for line in entry["chapters"].splitlines():
-                            pr.white(f"         {line}")
-                    if files:
-                        for dir_path, file_list in files.items():
-                            short = dir_path.replace(str(Path.cwd()), "").lstrip("/")
-                            for f in file_list:
-                                pr.amber(f"       {short}/{f.name}")
-                    else:
-                        pr.amber("       (no matching files in output dirs)")
-
-                all_stems = {e["stem"] for e in group}
-                for dir_path, file_list in all_date_files.items():
-                    orphans = [f for f in file_list if f.stem not in all_stems]
-                    if orphans:
-                        short = dir_path.replace(str(Path.cwd()), "").lstrip("/")
-                        for f in orphans:
-                            pr.amber(f"  [extra] {short}/{f.name}  (no review entry)")
+            for ea, eb, ratio in found_pairs:
+                pr.green(f"\nSimilarity: {ratio:.0%}")
+                yt_a = yt_status_label(ea["stem"], ea.get("date_iso", ""), yt_history)
+                yt_b = yt_status_label(eb["stem"], eb.get("date_iso", ""), yt_history)
+                pr.white(f"  [1] {ea.get('title', ea['stem'])}")
+                pr.white(
+                    f"      Date: {ea.get('recording_date', 'unknown')} | {ea['source']}  {yt_a}"
+                )
+                pr.white(f"  [2] {eb.get('title', eb['stem'])}")
+                pr.white(
+                    f"      Date: {eb.get('recording_date', 'unknown')} | {eb['source']}  {yt_b}"
+                )
 
                 if args.dry_run:
                     continue
 
                 while True:
-                    choice = (
-                        input(f"\n  Keep which? [1-{len(group)}/skip]: ")
-                        .strip()
-                        .lower()
-                    )
+                    choice = input("\n  Keep which? [1/2/skip]: ").strip().lower()
                     if choice == "skip":
                         pr.amber("  Skipped.")
                         break
-                    if choice.isdigit() and 1 <= int(choice) <= len(group):
-                        keep_idx = int(choice) - 1
-                        kept_stem = group[keep_idx]["stem"]
-                        for remove_idx, (entry, files) in enumerate(
-                            zip(group, entry_files)
-                        ):
-                            if remove_idx == keep_idx:
-                                continue
-                            pr.green(f"  Removing: {entry['source']}")
-                            if entry["stem"] != kept_stem:
-                                for file_list in files.values():
-                                    for f in file_list:
-                                        f.unlink()
-                                        pr.amber(f"    Deleted: {f}")
-                            remove_entry_from_review(review_path, entry["source"])
-                            pr.yes(f"    Removed from review: {entry['source']}")
+                    if choice in ("1", "2"):
+                        remove_entry = [ea, eb][2 - int(choice)]
+                        # Delete associated files
+                        remove_dirs = [
+                            Path(t.format(folder=folder)) for t in OUTPUT_DIR_TEMPLATES
+                        ]
+                        remove_files = find_files_for_stem(
+                            remove_entry["stem"], remove_dirs
+                        )
+                        for file_list in remove_files.values():
+                            for f in file_list:
+                                f.unlink()
+                                pr.amber(f"    Deleted: {f}")
+                        remove_entry_from_review(review_path, remove_entry["source"])
+                        pr.yes(f"    Removed from review: {remove_entry['source']}")
                         break
-                    pr.amber(f"  Enter a number 1-{len(group)} or 'skip'.")
+                    pr.amber("  Enter 1, 2, or 'skip'.")
 
     # --- Check transcribed folder for files sharing the same date prefix ---
     transcribed_dir = Path("output/transcribed") / folder
@@ -267,13 +245,24 @@ def main() -> None:
         review_sources: set[str] = set()
         if review_path.exists():
             review_sources = set(
-                re.findall(r"## Source: (.+)", review_path.read_text(encoding="utf-8"))
+                unicodedata.normalize("NFC", source)
+                for source in re.findall(
+                    r"## Source: (.+)", review_path.read_text(encoding="utf-8")
+                )
             )
 
         for date_iso, files in sorted(transcribed_conflicts.items()):
             pr.green(f"\nDate: {date_iso}  ({len(files)} files)")
-            in_review = [f for f in files if f.name in review_sources]
-            not_in_review = [f for f in files if f.name not in review_sources]
+            in_review = [
+                f
+                for f in files
+                if unicodedata.normalize("NFC", f.name) in review_sources
+            ]
+            not_in_review = [
+                f
+                for f in files
+                if unicodedata.normalize("NFC", f.name) not in review_sources
+            ]
 
             for idx, f in enumerate(files, 1):
                 review_status = "(in review)" if f in in_review else "(NOT in review)"
@@ -304,7 +293,7 @@ def main() -> None:
                         if i != keep_idx:
                             f.unlink()
                             pr.amber(f"    Deleted: {f.name}")
-                            if f.name in review_sources:
+                            if unicodedata.normalize("NFC", f.name) in review_sources:
                                 remove_entry_from_review(review_path, f.name)
                                 pr.yes(f"    Removed from review: {f.name}")
                     break

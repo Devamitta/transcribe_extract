@@ -100,15 +100,21 @@ def rename_step(
         new_stem = f"{iso_date} - {sanitize_filename(title_raw)}"
 
         if old_stem == new_stem:
-            # Already correctly named; still record path so the upload filter works on re-runs.
+            # Already correctly named. Only add to the upload filter log when the MP4
+            # doesn't exist yet — meaning the file was renamed in a previous partial run
+            # but video creation didn't complete. If the MP4 already exists it's either
+            # already uploaded (correct) or will be caught by the no-filter fallback
+            # (oldest-first sort) without contaminating the specific set with stale
+            # history entries.
             if video_mode:
                 _mp4 = video_dir / f"{old_stem}.mp4"
                 if _mp4.exists():
                     renamed_media_paths.append(_mp4)
             else:
                 _mp3 = source_audio_dir / f"{old_stem}.mp3"
-                if _mp3.exists():
-                    renamed_media_paths.append(video_dir / f"{old_stem}.mp4")
+                _mp4 = video_dir / f"{old_stem}.mp4"
+                if _mp3.exists() and not _mp4.exists():
+                    renamed_media_paths.append(_mp4)
             skipped += 1
             continue
         new_md_name = f"{new_stem}.md"
@@ -128,6 +134,22 @@ def rename_step(
             if video_mode:
                 pr.white(f"           {old_mp4} → {new_mp4}")
             pr.white(f"           {old_mp3} → {new_mp3}")
+
+            # Derive folder from source_audio_dir
+            folder_name_img = source_audio_dir.name
+            thumb_dir = Path("output/thumbnails") / folder_name_img
+            cover_dir = Path("output/covers") / folder_name_img
+
+            old_thumb = thumb_dir / f"{old_stem}.jpg"
+            new_thumb = thumb_dir / f"{new_stem}.jpg"
+            old_cover = cover_dir / f"{old_stem}.jpg"
+            new_cover = cover_dir / f"{new_stem}.jpg"
+
+            if old_thumb.exists():
+                pr.white(f"           {old_thumb} → {new_thumb}")
+            if old_cover.exists():
+                pr.white(f"           {old_cover} → {new_cover}")
+
             if is_pipeline_dry_run() and is_stub(old_md):
                 old_md.rename(new_md)
                 log_stub(new_md)
@@ -135,7 +157,7 @@ def rename_step(
                     old_mp3.rename(new_mp3)
                     log_stub(new_mp3)
                     if not video_mode:
-                        renamed_media_paths.append(new_mp3)
+                        renamed_media_paths.append(new_mp4)
                 if video_mode and is_stub(old_mp4):
                     old_mp4.rename(new_mp4)
                     log_stub(new_mp4)
@@ -157,14 +179,35 @@ def rename_step(
         old_md.rename(new_md)
         if old_mp3.exists():
             old_mp3.rename(new_mp3)
-            if not video_mode:
-                renamed_media_paths.append(video_dir / f"{new_stem}.mp4")
+        # Always record the target MP4 path when the transcript is renamed, even if the
+        # MP3 was already renamed by a previous partial run (old_mp3 absent). This ensures
+        # the upload filter always includes the new video.
+        if not video_mode:
+            renamed_media_paths.append(video_dir / f"{new_stem}.mp4")
 
-        if video_mode and old_mp4.exists():
-            old_mp4.rename(new_mp4)
+        if video_mode:
+            if old_mp4.exists():
+                old_mp4.rename(new_mp4)
+            # Record new MP4 path whether or not rename happened (partial-run safety).
             renamed_media_paths.append(new_mp4)
 
         pr.green(f"  {source_name} → {new_md_name}")
+
+        # Rename matching images
+        folder_name_img = source_audio_dir.name
+        thumb_dir = Path("output/thumbnails") / folder_name_img
+        cover_dir = Path("output/covers") / folder_name_img
+
+        old_thumb = thumb_dir / f"{old_stem}.jpg"
+        new_thumb = thumb_dir / f"{new_stem}.jpg"
+        old_cover = cover_dir / f"{old_stem}.jpg"
+        new_cover = cover_dir / f"{new_stem}.jpg"
+
+        if old_thumb.exists():
+            old_thumb.rename(new_thumb)
+        if old_cover.exists():
+            old_cover.rename(new_cover)
+
         renamed.append((source_name, new_md_name))
 
     if renamed and not dry_run:

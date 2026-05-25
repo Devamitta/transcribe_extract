@@ -7,7 +7,7 @@ A multi-stage pipeline for processing Dhamma talks (English and Russian) for You
 ## One-Command Execution
 
 ```bash
-./yt_run.sh [--lang ru|en] [--folder folder] [--name NAME] [--from-export] [--video-mode] [--cover] [--gdrive] [--dry-run] [--context CONTEXT] [--limit N]
+./yt_run.sh [--lang ru|en] [--folder folder] [--name NAME] [--from-export] [--video-mode] [--cover] [--release] [--gdrive] [--dry-run] [--context CONTEXT] [--limit N]
 ```
 
 e.g. `./yt_run.sh --lang ru --gdrive`
@@ -18,14 +18,15 @@ e.g. `./yt_run.sh --lang ru --gdrive`
 | `--folder` | Optional. Specific folder in `input/` to scan. If omitted, scans `input/` root or subfolders. |
 | `--name NAME` | Optional. Override the speaker/artist name used in generated titles and embedded metadata. Defaults to the lang-derived speaker name. |
 | `--from-export` | Skip transcription and metadata generation. Useful when resuming after metadata has already been reviewed. |
-| `--video-mode` | Force video mode when using `--from-export` (normally auto-detected from `.mp4` files in `input/`). |
-| `--cover` | (Video mode only) Generate base + cover thumbnails and set them on YouTube after upload. |
+| `--video-mode` | Enables video mode. Must be set explicitly — the pipeline no longer auto-detects from .mp4 files in input/. A mismatch prompt appears if input and flag disagree. |
+| `--cover` | (Video mode only) Generate base + cover thumbnails and set them on YouTube after upload. Also: if images (PNG/JPG) are found in input/, ingest copies them to output/covers/{folder}/ in addition to output/thumbnails/{folder}/. |
+| `--release` | Publish uploaded videos immediately as public. Default: uploaded as private (must be manually published on YouTube). |
 | `--gdrive` | Also upload to Google Drive (default: YouTube only). |
 | `--dry-run [file]` | Trace the full pipeline without real processing. Optional stub file (e.g. `test.mp4`) is created in `input/` (or `input/<lang_folder>/` when `--lang` is set) so mode detection and path routing work end-to-end. All stubs and the stub review entry are cleaned up automatically at the end. |
 | `--context CONTEXT` | Whisper context tag. Defaults to `russian` (ru) or `dhamma` (en). English options: `dhamma`, `sangha`, `vinaya`, `interview`. |
 | `--limit N` | Optional. Cap all file-processing stages to the first N files. Passed through to every script that supports it (ingest, transcribe, metadata, chapters, export, thumbnail, video, upload, gdrive). Works in both normal and dry-run mode. |
 
-The pipeline auto-detects **Video Mode** if `.mp4` files are found in `input/` before ingestion runs.
+Video Mode is enabled explicitly via the --video-mode flag. If video files are present in input/ but the flag is not set, the pipeline will prompt before continuing in audio mode.
 
 ### Dry-run mode
 
@@ -72,10 +73,11 @@ Review file is always determined by `--lang` (defaulting to `en`), never by `--f
 The pipeline begins by scanning `input/` or `input/<folder>/`.
 
 ```bash
-uv run python scripts/yt_ingest_unified.py [--lang ru|en] [--folder <folder>] [--limit 5]
+uv run python scripts/yt_ingest_unified.py [--lang ru|en] [--folder <folder>] [--limit 5] [--cover]
 ```
 
-- **Video Files (`.mp4`, `.mkv`, `.mov`)**: Extracts audio to `output/audio/<folder>/` and moves the original video to `output/video/<folder>/`.
+- **Video Files (`.mp4`, `.mkv`, `.mov`, `.mpeg`, `.mpg`)**: Converted to .mp4, audio extracted to output/audio/<folder>/, video saved to output/video/<folder>/.
+- **Images (.png, .jpg, .jpeg)**: Converted to JPG and moved to output/thumbnails/<folder>/. If --cover is set, also copied to output/covers/<folder>/.
 - **Non-MP3 Audio (`.wav`, `.m4a`, etc.)**: Converts to MP3 in `output/audio/<folder>/` and removes the original from `input/`.
 - **MP3 Files**: Moves them to `output/audio/<folder>/`.
 
@@ -119,14 +121,12 @@ Generates titles and descriptions using the configured LLM provider.
 uv run python scripts/yt_metadata.py [--lang ru|en] [--folder <folder>] [--name NAME] [--limit 5] [--video-mode]
 ```
 
-- `--lang` is optional (defaults to `None`). **The pipeline passes `--lang` to this script only when the user explicitly sets it** — running `./yt_run.sh` without `--lang` suppresses bio link injection. When `--lang` is provided and no `--name` override is set, a language-specific bio link is appended to the description in the review file (separated by a blank line):
-  - `ru` → `Инфо о Бхантэ devamitta.github.io/bio`
-  - `en` → `Info about Bhante devamitta.github.io/bio-en`
+- A bio link is appended to the description when the BIO_EN or BIO_RU environment variable (set in .env) is non-empty. Language selection: --lang ru → BIO_RU, otherwise BIO_EN. Leave empty for no bio. See setup_folders.sh for template.
 - `--video-mode` marks new review entries with `**Media:** video` instead of the default `audio`. This field is used downstream by `yt_cover_gen.py` to filter which entries receive a cover thumbnail.
 
 Outputs are appended to `reviews/russian_review.md` or `reviews/english_review.md`.
 
-After the user fills in dates and edits the review file, `yt_review_dedup.py` runs a second dedup pass to catch any conflicts introduced during editing.
+After the user fills in dates and edits the review file, `yt_review_dedup.py` runs a title-similarity check across all review entries. Pairs with ≥ 90% title similarity are flagged as potential duplicates — regardless of recording date. Entries with the same date but different titles are not flagged.
 
 ### 2.2: YouTube Chapters
 Generates AI chapter timestamps based on the transcript and appends them to the review file.
@@ -136,7 +136,7 @@ uv run python scripts/yt_chapters.py --lang ru|en [--folder <folder>] [--limit 5
 ```
 
 - **Placement Accuracy:** Transcribe with `--chunk-seconds 20` for best results.
-- **Chapter Spacing:** Enforces a minimum of 2 minutes between chapters.
+- **Chapter Spacing:** Enforces a minimum of 2 minutes between chapters. Talks shorter than 3 minutes are skipped entirely.
 
 ---
 
@@ -160,7 +160,7 @@ Renames source files and embeds reviewed metadata **in-place**.
 uv run python scripts/yt_export.py --lang ru|en [--folder <folder>] [--name NAME] [--video-mode]
 ```
 
-- **Rename:** Renames files in `output/audio/` and `output/transcribed/` to `YYYY-MM-DD - Suggested Title`.
+- **Rename:** Renames files in `output/audio/` and `output/transcribed/` to `YYYY-MM-DD - Suggested Title`. Also renames matching .jpg files in output/thumbnails/<folder>/ and output/covers/<folder>/ to keep image filenames in sync.
 - **Embed:** Embeds metadata into the `.mp3` (and `.mp4` in video mode) using ffmpeg and a temporary file.
 
 ### 3.2: Generate AI Thumbnails (Audio Mode; or Video Mode with `--cover`)
@@ -222,8 +222,10 @@ The pipeline pauses after this step for visual review. Pressing `r` lists the fi
 Uploads MP4s from `output/video/<folder>/`.
 
 ```bash
-uv run python scripts/yt_upload.py --lang ru|en [--folder <folder>] [--dry-run]
+uv run python scripts/yt_upload.py --lang ru|en [--folder <folder>] [--dry-run] [--release]
 ```
+
+Videos are uploaded as **private** by default. Pass --release to yt_run.sh (or --release to yt_upload.py directly) to publish immediately as public.
 
 After each successful video upload, if a matching cover image exists at `output/covers/<folder>/<stem>.jpg`, it is automatically set as the YouTube thumbnail via the `thumbnails().set()` API.
 

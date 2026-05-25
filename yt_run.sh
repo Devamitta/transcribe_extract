@@ -19,6 +19,7 @@ FROM_EXPORT=0
 DRY_RUN=0
 DRY_RUN_STUB=""
 GDRIVE=0
+RELEASE=0
 CONTEXT=""
 VIDEO_MODE_OVERRIDE=0
 COVER=0
@@ -33,6 +34,7 @@ while [[ $# -gt 0 ]]; do
     --from-export) FROM_EXPORT=1; shift ;;
     --video-mode)  VIDEO_MODE_OVERRIDE=1; shift ;;
     --cover)       COVER=1;       shift ;;
+    --release)     RELEASE=1;     shift ;;
     --dry-run)
       DRY_RUN=1; shift
       if [[ $# -gt 0 ]] && [[ "$1" != --* ]]; then
@@ -137,22 +139,48 @@ if [ "$DRY_RUN" -eq 1 ]; then
 fi
 
 if [ "$FROM_EXPORT" -eq 0 ]; then
-  # 1. Detect video mode from input/ BEFORE ingest moves files to output/
-  VIDEO_MODE=0
-  INPUT_SCAN_DIR="input${EFFECTIVE_FOLDER:+/$EFFECTIVE_FOLDER}"
-  if [ -d "$INPUT_SCAN_DIR" ] && \
-      [ -n "$(find "$INPUT_SCAN_DIR" -maxdepth 1 -name "*.mp4" -print -quit 2>/dev/null)" ]; then
-    VIDEO_MODE=1
-  fi
+  VIDEO_MODE=$VIDEO_MODE_OVERRIDE
   EXPORT_FLAGS=""
   [ "$VIDEO_MODE" -eq 1 ] && EXPORT_FLAGS="--video-mode"
+
+  INPUT_SCAN_DIR="input${EFFECTIVE_FOLDER:+/$EFFECTIVE_FOLDER}"
+  if [ "$DRY_RUN" -eq 0 ]; then
+    # Guard 1: video in input but --video-mode not set
+    if [ "$VIDEO_MODE_OVERRIDE" -eq 0 ]; then
+      if find "$INPUT_SCAN_DIR" -maxdepth 1 \
+        \( -name "*.mp4" -o -name "*.mpeg" -o -name "*.mpg" \) \
+        -print -quit 2>/dev/null | grep -q .; then
+        printf "⚠  Video files found in %s but --video-mode not set. Run in audio mode? [Y/n] " "$INPUT_SCAN_DIR"
+        read -r _mm
+        [ "$_mm" = "n" ] || [ "$_mm" = "N" ] && {
+          echo "Aborted."
+          exit 1
+        }
+      fi
+    fi
+    # Guard 2: --video-mode set but no video in input
+    if [ "$VIDEO_MODE_OVERRIDE" -eq 1 ]; then
+      if ! find "$INPUT_SCAN_DIR" -maxdepth 1 \
+        \( -name "*.mp4" -o -name "*.mpeg" -o -name "*.mpg" \) \
+        -print -quit 2>/dev/null | grep -q .; then
+        printf "⚠  --video-mode set but no video files found in %s. Continue? [y/N] " "$INPUT_SCAN_DIR"
+        read -r _mm
+        [ "$_mm" != "y" ] && [ "$_mm" != "Y" ] && {
+          echo "Aborted."
+          exit 1
+        }
+      fi
+    fi
+  fi
 
   # 2. Unified ingest
   echo "→ Starting: yt_ingest_unified.py"
   INGEST_ARGS=""
   [ -n "$EFFECTIVE_FOLDER" ] && INGEST_ARGS="--folder $EFFECTIVE_FOLDER"
   [ -z "$EFFECTIVE_FOLDER" ] && [ -n "$USER_LANG" ] && INGEST_ARGS="--lang $USER_LANG"
-  uv run python scripts/yt_ingest_unified.py $INGEST_ARGS $LIMIT_FLAG $DRY_RUN_FLAG
+  COVER_FLAG=""
+  [ "$COVER" -eq 1 ] && COVER_FLAG="--cover"
+  uv run python scripts/yt_ingest_unified.py $INGEST_ARGS $LIMIT_FLAG $DRY_RUN_FLAG $COVER_FLAG
 
   # 2b. Dedup check — resolve duplicate dates before transcription
   echo "→ Starting: yt_review_dedup.py"
@@ -224,6 +252,19 @@ fi
 
 # For FROM_EXPORT, input/ is already empty; default to audio mode unless --video-mode passed
 if [ "$FROM_EXPORT" -eq 1 ]; then
+  if [ "$DRY_RUN" -eq 0 ]; then
+    if find "input" -maxdepth 2 -type f \
+      \( -name "*.mp4" -o -name "*.mpeg" -o -name "*.mpg" \
+      -o -name "*.mp3" -o -name "*.wav" -o -name "*.png" -o -name "*.jpg" \) \
+      -print -quit 2>/dev/null | grep -q .; then
+      printf "⚠  Files found in input/ but --from-export is set. Continue? [y/N] "
+      read -r _mm
+      [ "$_mm" != "y" ] && [ "$_mm" != "Y" ] && {
+        echo "Aborted."
+        exit 1
+      }
+    fi
+  fi
   VIDEO_MODE=$VIDEO_MODE_OVERRIDE
 fi
 
@@ -330,13 +371,16 @@ UPLOAD_FILES_FLAG=""
 # --from-export means "upload the current video only, not the whole backlog"
 UPLOAD_BATCH_FLAG=""
 [ "$FROM_EXPORT" -eq 1 ] && UPLOAD_BATCH_FLAG="--batch-size 1"
+RELEASE_FLAG=""
+[ "$RELEASE" -eq 1 ] && RELEASE_FLAG="--release"
+
 if [ "$ALBUM_MODE" -eq 1 ]; then
   # Album mode: scan output/video/ root so subdirectory names become playlist names
   uv run python scripts/yt_upload.py --lang "$LANG" \
-    --input-dir "output/video/" $UPLOAD_FILES_FLAG $UPLOAD_BATCH_FLAG $LIMIT_FLAG $DRY_RUN_FLAG
+    --input-dir "output/video/" $UPLOAD_FILES_FLAG $UPLOAD_BATCH_FLAG $LIMIT_FLAG $DRY_RUN_FLAG ${NAME:+--name "$NAME"} $RELEASE_FLAG
 else
   uv run python scripts/yt_upload.py --lang "$LANG" \
-    --folder "$EFFECTIVE_FOLDER" $UPLOAD_FILES_FLAG $UPLOAD_BATCH_FLAG $LIMIT_FLAG $DRY_RUN_FLAG
+    --folder "$EFFECTIVE_FOLDER" $UPLOAD_FILES_FLAG $UPLOAD_BATCH_FLAG $LIMIT_FLAG $DRY_RUN_FLAG ${NAME:+--name "$NAME"} $RELEASE_FLAG
 fi
 rm -f "$EXPORT_LOG"
 

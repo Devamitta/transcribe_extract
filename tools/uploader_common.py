@@ -17,12 +17,6 @@ from googleapiclient.errors import HttpError
 from tools.printer import printer as pr
 
 
-BIO_LINKS: dict[str, str] = {
-    "ru": "Инфо о Бхантэ devamitta.github.io/bio",
-    "en": "Info about Bhante devamitta.github.io/bio-en",
-}
-
-
 def get_google_client(
     service: str,
     version: str,
@@ -75,6 +69,30 @@ def check_api_probe(youtube: Any) -> tuple[bool, str]:
         return False, f"API error ({e.status_code}) — check credentials or permissions"
     except Exception as e:
         return False, f"Connection error: {e}"
+
+
+def check_token_local(token_path: Path) -> tuple[bool, str]:
+    """Check OAuth token validity from disk with no API call."""
+    if not token_path.exists():
+        return False, f"Token file missing: {token_path.name}"
+    try:
+        with token_path.open("rb") as f:
+            creds: Credentials = pickle.load(f)
+        if creds.valid:
+            expiry = (
+                creds.expiry.strftime("%Y-%m-%d %H:%M UTC")
+                if creds.expiry
+                else "unknown"
+            )
+            return True, f"Token valid (expires {expiry})"
+        if creds.expired and creds.refresh_token:
+            return (
+                True,
+                "Token expired but has refresh token — will auto-refresh on real run",
+            )
+        return False, "Token invalid or missing refresh token — re-auth required"
+    except Exception as e:
+        return False, f"Could not read token: {e}"
 
 
 def gdrive_folder_env_key(lang: str) -> str:

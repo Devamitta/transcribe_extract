@@ -1,13 +1,17 @@
 """Scans input/ for audio and video files, converts all to MP3, and moves originals into the output/ structure."""
 
 import argparse
+import shutil
 import subprocess
 from pathlib import Path
+
+from PIL import Image
 
 from tools.dry_run import create_stub, is_pipeline_dry_run
 from tools.printer import printer as pr
 
-VIDEO_EXTS = {".mp4", ".mkv", ".mov"}
+VIDEO_EXTS = {".mp4", ".mkv", ".mov", ".mpeg", ".mpg"}
+IMAGE_EXTS = {".png", ".jpg", ".jpeg"}
 AUDIO_EXTS = {".wav", ".m4a", ".aiff", ".flac", ".ogg", ".opus", ".wma"}
 LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 
@@ -33,6 +37,27 @@ def extract_audio(src: Path, dest: Path) -> bool:
         return result.returncode == 0
     except Exception as e:
         pr.red(f"Error extracting audio: {e}")
+        return False
+
+
+def convert_to_mp4(src: Path, dest: Path) -> bool:
+    """Re-encode or remux video to MP4 using ffmpeg."""
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(src),
+        "-c:v",
+        "copy",
+        "-c:a",
+        "copy",
+        str(dest),
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, check=False)
+        return result.returncode == 0
+    except Exception as e:
+        pr.red(f"Error converting video: {e}")
         return False
 
 
@@ -76,6 +101,11 @@ def main() -> None:
         action="store_true",
         help="Print what would be ingested; create stubs for pipeline propagation.",
     )
+    parser.add_argument(
+        "--cover",
+        action="store_true",
+        help="Also copy ingested images to output/covers/{folder}/",
+    )
     args = parser.parse_args()
 
     input_base = Path("input")
@@ -95,7 +125,8 @@ def main() -> None:
         root_files = [
             f
             for f in input_base.iterdir()
-            if f.is_file() and f.suffix.lower() in VIDEO_EXTS | AUDIO_EXTS | {".mp3"}
+            if f.is_file()
+            and f.suffix.lower() in VIDEO_EXTS | AUDIO_EXTS | {".mp3"} | IMAGE_EXTS
         ]
         if root_files:
             targets = [(input_base, "")]
@@ -129,12 +160,18 @@ def main() -> None:
                 break
 
             ext = file.suffix.lower()
-            if ext not in VIDEO_EXTS and ext not in AUDIO_EXTS and ext != ".mp3":
+            if (
+                ext not in VIDEO_EXTS
+                and ext not in AUDIO_EXTS
+                and ext != ".mp3"
+                and ext not in IMAGE_EXTS
+            ):
                 continue
 
             if ext in VIDEO_EXTS:
+                dest_mp4_name = file.with_suffix(".mp4").name
                 dest_mp3 = audio_out / file.with_suffix(".mp3").name
-                dest_video = video_out / file.name
+                dest_video = video_out / dest_mp4_name
 
                 if dest_video.exists():
                     pr.white(f"  Skipping {file.name} (video already in output)")
@@ -156,22 +193,83 @@ def main() -> None:
 
                 if dest_mp3.exists():
                     pr.white_tmr(f"  {file.name}")
-                    file.rename(dest_video)
-                    pr.yes("moved (mp3 already exists)")
-                    video_found = True
-                    remaining -= 1
-                    total_processed += 1
-                else:
-                    pr.white_tmr(f"  {file.name}")
-                    success = extract_audio(file, dest_mp3)
-                    if success:
+                    moved_video = False
+                    if ext == ".mp4":
                         file.rename(dest_video)
-                        pr.yes("extracted + moved")
+                        moved_video = True
+                    else:
+                        moved_video = convert_to_mp4(file, dest_video)
+                        if moved_video:
+                            file.unlink()
+                    if moved_video:
+                        pr.yes("moved (mp3 already exists)")
                         video_found = True
                         remaining -= 1
                         total_processed += 1
                     else:
+                        pr.no("video conversion failed")
+                else:
+                    pr.white_tmr(f"  {file.name}")
+                    success = extract_audio(file, dest_mp3)
+                    if success:
+                        moved_video = False
+                        if ext == ".mp4":
+                            file.rename(dest_video)
+                            moved_video = True
+                        else:
+                            moved_video = convert_to_mp4(file, dest_video)
+                            if moved_video:
+                                file.unlink()
+                        if moved_video:
+                            pr.yes("extracted + moved")
+                            video_found = True
+                            remaining -= 1
+                            total_processed += 1
+                        else:
+                            pr.no("audio extracted; video conversion failed")
+                    else:
                         pr.no("failed")
+
+            elif ext in IMAGE_EXTS:
+                thumb_out = Path("output/thumbnails") / folder_name
+                thumb_out.mkdir(parents=True, exist_ok=True)
+                dest_jpg = thumb_out / file.with_suffix(".jpg").name
+
+                if dest_jpg.exists():
+                    pr.white(f"  Skipping {file.name} (thumbnail exists)")
+                    continue
+
+                if args.dry_run:
+                    pr.white(f"  [DRY RUN] {file} → {dest_jpg}")
+                    if is_pipeline_dry_run():
+                        create_stub(dest_jpg)
+                        if args.cover:
+                            cover_jpg = (
+                                Path("output/covers") / folder_name / dest_jpg.name
+                            )
+                            pr.white(f"  [DRY RUN] {file} → {cover_jpg}")
+                            create_stub(cover_jpg)
+                    remaining -= 1
+                    total_processed += 1
+                    continue
+
+                pr.bip()
+                if ext == ".jpg":
+                    file.rename(dest_jpg)
+                else:
+                    img = Image.open(file).convert("RGB")
+                    img.save(dest_jpg, "JPEG", quality=95)
+                    file.unlink()
+
+                if args.cover:
+                    cover_out = Path("output/covers") / folder_name
+                    cover_out.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(dest_jpg, cover_out / dest_jpg.name)
+
+                pr.yes(f"  {file.name} → {dest_jpg.name}")
+                remaining -= 1
+                total_processed += 1
+
             elif ext == ".mp3":
                 dest = audio_out / file.name
                 if dest.exists():
@@ -218,7 +316,7 @@ def main() -> None:
         if video_found:
             pr.amber(
                 f"  Video files moved to output/video/{folder_name + '/' if folder_name else ''}. "
-                f"Pipeline will auto-select video mode."
+                f"Run yt_run.sh with --video-mode for video upload mode."
             )
 
     pr.green(f"Ingest complete. Processed {total_processed} files.")

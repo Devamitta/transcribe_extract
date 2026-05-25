@@ -1,6 +1,7 @@
 """Batch-uploads Dhamma MP4s to YouTube with playlist and history support."""
 
 import argparse
+import os
 import unicodedata
 from datetime import datetime
 from pathlib import Path
@@ -9,9 +10,9 @@ from googleapiclient.http import MediaFileUpload
 
 from tools.printer import printer as pr
 from tools.uploader_common import (
-    BIO_LINKS,
     build_description,
     check_api_probe,
+    check_token_local,
     find_mp4s_with_album,
     get_google_client,
     load_nested_history,
@@ -69,6 +70,7 @@ def upload_video(
     tags: list[str],
     lang: str,
     recording_date: str = "",
+    privacy_status: str = "private",
 ) -> str:
     """Uploads a single video to YouTube."""
     media = MediaFileUpload(str(mp4_path), mimetype="video/mp4", resumable=True)
@@ -81,7 +83,7 @@ def upload_video(
             "defaultLanguage": lang,
             "defaultAudioLanguage": lang,
         },
-        "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False},
+        "status": {"privacyStatus": privacy_status, "selfDeclaredMadeForKids": False},
     }
     parts = "snippet,status"
     iso_date = parse_recording_date(recording_date) if recording_date else None
@@ -130,7 +132,21 @@ def main():
         type=Path,
         help="Only upload files listed in this log (one path per line).",
     )
+    parser.add_argument(
+        "--name",
+        type=str,
+        help="Speaker name override (passed from yt_run.sh; suppresses default bio).",
+    )
+    parser.add_argument(
+        "--release",
+        action="store_true",
+        help="Publish immediately as public (default: private).",
+    )
     args = parser.parse_args()
+
+    _bio_key = "BIO_RU" if args.lang == "ru" else "BIO_EN"
+    bio_link: str | None = os.environ.get(_bio_key) or None
+    privacy_status = "public" if args.release else "private"
 
     if args.folder is not None:
         folder_names = [args.folder]
@@ -156,7 +172,7 @@ def main():
         }
 
     # Gather all pending uploads from selected folders
-    all_to_upload: list[tuple[Path, str | None, dict]] = []
+    all_to_upload: list[tuple[Path, str | None, dict, str]] = []
     lang_folder = LANG_TO_FOLDER.get(args.lang or "en", "english")
     for folder_name in folder_names:
         review_path = args.review_file or Path("reviews") / f"{lang_folder}_review.md"
@@ -183,7 +199,7 @@ def main():
 
             meta = match_mp4_to_review(path, review)
             if meta:
-                all_to_upload.append((path, album, meta))
+                all_to_upload.append((path, album, meta, folder_name))
             else:
                 # Only warn if folder was explicitly specified
                 if args.folder:
@@ -210,7 +226,7 @@ def main():
     # Sort all pending uploads by recording date.
     # When filtering by log (--from-export re-run), sort newest first so the current video
     # (which has the most recent recording date) is uploaded before any backlog.
-    def _parse_date(t: tuple[Path, str | None, dict]) -> datetime:
+    def _parse_date(t: tuple[Path, str | None, dict, str]) -> datetime:
         try:
             return datetime.strptime(t[2]["recording_date"], "%d-%m-%Y")
         except (ValueError, KeyError):
@@ -232,14 +248,14 @@ def main():
         pr.green_title(
             f"[DRY-RUN] Found {len(to_upload)} videos to upload (Token: {token_path.name}):"
         )
-        for path, album, meta in to_upload:
+        for path, album, meta, folder_name in to_upload:
             tags_str = meta.get("tags", "")
             desc = build_description(
                 meta["recording_date"],
                 meta["description"],
                 tags_str,
                 chapters=meta.get("chapters", ""),
-                bio_link=BIO_LINKS.get(args.lang),
+                bio_link=bio_link,
             )
             api_tags = parse_tags_for_api(tags_str)
             iso_date = parse_recording_date(meta["recording_date"])
@@ -247,32 +263,45 @@ def main():
             pr.white(f"  Playlist:       {album or '(none)'}")
             pr.white(f"  Title:          {meta['title']}")
             pr.white(f"  Language:       {args.lang}")
+            pr.white(f"  Privacy status: {privacy_status}")
             pr.white(
                 f"  Recording date: {meta['recording_date']} → {iso_date or 'INVALID DATE'}"
             )
             pr.white(f"  Tags:           {', '.join(api_tags)}")
             pr.white(f"  Description:\n{desc}")
-        pr.green("Probing YouTube API for quota status...")
-        pr.bip()
-        yt_probe = get_google_client("youtube", "v3", token_path, SCOPES, CLIENT_SECRET)
-        ok, msg = check_api_probe(yt_probe)
-        if ok:
-            pr.yes(msg)
+        tok_ok, tok_msg = check_token_local(token_path)
+        if tok_ok:
+            pr.yes(f"Token: {tok_msg}")
         else:
-            pr.no(msg)
+            pr.no(f"Token: {tok_msg}")
+        try:
+            answer = input("Probe API quota? [y/N]: ").strip().lower()
+        except EOFError:
+            answer = ""
+        if answer == "y":
+            pr.green("Probing YouTube API for quota status...")
+            pr.bip()
+            yt_probe = get_google_client(
+                "youtube", "v3", token_path, SCOPES, CLIENT_SECRET
+            )
+            ok, msg = check_api_probe(yt_probe)
+            if ok:
+                pr.yes(msg)
+            else:
+                pr.no(msg)
         return
 
     youtube = get_google_client("youtube", "v3", token_path, SCOPES, CLIENT_SECRET)
     playlist_cache: dict[str, str] = {}
 
-    for path, album, meta in to_upload:
+    for path, album, meta, folder_name in to_upload:
         tags_str = meta.get("tags", "")
         desc = build_description(
             meta["recording_date"],
             meta["description"],
             tags_str,
             chapters=meta.get("chapters", ""),
-            bio_link=BIO_LINKS.get(args.lang),
+            bio_link=bio_link,
         )
         api_tags = parse_tags_for_api(tags_str)
         pr.white(f"Uploading: {meta['title']}...")
@@ -287,6 +316,7 @@ def main():
                 api_tags,
                 args.lang,
                 meta["recording_date"],
+                privacy_status=privacy_status,
             )
 
             if album:
@@ -317,7 +347,7 @@ def main():
             # Thumbnail upload logic
             thumb_was_set = False
             cover_stem = unicodedata.normalize("NFC", path.stem)
-            cover_path = Path("output/covers") / path.parent.name / f"{cover_stem}.jpg"
+            cover_path = Path("output/covers") / folder_name / f"{cover_stem}.jpg"
             if cover_path.exists():
                 try:
                     youtube.thumbnails().set(
@@ -333,8 +363,7 @@ def main():
 
             hist_key = make_history_key(path, album)
             mark_uploaded(history, hist_key, video_id)
-            if thumb_was_set:
-                history[hist_key]["thumbnail_set"] = True  # type: ignore[assignment]
+            history[hist_key]["thumbnail_set"] = thumb_was_set  # type: ignore[assignment]
             save_nested_history(HISTORY_PATH, args.lang, history)
             pr.yes(f"Uploaded to YouTube: {hist_key} (ID: {video_id})")
         except Exception as e:

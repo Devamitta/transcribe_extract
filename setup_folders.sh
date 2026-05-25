@@ -53,6 +53,10 @@ DEEPSEEK_API_KEY=
 GDRIVE_FOLDER_ID_RU=
 GDRIVE_FOLDER_ID_EN=
 
+# Bio link appended to YouTube descriptions (leave empty for no bio)
+BIO_EN=
+BIO_RU=
+
 # yt_cover_gen.py — YouTube cover thumbnail text overlay
 COVER_GRADIENT_HEIGHT_PCT=0.45
 COVER_GRADIENT_MAX_ALPHA=200

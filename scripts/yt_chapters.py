@@ -608,8 +608,8 @@ def main() -> None:
 
             duration_mins = max(available) if available else 0.0
 
-            if duration_mins < 6.0:
-                pr.no(f"    Transcript too short ({duration_mins:.1f} min < 6.0 min)")
+            if duration_mins < 3.0:
+                pr.no(f"    Transcript too short ({duration_mins:.1f} min < 3.0 min)")
                 continue
 
             content_type = classify_content(transcript, folder_name, duration_mins)

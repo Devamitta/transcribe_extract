@@ -2,6 +2,7 @@
 
 import argparse
 import concurrent.futures
+import os
 import re
 import time
 import unicodedata
@@ -15,7 +16,6 @@ from tools.provider import (
     generate_with_timeout,
     get_working_key,
 )
-from tools.uploader_common import BIO_LINKS
 
 
 DEFAULT_SPEAKER: dict[str, str] = {
@@ -192,11 +192,16 @@ def _write_dry_run_entry(
     media: str,
     speaker_name: str | None,
     bio_link: str | None = None,
+    append_speaker: bool = True,
 ) -> None:
     """Writes a clearly-marked stub entry to the review file for pipeline dry-run."""
     nfc_name = unicodedata.normalize("NFC", file_path.name)
     speaker_suffix = ""
-    if speaker_name and not _name_in_stem(file_path.stem, speaker_name):
+    if (
+        append_speaker
+        and speaker_name
+        and not _name_in_stem(file_path.stem, speaker_name)
+    ):
         speaker_suffix = f" | {speaker_name}"
     title = f"[DRY_RUN] {file_path.stem}{speaker_suffix}"
     dry_run_desc = "[DRY_RUN] Dry run pipeline trace."
@@ -233,6 +238,7 @@ def process_files(
     media: str = "audio",
     dry_run: bool = False,
     bio_link: str | None = None,
+    append_speaker: bool = True,
 ) -> None:
     """Processes a list of markdown files and appends results to the review file."""
     output_file = Path(output_file_path)
@@ -262,7 +268,13 @@ def process_files(
         if is_pipeline_dry_run():
             for f in pending:
                 _write_dry_run_entry(
-                    output_file, f, lang, media, speaker_name, bio_link
+                    output_file,
+                    f,
+                    lang,
+                    media,
+                    speaker_name,
+                    bio_link=bio_link,
+                    append_speaker=append_speaker,
                 )
         return
 
@@ -279,7 +291,7 @@ def process_files(
     pr.green(f"[{folder_name}] Processing {len(pending)} files → '{output_file}'.")
     total = len(pending)
 
-    speaker_suffix = f" | {speaker_name}" if speaker_name else ""
+    speaker_suffix = f" | {speaker_name}" if (append_speaker and speaker_name) else ""
 
     for i, file_path in enumerate(pending, 1):
         pr.green(f"  {i}/{total} '{file_path.name}'...")
@@ -388,11 +400,9 @@ def main() -> None:
 
     # lang may be None when called without --lang; fall back to "en" for processing
     processing_lang: str = args.lang or "en"
-    bio_link: str | None = (
-        BIO_LINKS.get(args.lang)
-        if args.lang is not None and args.name is None
-        else None
-    )
+    _bio_key = "BIO_RU" if args.lang == "ru" else "BIO_EN"
+    bio_link: str | None = os.environ.get(_bio_key) or None
+    append_speaker = not bool(args.name)
 
     # Effective speaker: --name > lang default > None (no lang + no name = empty)
     if args.name:
@@ -432,6 +442,7 @@ def main() -> None:
             media=media,
             dry_run=args.dry_run,
             bio_link=bio_link,
+            append_speaker=append_speaker,
         )
         return
 
@@ -500,6 +511,7 @@ def main() -> None:
             media=media,
             dry_run=args.dry_run,
             bio_link=bio_link,
+            append_speaker=append_speaker,
         )
 
 
