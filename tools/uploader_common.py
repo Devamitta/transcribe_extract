@@ -114,6 +114,7 @@ def parse_review(review_path: Path) -> dict[str, dict[str, str]]:
     for section in sections:
         source_m = re.search(r"## Source: (.*)", section)
         date_m = re.search(r"\*\*Recording Date:\*\*\s*(.*)", section)
+        publish_m = re.search(r"\*\*Publish Date:\*\*\s*(.*)", section)
         approved_m = re.search(r"\*\*Approved:\*\*\s*(yes|no)", section, re.IGNORECASE)
         title_m = re.search(r"\*\*Suggested Title:\*\*\s*(.*)", section)
         desc_m = re.search(
@@ -133,6 +134,7 @@ def parse_review(review_path: Path) -> dict[str, dict[str, str]]:
             result[stem] = {
                 "title": title_m.group(1).strip(),
                 "recording_date": date_m.group(1).strip() if date_m else "",
+                "publish_date": publish_m.group(1).strip() if publish_m else "",
                 "description": desc_m.group(1).strip(),
                 "tags": tags_m.group(1).strip() if tags_m else "",
                 "chapters": chapters_m.group(1).strip() if chapters_m else "",

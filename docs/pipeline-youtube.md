@@ -20,7 +20,7 @@ e.g. `./yt_run.sh --lang ru --gdrive`
 | `--from-export` | Skip transcription and metadata generation. Useful when resuming after metadata has already been reviewed. |
 | `--video-mode` | Enables video mode. Must be set explicitly — the pipeline no longer auto-detects from .mp4 files in input/. A mismatch prompt appears if input and flag disagree. |
 | `--cover` | (Video mode only) Generate base + cover thumbnails and set them on YouTube after upload. Also: if images (PNG/JPG) are found in input/, ingest copies them to output/covers/{folder}/ in addition to output/thumbnails/{folder}/. |
-| `--release` | Publish uploaded videos immediately as public. Default: uploaded as private (must be manually published on YouTube). |
+| `--release` | Publish uploaded videos immediately as public. Default: uploaded as unlisted — review the video via direct link, then publish manually in YouTube Studio to trigger subscriber notifications. |
 | `--gdrive` | Also upload to Google Drive (default: YouTube only). |
 | `--dry-run [file]` | Trace the full pipeline without real processing. Optional stub file (e.g. `test.mp4`) is created in `input/` (or `input/<lang_folder>/` when `--lang` is set) so mode detection and path routing work end-to-end. All stubs and the stub review entry are cleaned up automatically at the end. |
 | `--context CONTEXT` | Whisper context tag. Defaults to `russian` (ru) or `dhamma` (en). English options: `dhamma`, `sangha`, `vinaya`, `interview`. |
@@ -225,7 +225,7 @@ Uploads MP4s from `output/video/<folder>/`.
 uv run python scripts/yt_upload.py --lang ru|en [--folder <folder>] [--dry-run] [--release]
 ```
 
-Videos are uploaded as **private** by default. Pass --release to yt_run.sh (or --release to yt_upload.py directly) to publish immediately as public.
+Videos are uploaded as **unlisted** by default. You can review the video via its direct YouTube link before it's visible to subscribers. When you're ready, publish it manually in YouTube Studio — this triggers subscriber notifications (unlike changing from private, which does not). Pass `--release` to upload as public immediately.
 
 After each successful video upload, if a matching cover image exists at `output/covers/<folder>/<stem>.jpg`, it is automatically set as the YouTube thumbnail via the `thumbnails().set()` API.
 

@@ -8,6 +8,8 @@ import time
 import unicodedata
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from tools.dry_run import is_pipeline_dry_run
 from tools.glossary import TAG_POOL_EN, TAG_POOL_RU, TAG_SYNC_GROUPS
 from tools.printer import printer as pr
@@ -211,6 +213,7 @@ def _write_dry_run_entry(
         f"\n--- \n"
         f"## Source: {nfc_name}\n"
         f"**Recording Date:** {_date_from_stem(file_path.stem) or '01-01-2000'}\n"
+        f"**Publish Date:**\n"
         f"**Approved:** yes\n"
         f"**Media:** {media}\n"
         f"**Suggested Title:** {title}\n"
@@ -322,6 +325,7 @@ def process_files(
                 f"\n--- \n"
                 f"## Source: {unicodedata.normalize('NFC', file_path.name)}\n"
                 f"**Recording Date:** {_date_from_stem(file_path.stem)}\n"
+                f"**Publish Date:**\n"
                 f"**Approved:** no\n"
                 f"**Media:** {media}\n"
                 f"**Suggested Title:** {title}\n"
@@ -396,6 +400,7 @@ def main() -> None:
         help="Print what would be processed; create stub review entries for pipeline propagation.",
     )
     args = parser.parse_args()
+    load_dotenv()
     media = "video" if args.video_mode else "audio"
 
     # lang may be None when called without --lang; fall back to "en" for processing

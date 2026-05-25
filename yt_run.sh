@@ -242,6 +242,11 @@ if [ "$FROM_EXPORT" -eq 0 ]; then
   echo "METADATA GENERATED."
   echo "Please open reviews/${LANG_FOLDER}_review.md"
   echo "Fill Recording Date, review titles/descriptions, then press Enter."
+  echo ""
+  echo "OPTIONAL: set Publish Date (DD-MM-YYYY) for scheduled release."
+  echo "  **Publish Date:** 15-06-2026"
+  echo "  Leave empty to schedule 10 minutes from upload time."
+  echo "  Use --release flag to publish immediately (skips scheduling)."
   echo "----------------------------------------------------------------"
   [ "$DRY_RUN" -eq 1 ] || read -r _
 

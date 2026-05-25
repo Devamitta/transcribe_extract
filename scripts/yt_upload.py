@@ -3,8 +3,10 @@
 import argparse
 import os
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 from googleapiclient.http import MediaFileUpload
 
@@ -62,6 +64,29 @@ def parse_recording_date(date_str: str) -> str | None:
         return None
 
 
+def compute_publish_at(publish_date: str) -> str:
+    """Return RFC 3339 publishAt timestamp.
+
+    If publish_date (DD-MM-YYYY) is a future date (not today), schedule for
+    10:00 UTC on that date. Otherwise schedule 10 minutes from now.
+    """
+    now_utc = datetime.now(timezone.utc)
+    if publish_date:
+        try:
+            target = datetime.strptime(publish_date, "%d-%m-%Y").replace(
+                tzinfo=timezone.utc
+            )
+            target = target.replace(hour=10, minute=0, second=0, microsecond=0)
+            today_utc = now_utc.date()
+            if target.date() > today_utc:
+                return target.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        except ValueError:
+            pass
+    # Default: 10 minutes from now
+    fallback = now_utc + timedelta(minutes=10)
+    return fallback.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
 def upload_video(
     youtube,
     mp4_path: Path,
@@ -71,9 +96,16 @@ def upload_video(
     lang: str,
     recording_date: str = "",
     privacy_status: str = "private",
+    publish_at: str | None = None,
 ) -> str:
     """Uploads a single video to YouTube."""
     media = MediaFileUpload(str(mp4_path), mimetype="video/mp4", resumable=True)
+    status_body: dict = {
+        "privacyStatus": privacy_status,
+        "selfDeclaredMadeForKids": False,
+    }
+    if publish_at:
+        status_body["publishAt"] = publish_at
     body: dict = {
         "snippet": {
             "title": title,
@@ -83,7 +115,7 @@ def upload_video(
             "defaultLanguage": lang,
             "defaultAudioLanguage": lang,
         },
-        "status": {"privacyStatus": privacy_status, "selfDeclaredMadeForKids": False},
+        "status": status_body,
     }
     parts = "snippet,status"
     iso_date = parse_recording_date(recording_date) if recording_date else None
@@ -140,13 +172,16 @@ def main():
     parser.add_argument(
         "--release",
         action="store_true",
-        help="Publish immediately as public (default: private).",
+        help="Publish immediately as public (default: unlisted).",
     )
     args = parser.parse_args()
+    load_dotenv()
 
     _bio_key = "BIO_RU" if args.lang == "ru" else "BIO_EN"
     bio_link: str | None = os.environ.get(_bio_key) or None
-    privacy_status = "public" if args.release else "private"
+    # --release: upload as public immediately (no scheduling)
+    # default:   upload as private with publishAt so YouTube notifies subscribers
+    release_mode = args.release
 
     if args.folder is not None:
         folder_names = [args.folder]
@@ -259,11 +294,19 @@ def main():
             )
             api_tags = parse_tags_for_api(tags_str)
             iso_date = parse_recording_date(meta["recording_date"])
+            if release_mode:
+                privacy_label = "public (immediate)"
+                publish_at_label = "—"
+            else:
+                publish_at = compute_publish_at(meta.get("publish_date", ""))
+                privacy_label = "private (scheduled)"
+                publish_at_label = publish_at
             pr.white(f"\n  File:           {path}")
             pr.white(f"  Playlist:       {album or '(none)'}")
             pr.white(f"  Title:          {meta['title']}")
             pr.white(f"  Language:       {args.lang}")
-            pr.white(f"  Privacy status: {privacy_status}")
+            pr.white(f"  Privacy status: {privacy_label}")
+            pr.white(f"  Publish at:     {publish_at_label}")
             pr.white(
                 f"  Recording date: {meta['recording_date']} → {iso_date or 'INVALID DATE'}"
             )
@@ -304,6 +347,12 @@ def main():
             bio_link=bio_link,
         )
         api_tags = parse_tags_for_api(tags_str)
+        if release_mode:
+            privacy_status = "public"
+            publish_at: str | None = None
+        else:
+            privacy_status = "private"
+            publish_at = compute_publish_at(meta.get("publish_date", ""))
         pr.white(f"Uploading: {meta['title']}...")
         pr.bip()
 
@@ -317,6 +366,7 @@ def main():
                 args.lang,
                 meta["recording_date"],
                 privacy_status=privacy_status,
+                publish_at=publish_at,
             )
 
             if album:
