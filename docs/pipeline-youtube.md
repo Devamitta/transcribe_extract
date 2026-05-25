@@ -7,7 +7,7 @@ A multi-stage pipeline for processing Dhamma talks (English and Russian) for You
 ## One-Command Execution
 
 ```bash
-./yt_run.sh [--lang ru|en] [--folder folder] [--name NAME] [--from-export] [--video-mode] [--cover] [--release] [--gdrive] [--dry-run] [--context CONTEXT] [--limit N]
+./yt_run.sh [--lang ru|en] [--folder folder] [--name NAME] [--from-export] [--video-mode] [--cover] [--gdrive] [--dry-run] [--context CONTEXT] [--limit N]
 ```
 
 e.g. `./yt_run.sh --lang ru --gdrive`
@@ -19,8 +19,7 @@ e.g. `./yt_run.sh --lang ru --gdrive`
 | `--name NAME` | Optional. Override the speaker/artist name used in generated titles and embedded metadata. Defaults to the lang-derived speaker name. |
 | `--from-export` | Skip transcription and metadata generation. Useful when resuming after metadata has already been reviewed. |
 | `--video-mode` | Enables video mode. Must be set explicitly — the pipeline no longer auto-detects from .mp4 files in input/. A mismatch prompt appears if input and flag disagree. |
-| `--cover` | (Video mode only) Generate base + cover thumbnails and set them on YouTube after upload. Also: if images (PNG/JPG) are found in input/, ingest copies them to output/covers/{folder}/ in addition to output/thumbnails/{folder}/. |
-| `--release` | Publish uploaded videos immediately as public. Default: uploaded as unlisted — review the video via direct link, then publish manually in YouTube Studio to trigger subscriber notifications. |
+| `--cover` | Generate AI thumbnails/covers via `yt_image_gen.py` + `yt_cover_gen.py`. In video mode, thumbnail generation is skipped by default and only runs with this flag. **Note:** input images (PNG/JPG in `input/`) are always copied to both `output/thumbnails/` and `output/covers/` regardless of this flag. |
 | `--gdrive` | Also upload to Google Drive (default: YouTube only). |
 | `--dry-run [file]` | Trace the full pipeline without real processing. Optional stub file (e.g. `test.mp4`) is created in `input/` (or `input/<lang_folder>/` when `--lang` is set) so mode detection and path routing work end-to-end. All stubs and the stub review entry are cleaned up automatically at the end. |
 | `--context CONTEXT` | Whisper context tag. Defaults to `russian` (ru) or `dhamma` (en). English options: `dhamma`, `sangha`, `vinaya`, `interview`. |

@@ -135,10 +135,13 @@ def rename_step(
                 pr.white(f"           {old_mp4} → {new_mp4}")
             pr.white(f"           {old_mp3} → {new_mp3}")
 
-            # Derive folder from source_audio_dir
-            folder_name_img = source_audio_dir.name
-            thumb_dir = Path("output/thumbnails") / folder_name_img
-            cover_dir = Path("output/covers") / folder_name_img
+            _audio_base = Path("output/audio")
+            try:
+                _img_rel = source_audio_dir.relative_to(_audio_base)
+            except ValueError:
+                _img_rel = Path(".")
+            thumb_dir = Path("output/thumbnails") / _img_rel
+            cover_dir = Path("output/covers") / _img_rel
 
             old_thumb = thumb_dir / f"{old_stem}.jpg"
             new_thumb = thumb_dir / f"{new_stem}.jpg"
@@ -194,9 +197,13 @@ def rename_step(
         pr.green(f"  {source_name} → {new_md_name}")
 
         # Rename matching images
-        folder_name_img = source_audio_dir.name
-        thumb_dir = Path("output/thumbnails") / folder_name_img
-        cover_dir = Path("output/covers") / folder_name_img
+        _audio_base = Path("output/audio")
+        try:
+            _img_rel = source_audio_dir.relative_to(_audio_base)
+        except ValueError:
+            _img_rel = Path(".")
+        thumb_dir = Path("output/thumbnails") / _img_rel
+        cover_dir = Path("output/covers") / _img_rel
 
         old_thumb = thumb_dir / f"{old_stem}.jpg"
         new_thumb = thumb_dir / f"{new_stem}.jpg"

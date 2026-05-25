@@ -102,6 +102,9 @@ DESCRIPTION REQUIREMENTS:
 - Tone: modest, clear, grounded — for a sincere practitioner, not a casual browser.
 - Use humble, impersonal sentence openers. GOOD examples: "Объясняется...", "В этой беседе разбирается...", "Рассматривается...", "Раскрывается...".
 - AVOID self-important or formal openers such as: "В этом учении объясняется...", "Данное учение посвящено...", "Это учение раскрывает...".
+- СТРОГО ЗАПРЕЩЕНО: любые ссылки на учителя или говорящего в третьем лице («учитель сказал», «учитель объясняет», «говорящий отмечает», «он сказал», «монах объяснил» и подобное). Описание не должно упоминать, кто говорил.
+- СТРОГО ЗАПРЕЩЕНО: 1-е лицо («я», «мы», «мне», «моё»).
+- Пишите как описание содержания текста, а не как пересказ слов конкретного человека.
 - Write exactly 2–3 sentences (overview, what the listener gains, one notable analogy or insight).
 - If the talk covers multiple distinct topics or chapters: after the 2–3 sentences, add a bullet list of 3–8 main topics covered (each bullet ≤ 10 words, no hashtags).
 - Do NOT use marketing language.
@@ -159,6 +162,9 @@ DESCRIPTION REQUIREMENTS:
 - Tone: modest, clear, grounded — for a sincere practitioner, not a casual browser.
 - Use humble, impersonal sentence openers. GOOD examples: "The talk explains...", "This session explores...", "An examination of...", "A reflection on...".
 - AVOID self-important or formal openers such as: "This teaching explains...", "This lecture is dedicated to...", "This talk reveals...".
+- STRICTLY FORBIDDEN: any 3rd-person reference to the teacher or speaker ("the teacher said", "the teacher explains", "the speaker notes", "he said", "he explains", "the monk said", or any variant). The description must never say who spoke.
+- STRICTLY FORBIDDEN: 1st-person voice ("I", "we", "me", "my").
+- Write as if describing the content of a document, not narrating what a person said.
 - Write exactly 2–3 sentences (overview, what the listener gains, one notable analogy or insight).
 - If the talk covers multiple distinct topics or chapters: after the 2–3 sentences, add a bullet list of 3–8 main topics covered (each bullet ≤ 10 words, no hashtags).
 - Do NOT include any hashtags in the description text. Tags go on the TAGS line only.
@@ -318,6 +324,11 @@ def process_files(
                     tags = line[len("TAGS:") :].strip()
 
             tags = enrich_tags(tags, lang)
+            if speaker_name and "ariyadhammika" in speaker_name.lower():
+                tag_set = {t.lstrip("#") for t in tags.split()}
+                for extra in ("SBS", "sasanarakkha"):
+                    if extra not in tag_set:
+                        tags = f"{tags} #{extra}"
             if bio_link:
                 description = f"{description}\n\n{bio_link}"
 

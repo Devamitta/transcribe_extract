@@ -101,11 +101,6 @@ def main() -> None:
         action="store_true",
         help="Print what would be ingested; create stubs for pipeline propagation.",
     )
-    parser.add_argument(
-        "--cover",
-        action="store_true",
-        help="Also copy ingested images to output/covers/{folder}/",
-    )
     args = parser.parse_args()
 
     input_base = Path("input")
@@ -243,12 +238,9 @@ def main() -> None:
                     pr.white(f"  [DRY RUN] {file} → {dest_jpg}")
                     if is_pipeline_dry_run():
                         create_stub(dest_jpg)
-                        if args.cover:
-                            cover_jpg = (
-                                Path("output/covers") / folder_name / dest_jpg.name
-                            )
-                            pr.white(f"  [DRY RUN] {file} → {cover_jpg}")
-                            create_stub(cover_jpg)
+                        cover_jpg = Path("output/covers") / folder_name / dest_jpg.name
+                        pr.white(f"  [DRY RUN] {file} → {cover_jpg}")
+                        create_stub(cover_jpg)
                     remaining -= 1
                     total_processed += 1
                     continue
@@ -261,10 +253,9 @@ def main() -> None:
                     img.save(dest_jpg, "JPEG", quality=95)
                     file.unlink()
 
-                if args.cover:
-                    cover_out = Path("output/covers") / folder_name
-                    cover_out.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(dest_jpg, cover_out / dest_jpg.name)
+                cover_out = Path("output/covers") / folder_name
+                cover_out.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(dest_jpg, cover_out / dest_jpg.name)
 
                 pr.yes(f"  {file.name} → {dest_jpg.name}")
                 remaining -= 1
@@ -292,7 +283,9 @@ def main() -> None:
             elif ext in AUDIO_EXTS:
                 dest_mp3 = audio_out / file.with_suffix(".mp3").name
                 if dest_mp3.exists():
-                    pr.white(f"  Skipping {file.name} (mp3 exists)")
+                    pr.white(f"  Skipping {file.name} (mp3 exists) — removing source")
+                    if not args.dry_run:
+                        file.unlink()
                     continue
 
                 if args.dry_run:

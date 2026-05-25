@@ -155,12 +155,12 @@ def build_description(
     parts: list[str] = [date_and_desc]
     if bio_link and bio_link not in description:
         parts.append(bio_link)
-    if tags:
-        parts.append(tags)
     if chapters:
         parsed = parse_chapters_str(chapters)
         if parsed:
             parts.append(chapters_to_youtube(parsed))
+    if tags:
+        parts.append(tags)
     return "\n\n".join(parts)
 
 

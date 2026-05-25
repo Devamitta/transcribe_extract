@@ -6,7 +6,7 @@
 #   --name: optional; override speaker/artist name in titles and embedded metadata
 #   --from-export: skip transcription/metadata steps (assume review already done)
 #   --video-mode: treat source files as raw video (skip thumbnail+video generation); only needed with --from-export
-#   --cover: (video mode only) generate base + cover thumbnails and set them on YouTube after upload
+#   --cover: generate AI thumbnails/covers in video mode (yt_image_gen + yt_cover_gen); input images always copied to thumbnails/ and covers/ regardless
 #   --gdrive: also upload to Google Drive (default: YouTube only)
 #   --dry-run [file]: trace the full pipeline without real processing; optional stub e.g. russian/test.mp4
 #   --context: whisper context tag; defaults to 'russian' (ru) or 'dhamma' (en)
@@ -19,7 +19,6 @@ FROM_EXPORT=0
 DRY_RUN=0
 DRY_RUN_STUB=""
 GDRIVE=0
-RELEASE=0
 CONTEXT=""
 VIDEO_MODE_OVERRIDE=0
 COVER=0
@@ -34,7 +33,6 @@ while [[ $# -gt 0 ]]; do
     --from-export) FROM_EXPORT=1; shift ;;
     --video-mode)  VIDEO_MODE_OVERRIDE=1; shift ;;
     --cover)       COVER=1;       shift ;;
-    --release)     RELEASE=1;     shift ;;
     --dry-run)
       DRY_RUN=1; shift
       if [[ $# -gt 0 ]] && [[ "$1" != --* ]]; then
@@ -178,9 +176,7 @@ if [ "$FROM_EXPORT" -eq 0 ]; then
   INGEST_ARGS=""
   [ -n "$EFFECTIVE_FOLDER" ] && INGEST_ARGS="--folder $EFFECTIVE_FOLDER"
   [ -z "$EFFECTIVE_FOLDER" ] && [ -n "$USER_LANG" ] && INGEST_ARGS="--lang $USER_LANG"
-  COVER_FLAG=""
-  [ "$COVER" -eq 1 ] && COVER_FLAG="--cover"
-  uv run python scripts/yt_ingest_unified.py $INGEST_ARGS $LIMIT_FLAG $DRY_RUN_FLAG $COVER_FLAG
+  uv run python scripts/yt_ingest_unified.py $INGEST_ARGS $LIMIT_FLAG $DRY_RUN_FLAG
 
   # 2b. Dedup check — resolve duplicate dates before transcription
   echo "→ Starting: yt_review_dedup.py"
@@ -246,7 +242,6 @@ if [ "$FROM_EXPORT" -eq 0 ]; then
   echo "OPTIONAL: set Publish Date (DD-MM-YYYY) for scheduled release."
   echo "  **Publish Date:** 15-06-2026"
   echo "  Leave empty to schedule 10 minutes from upload time."
-  echo "  Use --release flag to publish immediately (skips scheduling)."
   echo "----------------------------------------------------------------"
   [ "$DRY_RUN" -eq 1 ] || read -r _
 
@@ -376,16 +371,14 @@ UPLOAD_FILES_FLAG=""
 # --from-export means "upload the current video only, not the whole backlog"
 UPLOAD_BATCH_FLAG=""
 [ "$FROM_EXPORT" -eq 1 ] && UPLOAD_BATCH_FLAG="--batch-size 1"
-RELEASE_FLAG=""
-[ "$RELEASE" -eq 1 ] && RELEASE_FLAG="--release"
 
 if [ "$ALBUM_MODE" -eq 1 ]; then
   # Album mode: scan output/video/ root so subdirectory names become playlist names
   uv run python scripts/yt_upload.py --lang "$LANG" \
-    --input-dir "output/video/" $UPLOAD_FILES_FLAG $UPLOAD_BATCH_FLAG $LIMIT_FLAG $DRY_RUN_FLAG ${NAME:+--name "$NAME"} $RELEASE_FLAG
+    --input-dir "output/video/" $UPLOAD_FILES_FLAG $UPLOAD_BATCH_FLAG $LIMIT_FLAG $DRY_RUN_FLAG ${NAME:+--name "$NAME"}
 else
   uv run python scripts/yt_upload.py --lang "$LANG" \
-    --folder "$EFFECTIVE_FOLDER" $UPLOAD_FILES_FLAG $UPLOAD_BATCH_FLAG $LIMIT_FLAG $DRY_RUN_FLAG ${NAME:+--name "$NAME"} $RELEASE_FLAG
+    --folder "$EFFECTIVE_FOLDER" $UPLOAD_FILES_FLAG $UPLOAD_BATCH_FLAG $LIMIT_FLAG $DRY_RUN_FLAG ${NAME:+--name "$NAME"}
 fi
 rm -f "$EXPORT_LOG"
 

@@ -169,19 +169,13 @@ def main():
         type=str,
         help="Speaker name override (passed from yt_run.sh; suppresses default bio).",
     )
-    parser.add_argument(
-        "--release",
-        action="store_true",
-        help="Publish immediately as public (default: unlisted).",
-    )
     args = parser.parse_args()
     load_dotenv()
 
     _bio_key = "BIO_RU" if args.lang == "ru" else "BIO_EN"
     bio_link: str | None = os.environ.get(_bio_key) or None
-    # --release: upload as public immediately (no scheduling)
-    # default:   upload as private with publishAt so YouTube notifies subscribers
-    release_mode = args.release
+    # Ariyadhammika Bhikkhu talks: omit recording date from public description
+    _include_date = not (args.name and "ariyadhammika" in args.name.lower())
 
     if args.folder is not None:
         folder_names = [args.folder]
@@ -286,7 +280,7 @@ def main():
         for path, album, meta, folder_name in to_upload:
             tags_str = meta.get("tags", "")
             desc = build_description(
-                meta["recording_date"],
+                meta["recording_date"] if _include_date else "",
                 meta["description"],
                 tags_str,
                 chapters=meta.get("chapters", ""),
@@ -294,13 +288,9 @@ def main():
             )
             api_tags = parse_tags_for_api(tags_str)
             iso_date = parse_recording_date(meta["recording_date"])
-            if release_mode:
-                privacy_label = "public (immediate)"
-                publish_at_label = "—"
-            else:
-                publish_at = compute_publish_at(meta.get("publish_date", ""))
-                privacy_label = "private (scheduled)"
-                publish_at_label = publish_at
+            publish_at = compute_publish_at(meta.get("publish_date", ""))
+            privacy_label = "private (scheduled)"
+            publish_at_label = publish_at
             pr.white(f"\n  File:           {path}")
             pr.white(f"  Playlist:       {album or '(none)'}")
             pr.white(f"  Title:          {meta['title']}")
@@ -340,19 +330,15 @@ def main():
     for path, album, meta, folder_name in to_upload:
         tags_str = meta.get("tags", "")
         desc = build_description(
-            meta["recording_date"],
+            meta["recording_date"] if _include_date else "",
             meta["description"],
             tags_str,
             chapters=meta.get("chapters", ""),
             bio_link=bio_link,
         )
         api_tags = parse_tags_for_api(tags_str)
-        if release_mode:
-            privacy_status = "public"
-            publish_at: str | None = None
-        else:
-            privacy_status = "private"
-            publish_at = compute_publish_at(meta.get("publish_date", ""))
+        privacy_status = "private"
+        publish_at: str | None = compute_publish_at(meta.get("publish_date", ""))
         pr.white(f"Uploading: {meta['title']}...")
         pr.bip()
 
