@@ -221,10 +221,10 @@ The pipeline pauses after this step for visual review. Pressing `r` lists the fi
 Uploads MP4s from `output/video/<folder>/`.
 
 ```bash
-uv run python scripts/yt_upload.py --lang ru|en [--folder <folder>] [--dry-run] [--release]
+uv run python scripts/yt_upload.py --lang ru|en [--folder <folder>] [--dry-run]
 ```
 
-Videos are uploaded as **unlisted** by default. You can review the video via its direct YouTube link before it's visible to subscribers. When you're ready, publish it manually in YouTube Studio — this triggers subscriber notifications (unlike changing from private, which does not). Pass `--release` to upload as public immediately.
+Videos are uploaded as **private** with a scheduled publish time (10 minutes from upload by default, or the date set in the review file). Once the publish time arrives, YouTube makes the video public and notifies subscribers.
 
 After each successful video upload, if a matching cover image exists at `output/covers/<folder>/<stem>.jpg`, it is automatically set as the YouTube thumbnail via the `thumbnails().set()` API.
 

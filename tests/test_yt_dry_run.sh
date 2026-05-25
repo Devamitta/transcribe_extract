@@ -195,7 +195,7 @@ assert_not_contains "folder dry-run review entry cleaned" "$(cat reviews/english
 run_test "release privacy flag"
 run_pipeline --lang en --dry-run dummy.mp3
 assert_contains "default dry-run is private" "$OUTPUT" "Privacy status: private"
-run_pipeline --lang en --release --dry-run dummy.mp3
+run_pipeline --lang en --dry-run dummy.mp3
 assert_contains "release dry-run is public" "$OUTPUT" "Privacy status: public"
 
 run_test "video mode"
