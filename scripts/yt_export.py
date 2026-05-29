@@ -8,8 +8,10 @@ from pathlib import Path
 
 from tools.dry_run import is_pipeline_dry_run, is_stub, log_stub
 from tools.printer import printer as pr
+from tools.uploader_common import is_uploaded_in_history, load_nested_history
 
 LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
+HISTORY_PATH = Path("output/youtube_history.json")
 
 SORT_SAFETY_FIELDS: list[str] = [
     "## Source:",
@@ -346,6 +348,11 @@ def main() -> None:
         type=Path,
         help="Write renamed media file paths to this file (one per line).",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Export even when YouTube history marks the final video uploaded.",
+    )
     args = parser.parse_args()
 
     transcribed_base = Path("output/transcribed")
@@ -461,6 +468,16 @@ def main() -> None:
     # Apply global limit
     if args.limit > 0:
         all_items = all_items[: args.limit]
+
+    history = load_nested_history(HISTORY_PATH, args.lang or "en")
+    if not args.force:
+        all_items = [
+            item
+            for item in all_items
+            if not is_uploaded_in_history(
+                history, f"{Path(item[1]['source']).stem}.mp4"
+            )
+        ]
 
     if args.created_log and all_renamed_media:
         args.created_log.write_text(

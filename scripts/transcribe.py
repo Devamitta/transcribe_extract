@@ -7,7 +7,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-import mlx_whisper
 from tools.glossary import DHAMMA, SANGHA, VINAYA
 from tools.printer import printer as pr
 
@@ -158,6 +157,8 @@ def main():
     pr.green(
         f"Transcribing {len(audio_files)} file(s) — context: {args.context.upper()}"
     )
+
+    import mlx_whisper
 
     for index, audio_path in enumerate(audio_files):
         # Mirror subfolder structure relative to input directory

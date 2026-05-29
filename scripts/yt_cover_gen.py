@@ -11,8 +11,10 @@ from PIL import Image, ImageDraw, ImageFont
 
 from tools.dry_run import create_stub, is_pipeline_dry_run
 from tools.printer import printer as pr
+from tools.uploader_common import get_uploaded_history_entry, load_nested_history
 
 LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
+HISTORY_PATH = Path("output/youtube_history.json")
 
 
 @dataclasses.dataclass
@@ -424,6 +426,11 @@ def main() -> None:
         default=None,
         help="Use this exact string as the cover title instead of reading from the review file.",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Generate covers even when YouTube history marks thumbnails handled.",
+    )
 
     args = parser.parse_args()
     cfg = load_overlay_cfg()
@@ -448,6 +455,17 @@ def main() -> None:
     talks = parse_review(review_path)
     if args.limit > 0:
         talks = talks[: args.limit]
+
+    history = load_nested_history(HISTORY_PATH, args.lang)
+    if not args.force:
+        talks = [
+            talk
+            for talk in talks
+            if not (
+                (entry := get_uploaded_history_entry(history, f"{talk['source']}.mp4"))
+                and entry.get("thumbnail_set") is True
+            )
+        ]
 
     import shutil
 

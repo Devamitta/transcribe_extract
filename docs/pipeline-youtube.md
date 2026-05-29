@@ -7,7 +7,7 @@ A multi-stage pipeline for processing Dhamma talks (English and Russian) for You
 ## One-Command Execution
 
 ```bash
-./yt_run.sh [--lang ru|en] [--folder folder] [--name NAME] [--from-export] [--video-mode] [--cover] [--gdrive] [--dry-run] [--context CONTEXT] [--limit N]
+./yt_run.sh [--lang ru|en] [--folder folder] [--name NAME] [--from-export] [--video-mode] [--cover] [--gdrive] [--dry-run] [--force] [--context CONTEXT] [--limit N]
 ```
 
 e.g. `./yt_run.sh --lang ru --gdrive`
@@ -22,6 +22,7 @@ e.g. `./yt_run.sh --lang ru --gdrive`
 | `--cover` | Generate AI thumbnails/covers via `yt_image_gen.py` + `yt_cover_gen.py`. In video mode, thumbnail generation is skipped by default and only runs with this flag. **Note:** input images (PNG/JPG in `input/`) are always copied to both `output/thumbnails/` and `output/covers/` regardless of this flag. |
 | `--gdrive` | Also upload to Google Drive (default: YouTube only). |
 | `--dry-run [file]` | Trace the full pipeline without real processing. Optional stub file (e.g. `test.mp4`) is created in `input/` (or `input/<lang_folder>/` when `--lang` is set) so mode detection and path routing work end-to-end. All stubs and the stub review entry are cleaned up automatically at the end. |
+| `--force` | Bypass YouTube upload-history safety skips in supported stages. Existing output-file existence checks still apply unless a script explicitly supports regenerating that output. |
 | `--context CONTEXT` | Whisper context tag. Defaults to `russian` (ru) or `dhamma` (en). English options: `dhamma`, `sangha`, `vinaya`, `interview`. |
 | `--limit N` | Optional. Cap all file-processing stages to the first N files. Passed through to every script that supports it (ingest, transcribe, metadata, chapters, export, thumbnail, video, upload, gdrive). Works in both normal and dry-run mode. |
 
@@ -54,7 +55,7 @@ Use this to verify that a new input file would be routed through the correct fol
 | Invocation | Scans | Output dirs | Review file |
 |---|---|---|---|
 | `./yt_run.sh` (no args, root files in `input/`) | `input/` root | `output/audio/`, `output/video/` | `reviews/english_review.md` |
-| `./yt_run.sh` (no args, subfolder in `input/`) | `input/<subfolder>/` (auto-detected; playlist/album mode) | `output/audio/<subfolder>/` etc. | `reviews/english_review.md` |
+| `./yt_run.sh` (no args, subfolder in `input/`) | `input/<subfolder>/` (auto-detected subfolder mode) | `output/audio/<subfolder>/` etc. | `reviews/english_review.md` |
 | `./yt_run.sh --lang en` | `input/english/` | `output/audio/english/` etc. | `reviews/english_review.md` |
 | `./yt_run.sh --lang ru` | `input/russian/` | `output/audio/russian/` etc. | `reviews/russian_review.md` |
 | `./yt_run.sh --lang en --folder interview` | `input/interview/` | `output/audio/interview/` etc. | `reviews/english_review.md` |
@@ -62,7 +63,7 @@ Use this to verify that a new input file would be routed through the correct fol
 
 Review file is always determined by `--lang` (defaulting to `en`), never by `--folder`.
 
-**Auto-detection (no `--lang`, no `--folder`):** If `input/` has root-level media files, the pipeline operates in root mode (no playlist). If `input/` has no root-level media but contains exactly one subfolder with media, that subfolder is used as the album/playlist name (album mode).
+**Auto-detection (no `--lang`, no `--folder`):** If `input/` has root-level media files, the pipeline operates in root mode. If `input/` has no root-level media but contains exactly one subfolder with media, that subfolder is used only for file routing. Folder names are not YouTube playlist names.
 
 ---
 
@@ -122,6 +123,11 @@ uv run python scripts/yt_metadata.py [--lang ru|en] [--folder <folder>] [--name 
 
 - A bio link is appended to the description when the BIO_EN or BIO_RU environment variable (set in .env) is non-empty. Language selection: --lang ru → BIO_RU, otherwise BIO_EN. Leave empty for no bio. See setup_folders.sh for template.
 - `--video-mode` marks new review entries with `**Media:** video` instead of the default `audio`. This field is used downstream by `yt_cover_gen.py` to filter which entries receive a cover thumbnail.
+- New review entries include playlist controls:
+  - `**Channel Playlist Overview:** Meditation, Personal`
+  - `**Selected Playlist:** Meditation, Personal`
+- Edit `Selected Playlist` during review. Separate multiple existing playlist names with commas or semicolons, e.g. `Meditation, Personal` or `Meditation; Personal`.
+- Default descriptions are requested as 5-7 sentences with no bullets. If `--name` contains `Ariyadhammika`, descriptions may be up to 15 sentences with no bullets.
 
 Outputs are appended to `reviews/russian_review.md` or `reviews/english_review.md`.
 
@@ -225,6 +231,10 @@ uv run python scripts/yt_upload.py --lang ru|en [--folder <folder>] [--dry-run]
 ```
 
 Videos are uploaded as **private** with a scheduled publish time (10 minutes from upload by default, or the date set in the review file). Once the publish time arrives, YouTube makes the video public and notifies subscribers.
+
+Playlist membership comes only from `**Selected Playlist:**` in the review file. Before upload, the script fetches existing channel playlists and exact-matches selected titles after trimming whitespace. If a selected playlist is missing, the script prints a warning, uploads the video anyway, and adds it only to playlists that exist. It never creates playlists automatically.
+
+Upload history in `output/youtube_history.json` is an extra safety guard: stages skip videos already marked `status: uploaded` when they can match the final MP4 filename exactly. Pass `--force` to rerun despite that history.
 
 After each successful video upload, if a matching cover image exists at `output/covers/<folder>/<stem>.jpg`, it is automatically set as the YouTube thumbnail via the `thumbnails().set()` API.
 

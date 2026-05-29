@@ -8,8 +8,10 @@ from pathlib import Path
 
 from tools.dry_run import create_stub, is_pipeline_dry_run
 from tools.printer import printer as pr
+from tools.uploader_common import is_uploaded_in_history, load_nested_history
 
 LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
+HISTORY_PATH = Path("output/youtube_history.json")
 
 
 def parse_review(review_path: Path) -> list[dict[str, str]]:
@@ -103,6 +105,11 @@ def main() -> None:
         default=0,
         help="Process only the first N talks (0=unlimited).",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Create videos even when YouTube history marks them uploaded.",
+    )
 
     args = parser.parse_args()
 
@@ -147,6 +154,18 @@ def main() -> None:
 
     if not all_talks:
         pr.no("No approved talks found to process.")
+        return
+
+    history = load_nested_history(HISTORY_PATH, args.lang or "en")
+    if not args.force:
+        all_talks = [
+            item
+            for item in all_talks
+            if not is_uploaded_in_history(history, f"{item[1]['source']}.mp4")
+        ]
+
+    if not all_talks:
+        pr.green("All approved talks are already uploaded.")
         return
 
     # Pass 2: process

@@ -137,6 +137,8 @@ create_review_fixture() {
     "**Recording Date:** $date" \
     "**Approved:** yes" \
     "**Media:** audio" \
+    "**Channel Playlist Overview:** Meditation, Personal" \
+    "**Selected Playlist:** Meditation, Personal" \
     "**Suggested Title:** $title" \
     "**Suggested Description:** Test description." \
     "" \
@@ -196,7 +198,7 @@ run_test "release privacy flag"
 run_pipeline --lang en --dry-run dummy.mp3
 assert_contains "default dry-run is private" "$OUTPUT" "Privacy status: private"
 run_pipeline --lang en --dry-run dummy.mp3
-assert_contains "release dry-run is public" "$OUTPUT" "Privacy status: public"
+assert_contains "second dry-run remains private" "$OUTPUT" "Privacy status: private"
 
 run_test "video mode"
 run_pipeline --lang en --video-mode --dry-run dummy.mp4
@@ -242,6 +244,19 @@ assert_contains "from-export runs export" "$OUTPUT" "→ Starting: yt_export.py"
 assert_contains "from-export runs upload" "$OUTPUT" "→ Starting: yt_upload.py"
 assert_contains "from-export upload filters generated mp4 dir" "$OUTPUT" "File:           output/video/english/2026-01-02 - [DRY_RUN]"
 assert_contains "from-export upload filters generated mp4 name" "$OUTPUT" "From Export Fixture.mp4"
+assert_contains "from-export reports selected playlists" "$OUTPUT" "Selected playlists: Meditation, Personal"
+assert_not_contains "from-export does not use folder as playlist" "$OUTPUT" "Playlist:       english"
+
+run_test "ariyadhammika video mode"
+run_pipeline --name "Ariyadhammika Bhikkhu" --video-mode --dry-run dummy.mp4
+assert_contains "ariyadhammika cleanup runs" "$OUTPUT" "→ [DRY RUN] Cleaning up stubs..."
+assert_contains "ariyadhammika name reaches output path" "$OUTPUT" "Ariyadhammika Bhikkhu.mp4"
+assert_not_contains "ariyadhammika video mode skips audio video generation" "$OUTPUT" "→ Starting: yt_video.py"
+
+run_test "force video mode"
+run_pipeline --name "Ariyadhammika Bhikkhu" --video-mode --force --dry-run dummy.mp4
+assert_contains "force dry-run accepts force flag" "$OUTPUT" "→ [DRY RUN] Cleaning up stubs..."
+assert_contains "force dry-run queues upload" "$OUTPUT" "video(s) queued for YouTube upload."
 
 # ── tests: local integration export ────────────────────────────────────────────
 run_test "yt_export direct ffmpeg integration"

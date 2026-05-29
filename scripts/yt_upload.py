@@ -17,6 +17,7 @@ from tools.uploader_common import (
     check_token_local,
     find_mp4s_with_album,
     get_google_client,
+    list_channel_playlists,
     load_nested_history,
     make_history_key,
     mark_uploaded,
@@ -24,6 +25,7 @@ from tools.uploader_common import (
     parse_review,
     parse_tags_for_api,
     save_nested_history,
+    is_uploaded_in_history,
 )
 
 
@@ -43,15 +45,37 @@ TOKEN_PATHS: dict[str, Path] = {
 LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 
 
-def find_existing_playlist(youtube, title: str) -> str | None:
-    """Finds an existing YouTube playlist by title. Returns ID or None."""
-    response = (
-        youtube.playlists().list(part="snippet", mine=True, maxResults=50).execute()
-    )
-    for item in response.get("items", []):
-        if item["snippet"]["title"] == title:
-            return item["id"]
-    return None
+def add_video_to_selected_playlists(
+    youtube,
+    video_id: str,
+    selected_playlists: list[str],
+    playlist_ids: dict[str, str],
+    video_name: str,
+) -> list[str]:
+    """Add a video to found selected playlists and warn for missing selections."""
+    added: list[str] = []
+    for playlist_title in selected_playlists:
+        playlist_id = playlist_ids.get(playlist_title)
+        if playlist_id is None:
+            pr.amber(
+                f"Selected playlist '{playlist_title}' not found for {video_name}; "
+                "upload continues."
+            )
+            continue
+        youtube.playlistItems().insert(
+            part="snippet",
+            body={
+                "snippet": {
+                    "playlistId": playlist_id,
+                    "resourceId": {
+                        "kind": "youtube#video",
+                        "videoId": video_id,
+                    },
+                }
+            },
+        ).execute()
+        added.append(playlist_title)
+    return added
 
 
 def parse_recording_date(date_str: str) -> str | None:
@@ -169,6 +193,11 @@ def main():
         type=str,
         help="Speaker name override (passed from yt_run.sh; suppresses default bio).",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Upload even when YouTube history marks the video uploaded.",
+    )
     args = parser.parse_args()
     load_dotenv()
 
@@ -201,7 +230,7 @@ def main():
         }
 
     # Gather all pending uploads from selected folders
-    all_to_upload: list[tuple[Path, str | None, dict, str]] = []
+    all_to_upload: list[tuple[Path, dict, str]] = []
     lang_folder = LANG_TO_FOLDER.get(args.lang or "en", "english")
     for folder_name in folder_names:
         review_path = args.review_file or Path("reviews") / f"{lang_folder}_review.md"
@@ -215,9 +244,9 @@ def main():
             continue
 
         mp4s = find_mp4s_with_album(input_dir)
-        for path, album in mp4s:
-            key = make_history_key(path, album)
-            if key in history and history[key].get("status") == "uploaded":
+        for path, _album in mp4s:
+            key = make_history_key(path, None)
+            if not args.force and is_uploaded_in_history(history, key):
                 # In dry-run with a files-from-log, bypass history for the specific
                 # file so the dry-run can show what the upload step would do even
                 # when the file is already in history (e.g. testing with a real file).
@@ -228,7 +257,7 @@ def main():
 
             meta = match_mp4_to_review(path, review)
             if meta:
-                all_to_upload.append((path, album, meta, folder_name))
+                all_to_upload.append((path, meta, folder_name))
             else:
                 # Only warn if folder was explicitly specified
                 if args.folder:
@@ -255,9 +284,9 @@ def main():
     # Sort all pending uploads by recording date.
     # When filtering by log (--from-export re-run), sort newest first so the current video
     # (which has the most recent recording date) is uploaded before any backlog.
-    def _parse_date(t: tuple[Path, str | None, dict, str]) -> datetime:
+    def _parse_date(t: tuple[Path, dict, str]) -> datetime:
         try:
-            return datetime.strptime(t[2]["recording_date"], "%d-%m-%Y")
+            return datetime.strptime(t[1]["recording_date"], "%d-%m-%Y")
         except (ValueError, KeyError):
             return datetime.min
 
@@ -277,7 +306,7 @@ def main():
         pr.green_title(
             f"[DRY-RUN] Found {len(to_upload)} videos to upload (Token: {token_path.name}):"
         )
-        for path, album, meta, folder_name in to_upload:
+        for path, meta, folder_name in to_upload:
             tags_str = meta.get("tags", "")
             desc = build_description(
                 meta["recording_date"] if _include_date else "",
@@ -292,7 +321,11 @@ def main():
             privacy_label = "private (scheduled)"
             publish_at_label = publish_at
             pr.white(f"\n  File:           {path}")
-            pr.white(f"  Playlist:       {album or '(none)'}")
+            selected_playlists = meta.get("selected_playlists", [])
+            playlist_label = (
+                ", ".join(selected_playlists) if selected_playlists else "(none)"
+            )
+            pr.white(f"  Selected playlists: {playlist_label}")
             pr.white(f"  Title:          {meta['title']}")
             pr.white(f"  Language:       {args.lang}")
             pr.white(f"  Privacy status: {privacy_label}")
@@ -325,9 +358,9 @@ def main():
         return
 
     youtube = get_google_client("youtube", "v3", token_path, SCOPES, CLIENT_SECRET)
-    playlist_cache: dict[str, str] = {}
+    playlist_ids = list_channel_playlists(youtube)
 
-    for path, album, meta, folder_name in to_upload:
+    for path, meta, folder_name in to_upload:
         tags_str = meta.get("tags", "")
         desc = build_description(
             meta["recording_date"] if _include_date else "",
@@ -355,30 +388,16 @@ def main():
                 publish_at=publish_at,
             )
 
-            if album:
-                if album not in playlist_cache:
-                    found = find_existing_playlist(youtube, album)
-                    if found is None:
-                        pr.no(
-                            f"Playlist '{album}' not found — create a YouTube playlist "
-                            f"with that exact name or rename the subfolder to match."
-                        )
-                        raise SystemExit(1)
-                    playlist_cache[album] = found
-
-                youtube.playlistItems().insert(
-                    part="snippet",
-                    body={
-                        "snippet": {
-                            "playlistId": playlist_cache[album],
-                            "resourceId": {
-                                "kind": "youtube#video",
-                                "videoId": video_id,
-                            },
-                        }
-                    },
-                ).execute()
-                pr.white(f"Added to playlist: {album}")
+            selected_playlists = meta.get("selected_playlists", [])
+            added_playlists = add_video_to_selected_playlists(
+                youtube,
+                video_id,
+                selected_playlists,
+                playlist_ids,
+                path.name,
+            )
+            for playlist_title in added_playlists:
+                pr.white(f"Added to playlist: {playlist_title}")
 
             # Thumbnail upload logic
             thumb_was_set = False
@@ -397,7 +416,7 @@ def main():
                 except Exception as thumb_err:
                     pr.amber(f"    Thumbnail upload failed (non-fatal): {thumb_err}")
 
-            hist_key = make_history_key(path, album)
+            hist_key = make_history_key(path, None)
             mark_uploaded(history, hist_key, video_id)
             history[hist_key]["thumbnail_set"] = thumb_was_set  # type: ignore[assignment]
             save_nested_history(HISTORY_PATH, args.lang, history)

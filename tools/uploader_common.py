@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from google.auth.transport.requests import Request
+from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
@@ -37,8 +38,14 @@ def get_google_client(
             creds = None
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
+            try:
+                creds.refresh(Request())
+            except RefreshError:
+                pr.amber(
+                    f"Token {token_path.name} expired or revoked — re-authenticating"
+                )
+                creds = None
+        if not creds or not creds.valid:
             if not client_secret.exists():
                 pr.no(f"Missing {client_secret}. Follow output/UPLOAD_SETUP.md")
                 raise SystemExit(1)
@@ -107,16 +114,47 @@ def find_latest_review(
     return files[-1] if files else None
 
 
-def parse_review(review_path: Path) -> dict[str, dict[str, str]]:
+def split_selected_playlists(raw: str) -> list[str]:
+    """Split comma/semicolon review playlist selections into trimmed titles."""
+    return [part.strip() for part in re.split(r"[,;]", raw) if part.strip()]
+
+
+def list_channel_playlists(youtube: Any) -> dict[str, str]:
+    """Return existing channel playlists keyed by exact trimmed playlist title."""
+    playlists: dict[str, str] = {}
+    page_token: str | None = None
+    while True:
+        request = youtube.playlists().list(
+            part="snippet",
+            mine=True,
+            maxResults=50,
+            pageToken=page_token,
+        )
+        response = request.execute()
+        for item in response.get("items", []):
+            title = item.get("snippet", {}).get("title", "").strip()
+            playlist_id = item.get("id", "")
+            if title and playlist_id:
+                playlists[title] = playlist_id
+        page_token = response.get("nextPageToken")
+        if not page_token:
+            return playlists
+
+
+def parse_review(review_path: Path) -> dict[str, dict[str, Any]]:
     content = review_path.read_text(encoding="utf-8")
     sections = re.split(r"\n---", content)
-    result: dict[str, dict[str, str]] = {}
+    result: dict[str, dict[str, Any]] = {}
     for section in sections:
         source_m = re.search(r"## Source: (.*)", section)
         date_m = re.search(r"\*\*Recording Date:\*\*\s*(.*)", section)
         publish_m = re.search(r"\*\*Publish Date:\*\*\s*(.*)", section)
         approved_m = re.search(r"\*\*Approved:\*\*\s*(yes|no)", section, re.IGNORECASE)
         title_m = re.search(r"\*\*Suggested Title:\*\*\s*(.*)", section)
+        playlist_overview_m = re.search(
+            r"\*\*Channel Playlist Overview:\*\*\s*(.*)", section
+        )
+        selected_playlist_m = re.search(r"\*\*Selected Playlist:\*\*\s*(.*)", section)
         desc_m = re.search(
             r"\*\*Suggested Description:\*\*\s*(.*?)(?=\n\*\*Suggested Tags:|\Z)",
             section,
@@ -135,6 +173,12 @@ def parse_review(review_path: Path) -> dict[str, dict[str, str]]:
                 "title": title_m.group(1).strip(),
                 "recording_date": date_m.group(1).strip() if date_m else "",
                 "publish_date": publish_m.group(1).strip() if publish_m else "",
+                "channel_playlist_overview": playlist_overview_m.group(1).strip()
+                if playlist_overview_m
+                else "",
+                "selected_playlists": split_selected_playlists(
+                    selected_playlist_m.group(1) if selected_playlist_m else ""
+                ),
                 "description": desc_m.group(1).strip(),
                 "tags": tags_m.group(1).strip() if tags_m else "",
                 "chapters": chapters_m.group(1).strip() if chapters_m else "",
@@ -228,6 +272,27 @@ def load_history(history_path: Path) -> dict[str, dict[str, str]]:
             pr.amber(f"History file {history_path} is corrupt, starting fresh.")
             return {}
     return {}
+
+
+def normalize_history_name(name: str) -> str:
+    """Normalize a history key or filename for reliable macOS-safe comparison."""
+    return unicodedata.normalize("NFC", Path(name).name)
+
+
+def get_uploaded_history_entry(
+    history: dict[str, dict[str, Any]], final_name: str
+) -> dict[str, Any] | None:
+    """Return uploaded history entry matching an exact final media filename."""
+    target = normalize_history_name(final_name)
+    for key, entry in history.items():
+        if normalize_history_name(key) == target and entry.get("status") == "uploaded":
+            return entry
+    return None
+
+
+def is_uploaded_in_history(history: dict[str, dict[str, Any]], final_name: str) -> bool:
+    """True when history has an uploaded entry for the exact final media filename."""
+    return get_uploaded_history_entry(history, final_name) is not None
 
 
 def load_nested_history(

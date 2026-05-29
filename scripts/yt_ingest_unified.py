@@ -101,6 +101,11 @@ def main() -> None:
         action="store_true",
         help="Print what would be ingested; create stubs for pipeline propagation.",
     )
+    parser.add_argument(
+        "--cover",
+        action="store_true",
+        help="Accepted for pipeline compatibility; image ingest always copies covers.",
+    )
     args = parser.parse_args()
 
     input_base = Path("input")

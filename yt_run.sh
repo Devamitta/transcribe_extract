@@ -1,6 +1,6 @@
 #!/bin/bash
 # Unified YouTube pipeline for English and Russian talks (audio or video input).
-# Usage: ./yt_run.sh [--lang ru|en] [--folder folder] [--name NAME] [--from-export] [--video-mode] [--cover] [--gdrive] [--dry-run] [--context CONTEXT] [--limit N]
+# Usage: ./yt_run.sh [--lang ru|en] [--folder folder] [--name NAME] [--from-export] [--video-mode] [--cover] [--gdrive] [--dry-run] [--force] [--context CONTEXT] [--limit N]
 #   --lang: optional; ru or en (defaults to en for review file selection)
 #   --folder: optional; specific folder in input/ to scan
 #   --name: optional; override speaker/artist name in titles and embedded metadata
@@ -9,6 +9,7 @@
 #   --cover: generate AI thumbnails/covers in video mode (yt_image_gen + yt_cover_gen); input images always copied to thumbnails/ and covers/ regardless
 #   --gdrive: also upload to Google Drive (default: YouTube only)
 #   --dry-run [file]: trace the full pipeline without real processing; optional stub e.g. russian/test.mp4
+#   --force: bypass YouTube upload-history safety skips in supported stages
 #   --context: whisper context tag; defaults to 'russian' (ru) or 'dhamma' (en)
 set -e
 
@@ -23,6 +24,7 @@ CONTEXT=""
 VIDEO_MODE_OVERRIDE=0
 COVER=0
 LIMIT=0
+FORCE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -41,6 +43,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --gdrive)      GDRIVE=1;      shift ;;
     --limit)       LIMIT="$2";   shift 2 ;;
+    --force)       FORCE=1;       shift ;;
     -*) shift ;;
     *)
       if [ "$DRY_RUN" -eq 1 ] && [ -z "$DRY_RUN_STUB" ]; then
@@ -56,13 +59,13 @@ done
 # Save user-specified values before defaulting
 USER_LANG="$LANG"
 USER_FOLDER="$FOLDER"
-ALBUM_MODE=0
+SUBFOLDER_MODE=0
 
 # Resolve EFFECTIVE_FOLDER:
 #   --folder  → use it directly
 #   --lang    → derive from lang (russian/english)
-#   dry-run stub → derive from stub path (subdirectory = album mode)
-#   none      → auto-detect from input/ (root files = root mode; subfolder = album mode)
+#   dry-run stub → derive from stub path (subdirectory = subfolder mode)
+#   none      → auto-detect from input/ (root files = root mode; subfolder = subfolder mode)
 if [ -n "$USER_FOLDER" ]; then
   EFFECTIVE_FOLDER="$USER_FOLDER"
 elif [ -n "$USER_LANG" ]; then
@@ -73,10 +76,10 @@ elif [ "$DRY_RUN" -eq 1 ] && [ -n "$DRY_RUN_STUB" ]; then
     EFFECTIVE_FOLDER=""
   else
     EFFECTIVE_FOLDER="$_stub_subdir"
-    ALBUM_MODE=1
+    SUBFOLDER_MODE=1
   fi
 else
-  # Auto-detect: root-level media files → root mode; first subfolder with media → album mode
+  # Auto-detect: root-level media files → root mode; first subfolder with media → subfolder mode
   EFFECTIVE_FOLDER=""
   if ! find "input" -maxdepth 1 -type f \( -name "*.mp4" -o -name "*.mp3" -o -name "*.wav" \
         -o -name "*.m4a" -o -name "*.aiff" -o -name "*.flac" -o -name "*.ogg" \
@@ -86,7 +89,7 @@ else
       if find "$subdir" -maxdepth 1 -type f \( -name "*.mp4" -o -name "*.mp3" \) \
             -print -quit 2>/dev/null | grep -q .; then
         EFFECTIVE_FOLDER=$(basename "$subdir")
-        ALBUM_MODE=1
+        SUBFOLDER_MODE=1
         break
       fi
     done
@@ -109,6 +112,8 @@ DRY_RUN_FLAG=""
 DRY_RUN_CLEANUP="temp/.dry_run_cleanup"
 LIMIT_FLAG=""
 [ "$LIMIT" -gt 0 ] && LIMIT_FLAG="--limit $LIMIT"
+FORCE_FLAG=""
+[ "$FORCE" -eq 1 ] && FORCE_FLAG="--force"
 
 if [ "$DRY_RUN" -eq 1 ]; then
   DRY_RUN_FLAG="--dry-run"
@@ -209,7 +214,7 @@ if [ "$FROM_EXPORT" -eq 0 ]; then
   uv run python scripts/yt_metadata.py $METADATA_LANG_FLAG \
     --folder "$EFFECTIVE_FOLDER" \
     ${NAME:+--name "$NAME"} \
-    $EXPORT_FLAGS $LIMIT_FLAG $DRY_RUN_FLAG
+    $EXPORT_FLAGS $LIMIT_FLAG $DRY_RUN_FLAG $FORCE_FLAG
 
   echo ""
   echo "----------------------------------------------------------------"
@@ -303,7 +308,7 @@ uv run python scripts/yt_export.py --lang "$LANG" \
   --folder "$EFFECTIVE_FOLDER" \
   ${NAME:+--name "$NAME"} \
   --created-log "$EXPORT_LOG" \
-  $EXPORT_FLAGS $LIMIT_FLAG $DRY_RUN_FLAG
+  $EXPORT_FLAGS $LIMIT_FLAG $DRY_RUN_FLAG $FORCE_FLAG
 
 # 7. Thumbnails — audio mode always; video mode only with --cover
 if [ "$VIDEO_MODE" -eq 0 ] || [ "$COVER" -eq 1 ]; then
@@ -311,7 +316,7 @@ if [ "$VIDEO_MODE" -eq 0 ] || [ "$COVER" -eq 1 ]; then
     THUMB_LOG=$(mktemp)
     echo "→ Starting: yt_image_gen.py"
     uv run python scripts/yt_image_gen.py --lang "$LANG" \
-      --folder "$EFFECTIVE_FOLDER" --created-log "$THUMB_LOG" $LIMIT_FLAG $DRY_RUN_FLAG
+      --folder "$EFFECTIVE_FOLDER" --created-log "$THUMB_LOG" $LIMIT_FLAG $DRY_RUN_FLAG $FORCE_FLAG
 
     echo ""
     echo "----------------------------------------------------------------"
@@ -335,7 +340,7 @@ if [ "$VIDEO_MODE" -eq 0 ]; then
   # 8. Create MP4 videos → output/video/
   echo "→ Starting: yt_video.py"
   uv run python scripts/yt_video.py --lang "$LANG" \
-    --folder "$EFFECTIVE_FOLDER" $LIMIT_FLAG $DRY_RUN_FLAG
+    --folder "$EFFECTIVE_FOLDER" $LIMIT_FLAG $DRY_RUN_FLAG $FORCE_FLAG
 fi
 
 if [ "$COVER" -eq 1 ]; then
@@ -344,7 +349,7 @@ if [ "$COVER" -eq 1 ]; then
     COVER_LOG=$(mktemp)
     echo "→ Starting: yt_cover_gen.py"
     uv run python scripts/yt_cover_gen.py --lang "$LANG" \
-      --folder "$EFFECTIVE_FOLDER" --created-log "$COVER_LOG" $LIMIT_FLAG $DRY_RUN_FLAG
+      --folder "$EFFECTIVE_FOLDER" --created-log "$COVER_LOG" $LIMIT_FLAG $DRY_RUN_FLAG $FORCE_FLAG
 
     echo ""
     echo "----------------------------------------------------------------"
@@ -372,13 +377,13 @@ UPLOAD_FILES_FLAG=""
 UPLOAD_BATCH_FLAG=""
 [ "$FROM_EXPORT" -eq 1 ] && UPLOAD_BATCH_FLAG="--batch-size 1"
 
-if [ "$ALBUM_MODE" -eq 1 ]; then
-  # Album mode: scan output/video/ root so subdirectory names become playlist names
+if [ "$SUBFOLDER_MODE" -eq 1 ]; then
+  # Subfolder mode: scan output/video/ root so files nested one level deep are included.
   uv run python scripts/yt_upload.py --lang "$LANG" \
-    --input-dir "output/video/" $UPLOAD_FILES_FLAG $UPLOAD_BATCH_FLAG $LIMIT_FLAG $DRY_RUN_FLAG ${NAME:+--name "$NAME"}
+    --input-dir "output/video/" $UPLOAD_FILES_FLAG $UPLOAD_BATCH_FLAG $LIMIT_FLAG $DRY_RUN_FLAG $FORCE_FLAG ${NAME:+--name "$NAME"}
 else
   uv run python scripts/yt_upload.py --lang "$LANG" \
-    --folder "$EFFECTIVE_FOLDER" $UPLOAD_FILES_FLAG $UPLOAD_BATCH_FLAG $LIMIT_FLAG $DRY_RUN_FLAG ${NAME:+--name "$NAME"}
+    --folder "$EFFECTIVE_FOLDER" $UPLOAD_FILES_FLAG $UPLOAD_BATCH_FLAG $LIMIT_FLAG $DRY_RUN_FLAG $FORCE_FLAG ${NAME:+--name "$NAME"}
 fi
 rm -f "$EXPORT_LOG"
 

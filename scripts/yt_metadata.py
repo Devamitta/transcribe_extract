@@ -18,6 +18,8 @@ from tools.provider import (
     generate_with_timeout,
     get_working_key,
 )
+from tools.uploader_common import get_google_client, list_channel_playlists
+from tools.uploader_common import is_uploaded_in_history, load_nested_history
 
 
 DEFAULT_SPEAKER: dict[str, str] = {
@@ -49,6 +51,25 @@ TAG_POOLS: dict[str, list[str]] = {
 }
 
 LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
+TOKEN_PATHS: dict[str, Path] = {
+    "ru": Path("youtube_token_ru.json"),
+    "en": Path("youtube_token_en.json"),
+}
+YOUTUBE_SCOPES: list[str] = ["https://www.googleapis.com/auth/youtube"]
+HISTORY_PATH = Path("output/youtube_history.json")
+
+
+def get_playlist_overview(lang: str, dry_run: bool) -> str:
+    """Return channel playlist titles for review metadata, using a dry-run stub when needed."""
+    if dry_run:
+        return "Meditation, Personal"
+    youtube = get_google_client(
+        "youtube",
+        "v3",
+        TOKEN_PATHS[lang],
+        YOUTUBE_SCOPES,
+    )
+    return ", ".join(list_channel_playlists(youtube).keys())
 
 
 def enrich_tags(tags: str, lang: str) -> str:
@@ -65,7 +86,13 @@ def enrich_tags(tags: str, lang: str) -> str:
     return " ".join(tag_list)
 
 
-def get_system_instruction(lang: str) -> str:
+def get_system_instruction(lang: str, speaker_name: str | None = None) -> str:
+    ariyadhammika_mode = bool(speaker_name and "ariyadhammika" in speaker_name.lower())
+    sentence_rule = (
+        "Write up to 15 sentences. No bullets."
+        if ariyadhammika_mode
+        else "Write 5-7 sentences. No bullets."
+    )
     pool_str = " ".join(TAG_POOLS[lang])
     if lang == "ru":
         return f"""You are preparing video upload metadata for a recorded Dhamma (Buddhist teaching) talk by a senior meditation teacher. The talk is in Russian.
@@ -105,8 +132,7 @@ DESCRIPTION REQUIREMENTS:
 - СТРОГО ЗАПРЕЩЕНО: любые ссылки на учителя или говорящего в третьем лице («учитель сказал», «учитель объясняет», «говорящий отмечает», «он сказал», «монах объяснил» и подобное). Описание не должно упоминать, кто говорил.
 - СТРОГО ЗАПРЕЩЕНО: 1-е лицо («я», «мы», «мне», «моё»).
 - Пишите как описание содержания текста, а не как пересказ слов конкретного человека.
-- Write exactly 2–3 sentences (overview, what the listener gains, one notable analogy or insight).
-- If the talk covers multiple distinct topics or chapters: after the 2–3 sentences, add a bullet list of 3–8 main topics covered (each bullet ≤ 10 words, no hashtags).
+- {sentence_rule}
 - Do NOT use marketing language.
 - NEVER mention "личная история". Focus on the Dhamma point being illustrated.
 - NEVER reference the speaker directly. Keep descriptions impersonal and focused on the Dhamma.
@@ -165,8 +191,7 @@ DESCRIPTION REQUIREMENTS:
 - STRICTLY FORBIDDEN: any 3rd-person reference to the teacher or speaker ("the teacher said", "the teacher explains", "the speaker notes", "he said", "he explains", "the monk said", or any variant). The description must never say who spoke.
 - STRICTLY FORBIDDEN: 1st-person voice ("I", "we", "me", "my").
 - Write as if describing the content of a document, not narrating what a person said.
-- Write exactly 2–3 sentences (overview, what the listener gains, one notable analogy or insight).
-- If the talk covers multiple distinct topics or chapters: after the 2–3 sentences, add a bullet list of 3–8 main topics covered (each bullet ≤ 10 words, no hashtags).
+- {sentence_rule}
 - Do NOT include any hashtags in the description text. Tags go on the TAGS line only.
 - Output in English.
 
@@ -185,11 +210,11 @@ TAGS: [8–12 hashtags from the pool, space-separated]
 """
 
 
-def generate_metadata(text: str, lang: str) -> str:
+def generate_metadata(text: str, lang: str, speaker_name: str | None = None) -> str:
     """Calls Gemini API to generate metadata for a given talk transcript."""
     return generate_with_timeout(
         contents=build_cacheable_contents(text),
-        system_instruction=get_system_instruction(lang),
+        system_instruction=get_system_instruction(lang, speaker_name),
     )
 
 
@@ -201,6 +226,7 @@ def _write_dry_run_entry(
     speaker_name: str | None,
     bio_link: str | None = None,
     append_speaker: bool = True,
+    playlist_overview: str = "Meditation, Personal",
 ) -> None:
     """Writes a clearly-marked stub entry to the review file for pipeline dry-run."""
     nfc_name = unicodedata.normalize("NFC", file_path.name)
@@ -222,6 +248,8 @@ def _write_dry_run_entry(
         f"**Publish Date:**\n"
         f"**Approved:** yes\n"
         f"**Media:** {media}\n"
+        f"**Channel Playlist Overview:** {playlist_overview}\n"
+        f"**Selected Playlist:**\n"
         f"**Suggested Title:** {title}\n"
         f"**Suggested Description:** {dry_run_desc}\n\n"
         f"**Suggested Tags:** #dhamma\n"
@@ -246,8 +274,10 @@ def process_files(
     speaker_name: str | None = None,
     media: str = "audio",
     dry_run: bool = False,
+    force: bool = False,
     bio_link: str | None = None,
     append_speaker: bool = True,
+    playlist_overview: str | None = None,
 ) -> None:
     """Processes a list of markdown files and appends results to the review file."""
     output_file = Path(output_file_path)
@@ -261,13 +291,27 @@ def process_files(
             for s in re.findall(r"## Source: (.+)", existing)
         }
 
-    pending = [
-        f for f in md_files if unicodedata.normalize("NFC", f.name) not in already_done
-    ]
+    history = load_nested_history(HISTORY_PATH, lang)
+    pending = []
+    for f in md_files:
+        nfc_name = unicodedata.normalize("NFC", f.name)
+        final_mp4_name = f"{f.stem}.mp4"
+        if nfc_name in already_done:
+            continue
+        if not force and is_uploaded_in_history(history, final_mp4_name):
+            continue
+        pending.append(f)
 
     if not pending:
         pr.green(f"[{folder_name}] All files already processed.")
         return
+
+    if not dry_run and not get_working_key():
+        pr.no("All API keys failed. Exiting.")
+        return
+
+    if playlist_overview is None:
+        playlist_overview = get_playlist_overview(lang, dry_run)
 
     if dry_run:
         pr.green(f"[DRY RUN] Input:  {pending[0].parent if pending else 'N/A'}")
@@ -284,6 +328,7 @@ def process_files(
                     speaker_name,
                     bio_link=bio_link,
                     append_speaker=append_speaker,
+                    playlist_overview=playlist_overview,
                 )
         return
 
@@ -307,7 +352,7 @@ def process_files(
         try:
             text = file_path.read_text(encoding="utf-8")
             try:
-                metadata = generate_metadata(text, lang)
+                metadata = generate_metadata(text, lang, speaker_name)
             except concurrent.futures.TimeoutError:
                 pr.amber(f"    Timeout on '{file_path.name}' — skipping.")
                 continue
@@ -339,6 +384,8 @@ def process_files(
                 f"**Publish Date:**\n"
                 f"**Approved:** no\n"
                 f"**Media:** {media}\n"
+                f"**Channel Playlist Overview:** {playlist_overview}\n"
+                f"**Selected Playlist:**\n"
                 f"**Suggested Title:** {title}\n"
                 f"**Suggested Description:** {description}\n\n"
                 f"**Suggested Tags:** {tags}\n"
@@ -410,6 +457,11 @@ def main() -> None:
         action="store_true",
         help="Print what would be processed; create stub review entries for pipeline propagation.",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Process even when YouTube history marks the final video uploaded.",
+    )
     args = parser.parse_args()
     load_dotenv()
     media = "video" if args.video_mode else "audio"
@@ -418,7 +470,7 @@ def main() -> None:
     processing_lang: str = args.lang or "en"
     _bio_key = "BIO_RU" if args.lang == "ru" else "BIO_EN"
     bio_link: str | None = os.environ.get(_bio_key) or None
-    append_speaker = not bool(args.name)
+    append_speaker = True
 
     # Effective speaker: --name > lang default > None (no lang + no name = empty)
     if args.name:
@@ -431,10 +483,6 @@ def main() -> None:
     transcribed_base = Path("output/transcribed")
     if not transcribed_base.exists():
         pr.no(f"Base directory not found: {transcribed_base}")
-        return
-
-    if not args.dry_run and not get_working_key():
-        pr.no("All API keys failed. Exiting.")
         return
 
     # Handle single file mode
@@ -457,6 +505,7 @@ def main() -> None:
             speaker_name=effective_speaker,
             media=media,
             dry_run=args.dry_run,
+            force=args.force,
             bio_link=bio_link,
             append_speaker=append_speaker,
         )
@@ -526,6 +575,7 @@ def main() -> None:
             speaker_name=effective_speaker,
             media=media,
             dry_run=args.dry_run,
+            force=args.force,
             bio_link=bio_link,
             append_speaker=append_speaker,
         )
