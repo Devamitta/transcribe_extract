@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# CLI entry point for the Ariyadhammika Bhikkhu YouTube video pipeline.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+cd "$PROJECT_ROOT" || { echo "Error: Cannot cd to project root: $PROJECT_ROOT"; exit 1; }
+
+echo "Running: git stash"
+git stash
+EXIT_CODE=$?
+[ $EXIT_CODE -ne 0 ] && exit $EXIT_CODE
+
+echo "Running: git pull"
+git pull
+EXIT_CODE=$?
+[ $EXIT_CODE -ne 0 ] && exit $EXIT_CODE
+
+echo "Running: git stash pop"
+git stash pop
+EXIT_CODE=$?
+[ $EXIT_CODE -ne 0 ] && exit $EXIT_CODE
+
+echo 'Running: ./yt_run.sh --name "Ariyadhammika Bhikkhu" --video-mode'
+./yt_run.sh --name "Ariyadhammika Bhikkhu" --video-mode
+exit $?
