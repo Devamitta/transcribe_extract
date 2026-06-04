@@ -26,6 +26,11 @@ DEFAULT_SPEAKER: dict[str, str] = {
     "en": "Bhikkhu Devamitta",
     "ru": "Бхиккху Дэвамитта",
 }
+PART_ONE_TITLE_RE = re.compile(r"\s*\|\s*(?:Part|Часть)\s+0*1\s*$", re.IGNORECASE)
+PART_ONE_SOURCE_RE = re.compile(
+    r"\b(?:part|lecture|часть|лекция)[\s_-]*0*1\b",
+    re.IGNORECASE,
+)
 
 
 def _name_in_stem(stem: str, name: str) -> bool:
@@ -43,6 +48,28 @@ def _date_from_stem(stem: str) -> str:
     if m:
         return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
     return ""
+
+
+def _source_name_mentions_part_one(stem: str) -> bool:
+    """Return true when a source filename explicitly marks this as part one."""
+    normalized_stem = unicodedata.normalize("NFC", stem)
+    return bool(PART_ONE_SOURCE_RE.search(normalized_stem))
+
+
+def _remove_inferred_part_one(title: str, source_stem: str) -> str:
+    """Convert inferred Part 1 series titles to standalone titles."""
+    if not PART_ONE_TITLE_RE.search(title):
+        return title
+    if _source_name_mentions_part_one(source_stem):
+        return title
+
+    title_without_part = PART_ONE_TITLE_RE.sub("", title).strip()
+    title_segments = [
+        segment.strip() for segment in title_without_part.split("|") if segment.strip()
+    ]
+    if len(title_segments) >= 2:
+        return title_segments[-1]
+    return title_without_part
 
 
 TAG_POOLS: dict[str, list[str]] = {
@@ -86,13 +113,24 @@ def enrich_tags(tags: str, lang: str) -> str:
     return " ".join(tag_list)
 
 
-def get_system_instruction(lang: str, speaker_name: str | None = None) -> str:
+def get_system_instruction(
+    lang: str,
+    speaker_name: str | None = None,
+    *,
+    simple_english_description: bool = False,
+) -> str:
     ariyadhammika_mode = bool(speaker_name and "ariyadhammika" in speaker_name.lower())
     sentence_rule = (
         "Write up to 15 sentences. No bullets."
         if ariyadhammika_mode
         else "Write 5-7 sentences. No bullets."
     )
+    description_sentence_rules = [f"- {sentence_rule}"]
+    if lang == "en" and simple_english_description:
+        description_sentence_rules.append(
+            "- Use simple English sentences with plain vocabulary, as a second-language English speaker would naturally write."
+        )
+    description_sentence_rules_text = "\n".join(description_sentence_rules)
     pool_str = " ".join(TAG_POOLS[lang])
     if lang == "ru":
         return f"""You are preparing video upload metadata for a recorded Dhamma (Buddhist teaching) talk by a senior meditation teacher. The talk is in Russian.
@@ -132,7 +170,7 @@ DESCRIPTION REQUIREMENTS:
 - СТРОГО ЗАПРЕЩЕНО: любые ссылки на учителя или говорящего в третьем лице («учитель сказал», «учитель объясняет», «говорящий отмечает», «он сказал», «монах объяснил» и подобное). Описание не должно упоминать, кто говорил.
 - СТРОГО ЗАПРЕЩЕНО: 1-е лицо («я», «мы», «мне», «моё»).
 - Пишите как описание содержания текста, а не как пересказ слов конкретного человека.
-- {sentence_rule}
+{description_sentence_rules_text}
 - Do NOT use marketing language.
 - NEVER mention "личная история". Focus on the Dhamma point being illustrated.
 - NEVER reference the speaker directly. Keep descriptions impersonal and focused on the Dhamma.
@@ -191,7 +229,7 @@ DESCRIPTION REQUIREMENTS:
 - STRICTLY FORBIDDEN: any 3rd-person reference to the teacher or speaker ("the teacher said", "the teacher explains", "the speaker notes", "he said", "he explains", "the monk said", or any variant). The description must never say who spoke.
 - STRICTLY FORBIDDEN: 1st-person voice ("I", "we", "me", "my").
 - Write as if describing the content of a document, not narrating what a person said.
-- {sentence_rule}
+{description_sentence_rules_text}
 - Do NOT include any hashtags in the description text. Tags go on the TAGS line only.
 - Output in English.
 
@@ -210,11 +248,21 @@ TAGS: [8–12 hashtags from the pool, space-separated]
 """
 
 
-def generate_metadata(text: str, lang: str, speaker_name: str | None = None) -> str:
+def generate_metadata(
+    text: str,
+    lang: str,
+    speaker_name: str | None = None,
+    *,
+    simple_english_description: bool = False,
+) -> str:
     """Calls Gemini API to generate metadata for a given talk transcript."""
     return generate_with_timeout(
         contents=build_cacheable_contents(text),
-        system_instruction=get_system_instruction(lang, speaker_name),
+        system_instruction=get_system_instruction(
+            lang,
+            speaker_name,
+            simple_english_description=simple_english_description,
+        ),
     )
 
 
@@ -278,6 +326,7 @@ def process_files(
     bio_link: str | None = None,
     append_speaker: bool = True,
     playlist_overview: str | None = None,
+    simple_english_description: bool = False,
 ) -> None:
     """Processes a list of markdown files and appends results to the review file."""
     output_file = Path(output_file_path)
@@ -352,7 +401,12 @@ def process_files(
         try:
             text = file_path.read_text(encoding="utf-8")
             try:
-                metadata = generate_metadata(text, lang, speaker_name)
+                metadata = generate_metadata(
+                    text,
+                    lang,
+                    speaker_name,
+                    simple_english_description=simple_english_description,
+                )
             except concurrent.futures.TimeoutError:
                 pr.amber(f"    Timeout on '{file_path.name}' — skipping.")
                 continue
@@ -362,7 +416,9 @@ def process_files(
             tags = ""
             for line in metadata.strip().split("\n"):
                 if line.upper().startswith("TITLE:"):
-                    title = line[len("TITLE:") :].strip() + speaker_suffix
+                    raw_title = line[len("TITLE:") :].strip()
+                    title = _remove_inferred_part_one(raw_title, file_path.stem)
+                    title += speaker_suffix
                 elif line.upper().startswith("DESCRIPTION:"):
                     description = line[len("DESCRIPTION:") :].strip()
                 elif line.upper().startswith("TAGS:"):
@@ -480,6 +536,8 @@ def main() -> None:
     else:
         effective_speaker = None
 
+    simple_english_description = args.lang == "en" and args.name is None
+
     transcribed_base = Path("output/transcribed")
     if not transcribed_base.exists():
         pr.no(f"Base directory not found: {transcribed_base}")
@@ -508,6 +566,7 @@ def main() -> None:
             force=args.force,
             bio_link=bio_link,
             append_speaker=append_speaker,
+            simple_english_description=simple_english_description,
         )
         return
 
@@ -578,6 +637,7 @@ def main() -> None:
             force=args.force,
             bio_link=bio_link,
             append_speaker=append_speaker,
+            simple_english_description=simple_english_description,
         )
 
 
