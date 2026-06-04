@@ -199,6 +199,7 @@ uv run python scripts/yt_cover_gen.py --lang ru|en [--folder <folder>] [--limit 
 - **Input:** `output/thumbnails/<folder>/` (FLUX images from 3.2)
 - **Output:** `output/covers/<folder>/`
 - Only processes entries where `**Media:** video` is set in the review file.
+- Cover titles force new lines at common separators such as `:`, `|`, `/`, `;`, `,`, `.`, `?`, `!`, bullets, and spaced dashes.
 - `--list-fonts` generates paginated font preview sheets (`temp/font_preview_<lang>_01.png`, …) and an index (`temp/font_list_<lang>.md`), then exits — useful for picking a font before the first run.
 - Font and overlay parameters are configurable via `.env` (`COVER_FONT_PATH`, `COVER_RU_FONT_PATH`, `COVER_GRADIENT_HEIGHT_PCT`, etc.); all have sensible defaults and the script works with no `.env` entries.
 
@@ -244,3 +245,5 @@ Uploads MP4s and MP3s from their respective output directories.
 ```bash
 uv run python scripts/gdrive_upload.py --lang ru|en [--folder <folder>] [--dry-run]
 ```
+
+Drive creates top-level `video/` and `audio/` folders under the configured language root. Video files always go under `video/`; audio files always go under `audio/`. `**Selected Playlist:**` is the only field that can add a subfolder inside those base folders. If one playlist is selected, that playlist name is used as the subfolder under both `video/` and `audio/`. If multiple playlists are selected, Drive asks which single subfolder to use. If `Selected Playlist` is blank, no extra subfolder is used.

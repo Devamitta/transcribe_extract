@@ -1,9 +1,11 @@
 """Batch-uploads Dhamma MP4s to Google Drive preserving folder structure."""
 
 import argparse
+from collections.abc import Callable
 import os
 import pickle
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 import google.auth.exceptions
@@ -37,6 +39,46 @@ LEGACY_VIDEO_HISTORY = Path("output/gdrive_video_history.json")
 LEGACY_AUDIO_HISTORY = Path("output/gdrive_audio_history.json")
 DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder"
 LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
+
+
+def prompt_for_drive_subfolder(
+    playlists: list[str],
+    media_name: str,
+    input_func: Callable[[str], str] = input,
+) -> str:
+    """Asks which selected playlist should be used as the single Drive folder."""
+    pr.amber(f"Multiple selected playlists for Google Drive upload: {media_name}")
+    for index, playlist in enumerate(playlists, start=1):
+        pr.white(f"  {index}. {playlist}")
+
+    while True:
+        choice = input_func("Choose one Drive folder number: ").strip()
+        if choice.isdecimal():
+            selected_index = int(choice) - 1
+            if 0 <= selected_index < len(playlists):
+                return playlists[selected_index]
+        pr.amber(f"Enter a number from 1 to {len(playlists)}.")
+
+
+def resolve_drive_subfolder(
+    meta: dict[str, Any],
+    media_name: str = "media file",
+    input_func: Callable[[str], str] = input,
+) -> str | None:
+    """Returns the optional Google Drive subfolder from the selected playlist field."""
+    selected_playlists = meta.get("selected_playlists", [])
+    playlists: list[str] = []
+    if isinstance(selected_playlists, list):
+        playlists = [
+            playlist.strip()
+            for playlist in selected_playlists
+            if isinstance(playlist, str) and playlist.strip()
+        ]
+    if len(playlists) == 1:
+        return playlists[0]
+    if len(playlists) > 1:
+        return prompt_for_drive_subfolder(playlists, media_name, input_func)
+    return None
 
 
 def get_google_client(service: str, version: str):
@@ -174,7 +216,7 @@ def main():
         GDRIVE_HISTORY_PATH, args.lang, "audio", legacy_path=LEGACY_AUDIO_HISTORY
     )
 
-    all_to_upload: list[tuple[Path, str | None, dict, Path, Path]] = []
+    all_to_upload: list[tuple[Path, str | None, dict[str, Any], Path, Path]] = []
     lang_folder = LANG_TO_FOLDER.get(args.lang or "en", "english")
     for folder_name in folder_names:
         review_path = args.review_file or Path("reviews") / f"{lang_folder}_review.md"
@@ -189,14 +231,20 @@ def main():
             continue
 
         mp4s = find_mp4s_with_album(input_dir)
-        for path, album in mp4s:
-            key = make_history_key(path, album)
-            if key in video_history and video_history[key].get("status") == "uploaded":
-                continue
-
+        for path, _album in mp4s:
             meta = match_mp4_to_review(path, review)
             if meta:
-                all_to_upload.append((path, album, meta, input_dir, audio_dir))
+                drive_subfolder = resolve_drive_subfolder(meta, path.name)
+                key = make_history_key(path, drive_subfolder)
+                if (
+                    key in video_history
+                    and video_history[key].get("status") == "uploaded"
+                ):
+                    continue
+
+                all_to_upload.append(
+                    (path, drive_subfolder, meta, input_dir, audio_dir)
+                )
             else:
                 if args.folder:
                     pr.amber(
@@ -220,13 +268,17 @@ def main():
         pr.green_title(
             f"[DRY-RUN] Found {len(to_upload)} videos to upload to Drive (Folder ID: {root_folder_id}):"
         )
-        for path, album, meta, _in_dir, audio_dir in to_upload:
+        for path, drive_subfolder, meta, _in_dir, audio_dir in to_upload:
             tags_str = meta.get("tags", "")
             desc = build_description(
                 meta["recording_date"], meta["description"], tags_str
             )
             audio_path = find_audio_for_mp4(path, audio_dir)
-            video_dest = f"video/{album}/{path.name}" if album else f"video/{path.name}"
+            video_dest = (
+                f"video/{drive_subfolder}/{path.name}"
+                if drive_subfolder
+                else f"video/{path.name}"
+            )
             pr.white(f"\n  File:        {path.name}")
             pr.white(f"  Folder:      {video_dest}")
             pr.white(f"  Title:       {meta['title']}")
@@ -234,8 +286,8 @@ def main():
             pr.white(f"  Description:\n{desc}")
             if audio_path:
                 audio_dest = (
-                    f"audio/{album}/{audio_path.name}"
-                    if album
+                    f"audio/{drive_subfolder}/{audio_path.name}"
+                    if drive_subfolder
                     else f"audio/{audio_path.name}"
                 )
                 pr.white(f"  Audio:       {audio_dest}")
@@ -246,7 +298,7 @@ def main():
     drive = get_google_client("drive", "v3")
     folder_cache: dict[str, str] = {}
 
-    for path, album, meta, _in_dir, audio_dir in to_upload:
+    for path, drive_subfolder, meta, _in_dir, audio_dir in to_upload:
         tags_str = meta.get("tags", "")
         desc = build_description(meta["recording_date"], meta["description"], tags_str)
 
@@ -260,21 +312,21 @@ def main():
             folder_cache["audio"] = get_or_create_folder(drive, root_folder_id, "audio")
         audio_root = folder_cache["audio"]
 
-        # album subfolder inside video/ and audio/ (if applicable)
-        if album:
-            video_album_key = f"video|{album}"
-            if video_album_key not in folder_cache:
-                folder_cache[video_album_key] = get_or_create_folder(
-                    drive, video_root, album
+        # Selected playlist subfolder inside video/ and audio/ (if applicable)
+        if drive_subfolder:
+            video_subfolder_key = f"video|{drive_subfolder}"
+            if video_subfolder_key not in folder_cache:
+                folder_cache[video_subfolder_key] = get_or_create_folder(
+                    drive, video_root, drive_subfolder
                 )
-            video_folder = folder_cache[video_album_key]
+            video_folder = folder_cache[video_subfolder_key]
 
-            audio_album_key = f"audio|{album}"
-            if audio_album_key not in folder_cache:
-                folder_cache[audio_album_key] = get_or_create_folder(
-                    drive, audio_root, album
+            audio_subfolder_key = f"audio|{drive_subfolder}"
+            if audio_subfolder_key not in folder_cache:
+                folder_cache[audio_subfolder_key] = get_or_create_folder(
+                    drive, audio_root, drive_subfolder
                 )
-            audio_folder = folder_cache[audio_album_key]
+            audio_folder = folder_cache[audio_subfolder_key]
         else:
             video_folder = video_root
             audio_folder = audio_root
@@ -288,7 +340,7 @@ def main():
                 GDRIVE_HISTORY_PATH,
                 args.lang,
                 video_history,
-                make_history_key(path, album),
+                make_history_key(path, drive_subfolder),
                 file_id,
                 "Google Drive video",
                 section="video",
@@ -299,7 +351,7 @@ def main():
 
         audio_path = find_audio_for_mp4(path, audio_dir)
         if audio_path:
-            audio_key = make_history_key(audio_path, album)
+            audio_key = make_history_key(audio_path, drive_subfolder)
             if (
                 audio_key in audio_history
                 and audio_history[audio_key].get("status") == "uploaded"

@@ -57,6 +57,8 @@ The pipeline pauses three times:
 
 Done — MP4 videos are created and uploaded to YouTube.
 
+Add `--gdrive` to also upload MP4/MP3 backups to Google Drive. Video files go under `video/`; audio files go under `audio/`. `Selected Playlist` is the only field that can add a subfolder inside those base folders. If multiple playlists are selected, the Drive upload asks which single subfolder to use. If `Selected Playlist` is blank, no extra subfolder is used.
+
 Full reference: [docs/pipeline-youtube.md](docs/pipeline-youtube.md)
 
 ---

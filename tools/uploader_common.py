@@ -154,7 +154,9 @@ def parse_review(review_path: Path) -> dict[str, dict[str, Any]]:
         playlist_overview_m = re.search(
             r"\*\*Channel Playlist Overview:\*\*\s*(.*)", section
         )
-        selected_playlist_m = re.search(r"\*\*Selected Playlist:\*\*\s*(.*)", section)
+        selected_playlist_m = re.search(
+            r"^\*\*Selected Playlist:\*\*[^\S\r\n]*(.*)$", section, re.MULTILINE
+        )
         desc_m = re.search(
             r"\*\*Suggested Description:\*\*\s*(.*?)(?=\n\*\*Suggested Tags:|\Z)",
             section,
@@ -240,7 +242,7 @@ def parse_chapters_str(raw: str) -> list[tuple[float, str]]:
 
 def minutes_to_hms(mins: float) -> str:
     """Convert decimal minutes to M:SS or H:MM:SS format."""
-    total_s = int(round(mins * 60))
+    total_s = round(mins * 60)
     h, rem = divmod(total_s, 3600)
     m, s = divmod(rem, 60)
     if h > 0:

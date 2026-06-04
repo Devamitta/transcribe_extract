@@ -82,6 +82,35 @@ def test_parse_review_reads_playlist_fields(tmp_path: Path) -> None:
     assert parsed["talk"]["selected_playlists"] == ["Meditation"]
 
 
+def test_parse_review_keeps_blank_selected_playlist_empty(tmp_path: Path) -> None:
+    review_path = tmp_path / "review.md"
+    review_path.write_text(
+        "\n".join(
+            [
+                "# Review",
+                "",
+                "--- ",
+                "## Source: talk.md",
+                "**Recording Date:** 29-05-2026",
+                "**Publish Date:**",
+                "**Approved:** yes",
+                "**Media:** video",
+                "**Channel Playlist Overview:** Meditation",
+                "**Selected Playlist:**",
+                "**Suggested Title:** Test Title",
+                "**Suggested Description:** Test description.",
+                "",
+                "**Suggested Tags:** #dhamma",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    parsed = parse_review(review_path)
+
+    assert parsed["talk"]["selected_playlists"] == []
+
+
 def test_parse_review_splits_selected_playlists_on_commas_and_semicolons(
     tmp_path: Path,
 ) -> None:

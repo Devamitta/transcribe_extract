@@ -15,6 +15,7 @@ from tools.uploader_common import get_uploaded_history_entry, load_nested_histor
 
 LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 HISTORY_PATH = Path("output/youtube_history.json")
+_TITLE_SEGMENT_RE = re.compile(r"\s*(?:[|:;•·?!]+|[/\\]+|[–—]+)\s*|\s+-\s+|[,\.]\s+")
 
 
 @dataclasses.dataclass
@@ -163,6 +164,13 @@ def _wrap_text(
     return lines
 
 
+def _split_title_segments(text: str) -> list[str]:
+    """Split cover titles at common title separators that should force line breaks."""
+    return [
+        segment.strip() for segment in _TITLE_SEGMENT_RE.split(text) if segment.strip()
+    ]
+
+
 def add_text_overlay(img_path: Path, title: str, cfg: OverlayCfg) -> None:
     img = Image.open(img_path).convert("RGBA")
     w, h = img.size
@@ -195,7 +203,7 @@ def add_text_overlay(img_path: Path, title: str, cfg: OverlayCfg) -> None:
     title_sz = max(40, int(h * cfg.title_size_pct))
     f_title = _load_font(title_sz, cfg.font_path)
     lines: list[str] = []
-    for segment in [s.strip() for s in title_part.split("|")]:
+    for segment in _split_title_segments(title_part):
         lines.extend(_wrap_text(draw, segment, f_title, max_text_w))
 
     curr_y = int(h * 0.03)
