@@ -142,6 +142,7 @@ uv run python scripts/yt_chapters.py --lang ru|en [--folder <folder>] [--limit 5
 
 - **Placement Accuracy:** Transcribe with `--chunk-seconds 20` for best results.
 - **Chapter Spacing:** Enforces a minimum of 2 minutes between chapters. Talks shorter than 3 minutes are skipped entirely.
+- **LLM retries:** Empty responses, timeouts, and provider errors are retried for the same transcript up to 3 total attempts. If all attempts fail, `yt_chapters.py` exits non-zero so `yt_run.sh` stops at that file.
 
 ---
 

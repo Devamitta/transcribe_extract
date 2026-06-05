@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import concurrent.futures
 import re
 import time
 import unicodedata
@@ -17,6 +16,7 @@ from tools.provider import (
 )
 from tools.uploader_common import minutes_to_hms
 from tools.yt_chapters_merge import merge_close_chapters
+from tools.yt_chapters_retry import LLMRetryError, retry_llm_request
 from tools.yt_chapters_silence import (
     SILENCE_DEDUP_GAP_MINS,
     SILENCE_MIN_DURATION_S,
@@ -35,6 +35,8 @@ SNAP_TOLERANCE_MINS = 0.75
 SILENCE_SNAP_TOLERANCE_MINS = 0.75
 MIN_CHAPTER_GAP_MINS = 2.0
 MIN_CHAPTERS = 3
+MAX_LLM_ATTEMPTS = 3
+LLM_RETRY_DELAY_S = 3.0
 
 LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 
@@ -612,7 +614,9 @@ def main() -> None:
                 pr.no(f"    Transcript too short ({duration_mins:.1f} min < 3.0 min)")
                 continue
 
-            content_type = classify_content(transcript, folder_name, duration_mins)
+            content_type: ContentType = classify_content(
+                transcript, folder_name, duration_mins
+            )
             pr.green(f"    Content type: {content_type}")
 
             active_min_gap = 1.0 if content_type == "qa" else MIN_CHAPTER_GAP_MINS
@@ -631,23 +635,17 @@ def main() -> None:
                     chapter_names, args.lang
                 )
                 pr.bip()
-                try:
-                    response = generate_with_timeout(
+                response = retry_llm_request(
+                    lambda _attempt: generate_with_timeout(
                         contents=build_cacheable_contents(transcript),
                         system_instruction=instruction,
                         max_output_tokens=2048,
-                    )
-                except concurrent.futures.TimeoutError:
-                    pr.amber(f"    Timeout on {file_path.name} — skipping")
-                    if args.debug_log and debug_buffer:
-                        _flush_debug_log(file_path, debug_buffer)
-                    continue
-
-                if not response:
-                    pr.no("    Empty response from LLM")
-                    if args.debug_log and debug_buffer:
-                        _flush_debug_log(file_path, debug_buffer)
-                    continue
+                    ),
+                    file_name=file_path.name,
+                    action="chapter timestamping",
+                    max_attempts=MAX_LLM_ATTEMPTS,
+                    retry_delay_s=LLM_RETRY_DELAY_S,
+                )
 
                 dbg(f"LLM raw response: {response[:500]!r}")
                 chapters = parse_lm_response(
@@ -686,135 +684,120 @@ def main() -> None:
                 continue
 
             # --- Normal mode: generate chapters from scratch ---
-            try:
-                # Look for audio in audio/{folder_name}/
-                audio_path = audio_base / folder_name / (file_path.stem + ".mp3")
-                silence_pairs: list[tuple[float, float]] | None = None
-                if args.silence_mode and audio_path.exists():
-                    duration_mins = get_audio_duration(audio_path)
-                    raw_pairs = detect_silences(
-                        audio_path,
-                        noise_db=args.silence_noise_db,
-                        min_dur_s=args.silence_min_dur,
+            # Look for audio in audio/{folder_name}/
+            audio_path = audio_base / folder_name / (file_path.stem + ".mp3")
+            silence_pairs: list[tuple[float, float]] | None = None
+            if args.silence_mode and audio_path.exists():
+                duration_mins = get_audio_duration(audio_path)
+                raw_pairs = detect_silences(
+                    audio_path,
+                    noise_db=args.silence_noise_db,
+                    min_dur_s=args.silence_min_dur,
+                )
+                dbg(f"raw silences: {len(raw_pairs)} (min_dur={args.silence_min_dur}s)")
+
+                # Diagnostic pass: histogram of all silences >= 2s
+                if args.debug:
+                    diag_pairs = detect_silences(
+                        audio_path, noise_db=args.silence_noise_db, min_dur_s=2.0
                     )
-                    dbg(
-                        f"raw silences: {len(raw_pairs)} (min_dur={args.silence_min_dur}s)"
+                    dbg(f"all silences ≥2s: {len(diag_pairs)}")
+                    dbg(f"histogram: {silence_histogram(diag_pairs)}")
+                    for s_mid_min, s_dur in diag_pairs:
+                        dbg(f"  silence @ [{s_mid_min:.2f}min] dur={s_dur:.2f}s")
+
+                # Light dedup: collapse near-duplicate midpoints (< 0.3 min apart)
+                raw_midpoints = [m for m, _ in raw_pairs]
+                deduped_midpoints = prune_silence_anchors(
+                    raw_midpoints, SILENCE_DEDUP_GAP_MINS
+                )
+                dbg(f"after dedup: {len(deduped_midpoints)}")
+
+                # Snap each silence midpoint to the nearest transcript paragraph
+                snapped_times = snap_silences_to_transcript(
+                    deduped_midpoints, available
+                )
+                dbg(f"snapped to transcript: {len(snapped_times)}")
+
+                snap_pre_filter = len(snapped_times)
+
+                filtered_times: list[float] = []
+                for t in snapped_times:
+                    if t == 0.0:
+                        filtered_times.append(t)
+                        continue
+                    idx = next(
+                        (j for j, (ts, _) in enumerate(paragraphs) if ts == t),
+                        None,
                     )
+                    if idx is None or idx == 0:
+                        filtered_times.append(t)
+                        continue
+                    prev_txt = paragraphs[idx - 1][1]
+                    curr_txt = paragraphs[idx][1]
+                    ok, reason = is_sentence_boundary(prev_txt, curr_txt)
+                    if ok:
+                        filtered_times.append(t)
+                    else:
+                        if args.debug:
+                            pr.amber(f"    Dropping anchor [{t:.2f}] — {reason}")
+                snapped_times = filtered_times
+                dbg(f"after sentence-boundary filter: {len(snapped_times)}")
+                dbg(
+                    f"stage summary: raw={len(raw_pairs)} → dedup={len(deduped_midpoints)} "
+                    f"→ snap={snap_pre_filter} → post-sentence={len(snapped_times)}"
+                )
 
-                    # Diagnostic pass: histogram of all silences >= 2s
-                    if args.debug:
-                        diag_pairs = detect_silences(
-                            audio_path, noise_db=args.silence_noise_db, min_dur_s=2.0
-                        )
-                        dbg(f"all silences ≥2s: {len(diag_pairs)}")
-                        dbg(f"histogram: {silence_histogram(diag_pairs)}")
-                        for s_mid_min, s_dur in diag_pairs:
-                            dbg(f"  silence @ [{s_mid_min:.2f}min] dur={s_dur:.2f}s")
+                def nearest_dur(t: float, pairs: list[tuple[float, float]]) -> float:
+                    return min(pairs, key=lambda x: abs(x[0] - t))[1]
 
-                    # Light dedup: collapse near-duplicate midpoints (< 0.3 min apart)
-                    raw_midpoints = [m for m, _ in raw_pairs]
-                    deduped_midpoints = prune_silence_anchors(
-                        raw_midpoints, SILENCE_DEDUP_GAP_MINS
-                    )
-                    dbg(f"after dedup: {len(deduped_midpoints)}")
+                silence_pairs = [(t, nearest_dur(t, raw_pairs)) for t in snapped_times]
 
-                    # Snap each silence midpoint to the nearest transcript paragraph
-                    snapped_times = snap_silences_to_transcript(
-                        deduped_midpoints, available
-                    )
-                    dbg(f"snapped to transcript: {len(snapped_times)}")
+                pr.green(f"    Found {len(silence_pairs)} transcript-snapped anchors")
+                if len(silence_pairs) < MIN_CHAPTERS:
+                    pr.amber("    Insufficient silence anchors — using paragraphs")
+                    silence_pairs = None
+            elif args.silence_mode:
+                pr.amber(f"    Audio not found: {audio_path} — using paragraphs")
 
-                    snap_pre_filter = len(snapped_times)
+            if args.diagnose_only:
+                pr.amber("    --diagnose-only: skipping LLM call")
+                if args.debug_log and debug_buffer:
+                    _flush_debug_log(file_path, debug_buffer)
+                continue
 
-                    filtered_times: list[float] = []
-                    for t in snapped_times:
-                        if t == 0.0:
-                            filtered_times.append(t)
-                            continue
-                        idx = next(
-                            (j for j, (ts, _) in enumerate(paragraphs) if ts == t),
-                            None,
-                        )
-                        if idx is None or idx == 0:
-                            filtered_times.append(t)
-                            continue
-                        prev_txt = paragraphs[idx - 1][1]
-                        curr_txt = paragraphs[idx][1]
-                        ok, reason = is_sentence_boundary(prev_txt, curr_txt)
-                        if ok:
-                            filtered_times.append(t)
-                        else:
-                            if args.debug:
-                                pr.amber(f"    Dropping anchor [{t:.2f}] — {reason}")
-                    snapped_times = filtered_times
-                    dbg(f"after sentence-boundary filter: {len(snapped_times)}")
-                    dbg(
-                        f"stage summary: raw={len(raw_pairs)} → dedup={len(deduped_midpoints)} "
-                        f"→ snap={snap_pre_filter} → post-sentence={len(snapped_times)}"
-                    )
+            active_silence_times: list[float] | None = None
 
-                    def nearest_dur(
-                        t: float, pairs: list[tuple[float, float]]
-                    ) -> float:
-                        return min(pairs, key=lambda x: abs(x[0] - t))[1]
-
-                    silence_pairs = [
-                        (t, nearest_dur(t, raw_pairs)) for t in snapped_times
-                    ]
-
-                    pr.green(
-                        f"    Found {len(silence_pairs)} transcript-snapped anchors"
-                    )
-                    if len(silence_pairs) < MIN_CHAPTERS:
-                        pr.amber("    Insufficient silence anchors — using paragraphs")
-                        silence_pairs = None
-                elif args.silence_mode:
-                    pr.amber(f"    Audio not found: {audio_path} — using paragraphs")
-
-                if args.diagnose_only:
-                    pr.amber("    --diagnose-only: skipping LLM call")
-                    if args.debug_log and debug_buffer:
-                        _flush_debug_log(file_path, debug_buffer)
-                    continue
-
+            def generate_chapters_attempt(attempt: int) -> str | None:
+                nonlocal active_silence_times
+                use_silence = silence_pairs is not None and attempt == 1
+                if silence_pairs is not None and attempt == 2:
+                    pr.amber("    Retrying with paragraph anchors")
+                attempt_silence_pairs = silence_pairs if use_silence else None
                 active_silence_times = (
-                    [m for m, _ in silence_pairs] if silence_pairs else None
+                    [m for m, _ in attempt_silence_pairs]
+                    if attempt_silence_pairs
+                    else None
                 )
                 dbg(f"final anchors → LLM: {active_silence_times}")
-                pr.bip()
-                response = generate_chapters(
+                return generate_chapters(
                     transcript,
                     args.lang,
-                    silence_pairs,
+                    attempt_silence_pairs,
                     duration_mins,
                     content_type,
                     paragraphs=paragraphs,
                 )
-                if not response and silence_pairs is not None:
-                    pr.amber(
-                        "    Empty response in silence mode — retrying with paragraphs"
-                    )
-                    active_silence_times = None
-                    response = generate_chapters(
-                        transcript,
-                        args.lang,
-                        None,
-                        duration_mins,
-                        content_type,
-                        paragraphs=paragraphs,
-                    )
 
-                if not response:
-                    pr.no("    Empty response from LLM")
-                    if args.debug_log and debug_buffer:
-                        _flush_debug_log(file_path, debug_buffer)
-                    continue
-                dbg(f"LLM raw response: {response[:500]!r}")
-            except concurrent.futures.TimeoutError:
-                pr.amber(f"    Timeout on {file_path.name} — skipping")
-                if args.debug_log and debug_buffer:
-                    _flush_debug_log(file_path, debug_buffer)
-                continue
+            pr.bip()
+            response = retry_llm_request(
+                generate_chapters_attempt,
+                file_name=file_path.name,
+                action="chapter generation",
+                max_attempts=MAX_LLM_ATTEMPTS,
+                retry_delay_s=LLM_RETRY_DELAY_S,
+            )
+            dbg(f"LLM raw response: {response[:500]!r}")
 
             snap_anchors = active_silence_times if active_silence_times else available
             snap_tol = args.snap_tolerance
@@ -853,6 +836,11 @@ def main() -> None:
 
             if len(all_pending) > 1 and i < len(all_pending):
                 time.sleep(3)
+        except LLMRetryError as e:
+            pr.no(f"    {e}")
+            if args.debug_log and debug_buffer:
+                _flush_debug_log(file_path, debug_buffer)
+            raise SystemExit(1) from e
         except Exception as e:
             pr.no(f"    Error on {file_path.name}: {e}")
             if args.debug_log and debug_buffer:
