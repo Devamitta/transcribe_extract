@@ -191,6 +191,11 @@ def main():
         type=Path,
         help="Override source MP3 directory",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Upload even when Drive history marks the file uploaded.",
+    )
     args = parser.parse_args()
 
     env_key = gdrive_folder_env_key(args.lang)
@@ -236,7 +241,7 @@ def main():
             if meta:
                 drive_subfolder = resolve_drive_subfolder(meta, path.name)
                 key = make_history_key(path, drive_subfolder)
-                if (
+                if not args.force and (
                     key in video_history
                     and video_history[key].get("status") == "uploaded"
                 ):
@@ -263,6 +268,8 @@ def main():
         to_upload = all_to_upload
 
     pr.green(f"{len(to_upload)} video(s) queued for Google Drive upload.")
+
+    drive = get_google_client("drive", "v3")
 
     if args.dry_run:
         pr.green_title(
@@ -294,8 +301,6 @@ def main():
             else:
                 pr.white(f"  Audio:       not found in {audio_dir}")
         return
-
-    drive = get_google_client("drive", "v3")
     folder_cache: dict[str, str] = {}
 
     for path, drive_subfolder, meta, _in_dir, audio_dir in to_upload:

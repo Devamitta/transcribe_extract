@@ -71,7 +71,7 @@ if PROVIDER == "deepseek":
                     model=model,
                     max_output_tokens=max_output_tokens,
                     temperature=temperature,
-                    timeout=15,
+                    timeout=30,
                 )
             except Exception as e:
                 print(

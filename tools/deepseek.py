@@ -98,7 +98,7 @@ def generate_content(
     model: str,
     max_output_tokens: int = 32768,
     temperature: float = 0.1,
-    timeout: int = 15,
+    timeout: int = 30,
 ) -> str:
     """Generate content using DeepSeek API."""
     client = _get_client()

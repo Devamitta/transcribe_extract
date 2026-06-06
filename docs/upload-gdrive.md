@@ -21,11 +21,13 @@ Auth setup for uploading to Google Drive. Requires GCP project and OAuth consent
 
 Run a dry-run to trigger the browser OAuth flow:
 
-```bash
-uv run python scripts/gdrive_upload.py --lang ru --dry-run
+```fish
+uv run python scripts/gdrive_upload.py --lang ru --dry-run --force --limit 1
 ```
 
 Browser opens → log in as your **Drive Account** → creates `gdrive_token.json`.
+
+> `--force --limit 1` is needed when upload history already exists; without it the script exits before reaching auth.
 
 Drive upload stores media under `video/` and `audio/` in the configured language root. Video files always go under `video/`; audio files always go under `audio/`. `**Selected Playlist:**` is the only field that can add a subfolder inside those base folders. When one playlist is selected, that playlist name becomes the matching subfolder in both places. When multiple playlists are selected, Drive asks which single subfolder to use. If `Selected Playlist` is blank, no extra subfolder is used.
 
