@@ -21,6 +21,9 @@ git stash pop
 EXIT_CODE=$?
 [ $EXIT_CODE -ne 0 ] && exit $EXIT_CODE
 
+echo 'Updating dependencies'
+uv sync --all-groups
+
 echo 'Running: ./yt_run.sh --name "Ariyadhammika Bhikkhu" --video-mode'
 ./yt_run.sh --name "Ariyadhammika Bhikkhu" --video-mode
 exit $?

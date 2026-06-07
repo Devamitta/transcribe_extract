@@ -105,6 +105,95 @@ def test_process_files_does_not_fetch_playlists_when_all_sources_done(
     process_files([transcript], "en", str(review), "english")
 
 
+@pytest.mark.parametrize(
+    "speaker_name",
+    [
+        "Bhikkhu Devamitta",
+        "Бхиккху Дэвамитта",
+        "Ariyadhammika Bhikkhu",
+    ],
+)
+def test_process_files_does_not_append_no_suffix_speaker_names_to_suggested_title(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    speaker_name: str,
+) -> None:
+    transcript = tmp_path / "talk.md"
+    transcript.write_text("Transcript body.", encoding="utf-8")
+    review = tmp_path / "review.md"
+
+    monkeypatch.setattr(yt_metadata, "get_working_key", lambda: "key")
+    monkeypatch.setattr(yt_metadata, "get_playlist_overview", lambda lang, dry_run: "")
+    monkeypatch.setattr(yt_metadata, "load_nested_history", lambda path, lang: {})
+    monkeypatch.setattr(
+        yt_metadata,
+        "generate_metadata",
+        lambda text, lang, speaker_name=None, **kwargs: (
+            "TITLE: Clear Seeing\nDESCRIPTION: A clear description.\nTAGS: #dhamma"
+        ),
+    )
+
+    process_files(
+        [transcript],
+        "en",
+        str(review),
+        "english",
+        speaker_name=speaker_name,
+    )
+
+    content = review.read_text(encoding="utf-8")
+    assert "**Suggested Title:** Clear Seeing\n" in content
+    assert f"Clear Seeing | {speaker_name}" not in content
+
+
+def test_process_files_appends_custom_speaker_name_to_suggested_title(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    transcript = tmp_path / "talk.md"
+    transcript.write_text("Transcript body.", encoding="utf-8")
+    review = tmp_path / "review.md"
+
+    monkeypatch.setattr(yt_metadata, "get_working_key", lambda: "key")
+    monkeypatch.setattr(yt_metadata, "get_playlist_overview", lambda lang, dry_run: "")
+    monkeypatch.setattr(yt_metadata, "load_nested_history", lambda path, lang: {})
+    monkeypatch.setattr(
+        yt_metadata,
+        "generate_metadata",
+        lambda text, lang, speaker_name=None, **kwargs: (
+            "TITLE: Clear Seeing\nDESCRIPTION: A clear description.\nTAGS: #dhamma"
+        ),
+    )
+
+    process_files(
+        [transcript],
+        "en",
+        str(review),
+        "english",
+        speaker_name="Tissa Thero",
+    )
+
+    content = review.read_text(encoding="utf-8")
+    assert "**Suggested Title:** Clear Seeing | Tissa Thero\n" in content
+
+
+def test_dry_run_entry_does_not_append_no_suffix_speaker_name(tmp_path: Path) -> None:
+    transcript = tmp_path / "dummy.md"
+    transcript.write_text("Transcript body.", encoding="utf-8")
+    review = tmp_path / "review.md"
+
+    yt_metadata._write_dry_run_entry(
+        review,
+        transcript,
+        "en",
+        "video",
+        "Ariyadhammika Bhikkhu",
+    )
+
+    content = review.read_text(encoding="utf-8")
+    assert "**Suggested Title:** [DRY_RUN] dummy\n" in content
+    assert "Ariyadhammika Bhikkhu" not in content
+
+
 def test_process_files_removes_inferred_part_one_when_source_name_lacks_part(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

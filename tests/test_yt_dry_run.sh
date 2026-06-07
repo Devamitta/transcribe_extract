@@ -190,7 +190,7 @@ assert_contains "folder stub created" "$OUTPUT" "→ [DRY RUN] Stub created: inp
 assert_contains "folder audio ingest path" "$OUTPUT" "input/english/dummy.mp3 → output/audio/english/dummy.mp3"
 assert_contains "folder transcript path" "$OUTPUT" "output/audio/english/dummy.mp3 → output/transcribed/english/dummy.md"
 assert_contains "folder upload sees generated mp4 dir" "$OUTPUT" "File:           output/video/english/2000-01-01 - [DRY_RUN]"
-assert_contains "folder upload sees generated mp4 name" "$OUTPUT" "dummy - Bhikkhu"
+assert_contains "folder upload sees generated mp4 name" "$OUTPUT" "dummy.mp4"
 assert_file_absent "folder input stub cleaned" input/english/dummy.mp3
 assert_not_contains "folder dry-run review entry cleaned" "$(cat reviews/english_review.md 2>/dev/null || true)" "[DRY_RUN]"
 
@@ -207,7 +207,7 @@ assert_contains "video ingest output path" "$OUTPUT" "→ video: output/video/en
 assert_not_contains "video mode skips audio video generation" "$OUTPUT" "→ Starting: yt_video.py"
 assert_not_contains "video mode skips thumbnail generation without cover" "$OUTPUT" "→ Starting: yt_image_gen.py"
 assert_contains "video upload sees source mp4 dir" "$OUTPUT" "File:           output/video/english/2000-01-01 - [DRY_RUN]"
-assert_contains "video upload sees source mp4 name" "$OUTPUT" "dummy - Bhikkhu Devamitta.mp4"
+assert_contains "video upload sees source mp4 name" "$OUTPUT" "dummy.mp4"
 assert_file_absent "video input stub cleaned" input/english/dummy.mp4
 
 run_test "video mode with cover"
@@ -215,7 +215,7 @@ run_pipeline --lang en --video-mode --cover --dry-run dummy.mp4
 assert_contains "video cover mode runs thumbnail generation" "$OUTPUT" "→ Starting: yt_image_gen.py"
 assert_contains "video cover mode runs cover generation" "$OUTPUT" "→ Starting: yt_cover_gen.py"
 assert_contains "video cover output dir" "$OUTPUT" "output/covers/english/2000-01-01 - [DRY_RUN]"
-assert_contains "video cover output name" "$OUTPUT" "dummy - Bhikkhu Devamitta.jpg"
+assert_contains "video cover output name" "$OUTPUT" "dummy.jpg"
 assert_not_contains "video cover mode still skips audio video generation" "$OUTPUT" "→ Starting: yt_video.py"
 
 run_test "image ingest cover dry-run"
@@ -250,7 +250,7 @@ assert_not_contains "from-export does not use folder as playlist" "$OUTPUT" "Pla
 run_test "ariyadhammika video mode"
 run_pipeline --name "Ariyadhammika Bhikkhu" --video-mode --dry-run dummy.mp4
 assert_contains "ariyadhammika cleanup runs" "$OUTPUT" "→ [DRY RUN] Cleaning up stubs..."
-assert_contains "ariyadhammika name reaches output path" "$OUTPUT" "Ariyadhammika Bhikkhu.mp4"
+assert_contains "ariyadhammika keeps default title path" "$OUTPUT" "File:           output/video/2000-01-01 - [DRY_RUN] dummy.mp4"
 assert_not_contains "ariyadhammika video mode skips audio video generation" "$OUTPUT" "→ Starting: yt_video.py"
 
 run_test "force video mode"

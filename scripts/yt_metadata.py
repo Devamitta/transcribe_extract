@@ -26,6 +26,10 @@ DEFAULT_SPEAKER: dict[str, str] = {
     "en": "Bhikkhu Devamitta",
     "ru": "Бхиккху Дэвамитта",
 }
+TITLE_SUFFIX_EXEMPT_SPEAKERS: frozenset[str] = frozenset(
+    unicodedata.normalize("NFC", name).casefold()
+    for name in (*DEFAULT_SPEAKER.values(), "Ariyadhammika Bhikkhu")
+)
 PART_ONE_TITLE_RE = re.compile(r"\s*\|\s*(?:Part|Часть)\s+0*1\s*$", re.IGNORECASE)
 PART_ONE_SOURCE_RE = re.compile(
     r"\b(?:part|lecture|часть|лекция)[\s_-]*0*1\b",
@@ -37,6 +41,27 @@ def _name_in_stem(stem: str, name: str) -> bool:
     """True if any word from name appears anywhere in stem (case-insensitive)."""
     stem_lower = stem.lower()
     return any(word.lower() in stem_lower for word in name.split())
+
+
+def _is_title_suffix_exempt_speaker(speaker_name: str | None) -> bool:
+    """True for configured names that should not be appended to generated titles."""
+    if not speaker_name:
+        return False
+    normalized_name = unicodedata.normalize("NFC", speaker_name.strip()).casefold()
+    return normalized_name in TITLE_SUFFIX_EXEMPT_SPEAKERS
+
+
+def _speaker_title_suffix(
+    speaker_name: str | None,
+    *,
+    append_speaker: bool,
+) -> str:
+    """Return the suffix to append to suggested titles for custom speaker names."""
+    if not (append_speaker and speaker_name):
+        return ""
+    if _is_title_suffix_exempt_speaker(speaker_name):
+        return ""
+    return f" | {speaker_name}"
 
 
 def _date_from_stem(stem: str) -> str:
@@ -160,7 +185,7 @@ FORMAT FOR A STANDALONE TALK:
 Additional rules for both formats:
 - Do NOT use generic openers: "Беседа о...", "Лекция:", "Обсуждение...".
 - Avoid vague spiritual marketing language: "Глубокий", "Удивительный", "Невероятный".
-- Do NOT include the speaker name — it will be added automatically.
+- Do NOT include the speaker name in the generated title.
 - Output in Russian.
 
 DESCRIPTION REQUIREMENTS:
@@ -219,7 +244,7 @@ FORMAT FOR A STANDALONE TALK:
 Additional rules for both formats:
 - Do NOT use generic openers: "Talk about...", "Lecture on:", "Discussion regarding...".
 - Avoid vague spiritual marketing language: "Deep", "Amazing", "Incredible".
-- Do NOT include the speaker name — it will be added automatically.
+- Do NOT include the speaker name in the generated title.
 - Output in English.
 
 DESCRIPTION REQUIREMENTS:
@@ -278,13 +303,12 @@ def _write_dry_run_entry(
 ) -> None:
     """Writes a clearly-marked stub entry to the review file for pipeline dry-run."""
     nfc_name = unicodedata.normalize("NFC", file_path.name)
-    speaker_suffix = ""
-    if (
-        append_speaker
-        and speaker_name
-        and not _name_in_stem(file_path.stem, speaker_name)
-    ):
-        speaker_suffix = f" | {speaker_name}"
+    speaker_suffix = _speaker_title_suffix(
+        speaker_name,
+        append_speaker=append_speaker,
+    )
+    if speaker_name and speaker_suffix and _name_in_stem(file_path.stem, speaker_name):
+        speaker_suffix = ""
     title = f"[DRY_RUN] {file_path.stem}{speaker_suffix}"
     dry_run_desc = "[DRY_RUN] Dry run pipeline trace."
     if bio_link:
@@ -394,7 +418,10 @@ def process_files(
     pr.green(f"[{folder_name}] Processing {len(pending)} files → '{output_file}'.")
     total = len(pending)
 
-    speaker_suffix = f" | {speaker_name}" if (append_speaker and speaker_name) else ""
+    speaker_suffix = _speaker_title_suffix(
+        speaker_name,
+        append_speaker=append_speaker,
+    )
 
     for i, file_path in enumerate(pending, 1):
         pr.green(f"  {i}/{total} '{file_path.name}'...")

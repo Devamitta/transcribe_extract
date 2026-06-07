@@ -48,7 +48,7 @@ Drop MP3 or MP4 files into `input/` and run:
 ./yt_run.sh --name "Tissa Thero"
 ```
 
-`--name` sets the speaker name used in titles and metadata.
+`--name` sets the speaker name used for metadata context and artist metadata. Custom names are appended to generated review titles, except configured no-suffix names such as Ariyadhammika Bhikkhu.
 
 The pipeline pauses three times:
 1. Optionally add chapter names to the review file. Press Enter to continue.
