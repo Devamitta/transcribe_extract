@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from tools.uploader_common import (
+    execute_resumable_upload,
     is_uploaded_in_history,
     list_channel_playlists,
     parse_review,
@@ -50,6 +51,49 @@ class FakeYouTube:
 
     def playlists(self) -> FakePlaylistsResource:
         return self.playlists_resource
+
+
+class FakeUploadStatus:
+    def __init__(self, value: float) -> None:
+        self.value = value
+
+    def progress(self) -> float:
+        return self.value
+
+
+class FakeResumableUploadRequest:
+    def __init__(
+        self, chunks: list[tuple[float | None, dict[str, Any] | None]]
+    ) -> None:
+        self.chunks = chunks
+        self.index = 0
+
+    def next_chunk(self) -> tuple[FakeUploadStatus | None, dict[str, Any] | None]:
+        progress, response = self.chunks[self.index]
+        self.index += 1
+        status = FakeUploadStatus(progress) if progress is not None else None
+        return status, response
+
+
+def test_execute_resumable_upload_reports_percentages_and_returns_response() -> None:
+    request = FakeResumableUploadRequest(
+        [
+            (0.1, None),
+            (0.1, None),
+            (0.5, None),
+            (None, {"id": "uploaded_1"}),
+        ]
+    )
+    messages: list[str] = []
+
+    response = execute_resumable_upload(request, "Upload progress", messages.append)
+
+    assert response == {"id": "uploaded_1"}
+    assert messages == [
+        "Upload progress: 10%",
+        "Upload progress: 50%",
+        "Upload progress: 100%",
+    ]
 
 
 def test_parse_review_reads_playlist_fields(tmp_path: Path) -> None:

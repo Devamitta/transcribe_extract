@@ -4,9 +4,10 @@ import json
 import pickle
 import re
 import unicodedata
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from google.auth.transport.requests import Request
 from google.auth.exceptions import RefreshError
@@ -17,6 +18,49 @@ from googleapiclient.errors import HttpError
 
 from tools.printer import printer as pr
 
+UPLOAD_CHUNK_SIZE_BYTES = 32 * 1024 * 1024
+
+
+class ResumableUploadStatus(Protocol):
+    """Progress status returned by googleapiclient resumable upload chunks."""
+
+    def progress(self) -> float:
+        """Return the completed upload fraction from 0.0 to 1.0."""
+        ...
+
+
+class ResumableUploadRequest(Protocol):
+    """Request object returned by googleapiclient resumable upload methods."""
+
+    def next_chunk(self) -> tuple[ResumableUploadStatus | None, dict[str, Any] | None]:
+        """Upload the next chunk and return progress plus the final response."""
+        ...
+
+
+def execute_resumable_upload(
+    request: ResumableUploadRequest,
+    progress_label: str,
+    progress_output: Callable[[str], None] = pr.white,
+) -> dict[str, Any]:
+    """Run a resumable upload request and print percentage progress."""
+    response: dict[str, Any] | None = None
+    last_percent = -1
+
+    while response is None:
+        status, response = request.next_chunk()
+        if status is None:
+            continue
+
+        percent = min(100, max(0, int(status.progress() * 100)))
+        if percent != last_percent:
+            progress_output(f"{progress_label}: {percent}%")
+            last_percent = percent
+
+    if last_percent < 100:
+        progress_output(f"{progress_label}: 100%")
+
+    return response
+
 
 def get_google_client(
     service: str,
@@ -24,7 +68,7 @@ def get_google_client(
     token_path: Path,
     scopes: list[str],
     client_secret: Path = Path("client_secret.json"),
-):
+) -> Any:
     """Authenticates and returns a Google API client using OAuth2 with token caching."""
     creds: Credentials | None = None
     if token_path.exists():

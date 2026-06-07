@@ -5,6 +5,7 @@ import os
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -16,6 +17,7 @@ from tools.uploader_common import (
     build_description,
     check_api_probe,
     check_token_local,
+    execute_resumable_upload,
     find_mp4s_with_album,
     get_google_client,
     list_channel_playlists,
@@ -27,6 +29,7 @@ from tools.uploader_common import (
     parse_tags_for_api,
     save_nested_history,
     is_uploaded_in_history,
+    UPLOAD_CHUNK_SIZE_BYTES,
 )
 
 
@@ -47,7 +50,7 @@ LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 
 
 def add_video_to_selected_playlists(
-    youtube,
+    youtube: Any,
     video_id: str,
     selected_playlists: list[str],
     playlist_ids: dict[str, str],
@@ -113,7 +116,7 @@ def compute_publish_at(publish_date: str) -> str:
 
 
 def upload_video(
-    youtube,
+    youtube: Any,
     mp4_path: Path,
     title: str,
     description: str,
@@ -124,14 +127,19 @@ def upload_video(
     publish_at: str | None = None,
 ) -> str:
     """Uploads a single video to YouTube."""
-    media = MediaFileUpload(str(mp4_path), mimetype="video/mp4", resumable=True)
-    status_body: dict = {
+    media = MediaFileUpload(
+        str(mp4_path),
+        mimetype="video/mp4",
+        chunksize=UPLOAD_CHUNK_SIZE_BYTES,
+        resumable=True,
+    )
+    status_body: dict[str, Any] = {
         "privacyStatus": privacy_status,
         "selfDeclaredMadeForKids": False,
     }
     if publish_at:
         status_body["publishAt"] = publish_at
-    body: dict = {
+    body: dict[str, Any] = {
         "snippet": {
             "title": title,
             "description": description,
@@ -148,13 +156,15 @@ def upload_video(
         body["recordingDetails"] = {"recordingDate": iso_date}
         parts = "snippet,status,recordingDetails"
 
-    response = (
-        youtube.videos().insert(part=parts, body=body, media_body=media).execute()
+    request = youtube.videos().insert(part=parts, body=body, media_body=media)
+    response = execute_resumable_upload(
+        request,
+        "    Video upload progress",
     )
     return response["id"]
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Batch-uploads Dhamma MP4s to YouTube with playlist and history support."
     )
@@ -400,12 +410,19 @@ def main():
             cover_path = Path("output/covers") / folder_name / f"{cover_stem}.jpg"
             if cover_path.exists():
                 try:
-                    youtube.thumbnails().set(
+                    thumbnail_request = youtube.thumbnails().set(
                         videoId=video_id,
                         media_body=MediaFileUpload(
-                            str(cover_path), mimetype="image/jpeg", resumable=True
+                            str(cover_path),
+                            mimetype="image/jpeg",
+                            chunksize=UPLOAD_CHUNK_SIZE_BYTES,
+                            resumable=True,
                         ),
-                    ).execute()
+                    )
+                    execute_resumable_upload(
+                        thumbnail_request,
+                        "    Thumbnail upload progress",
+                    )
                     pr.yes(f"    Thumbnail set: {cover_path.name}")
                     thumb_was_set = True
                 except Exception as thumb_err:

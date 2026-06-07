@@ -18,8 +18,10 @@ from googleapiclient.http import MediaFileUpload
 from tools.printer import printer as pr
 from tools.source_scope import path_matches_filter, read_source_filter
 from tools.uploader_common import (
+    UPLOAD_CHUNK_SIZE_BYTES,
     build_description,
     confirm_and_save_nested,
+    execute_resumable_upload,
     find_audio_for_mp4,
     find_mp4s_with_album,
     gdrive_folder_env_key,
@@ -82,7 +84,7 @@ def resolve_drive_subfolder(
     return None
 
 
-def get_google_client(service: str, version: str):
+def get_google_client(service: str, version: str) -> Any:
     """Authenticates and returns a Google API client."""
     creds: Credentials | None = None
     if TOKEN_PATH.exists():
@@ -107,7 +109,7 @@ def get_google_client(service: str, version: str):
     return build(service, version, credentials=creds)
 
 
-def get_or_create_folder(drive, parent_id: str, name: str) -> str:
+def get_or_create_folder(drive: Any, parent_id: str, name: str) -> str:
     """Finds or creates a Google Drive folder by name."""
     query = (
         f"name='{name}' and mimeType='{DRIVE_FOLDER_MIME}'"
@@ -130,32 +132,35 @@ def get_or_create_folder(drive, parent_id: str, name: str) -> str:
 
 
 def upload_file(
-    drive,
+    drive: Any,
     file_path: Path,
     folder_id: str,
     filename: str,
     description: str,
     mimetype: str = "video/mp4",
+    progress_label: str = "    Drive upload progress",
 ) -> str:
     """Uploads a single file to Google Drive."""
-    media = MediaFileUpload(str(file_path), mimetype=mimetype, resumable=True)
-    response = (
-        drive.files()
-        .create(
-            body={
-                "name": filename,
-                "parents": [folder_id],
-                "description": description,
-            },
-            media_body=media,
-            fields="id",
-        )
-        .execute()
+    media = MediaFileUpload(
+        str(file_path),
+        mimetype=mimetype,
+        chunksize=UPLOAD_CHUNK_SIZE_BYTES,
+        resumable=True,
     )
+    request = drive.files().create(
+        body={
+            "name": filename,
+            "parents": [folder_id],
+            "description": description,
+        },
+        media_body=media,
+        fields="id",
+    )
+    response = execute_resumable_upload(request, progress_label)
     return response["id"]
 
 
-def main():
+def main() -> None:
     load_dotenv()
 
     parser = argparse.ArgumentParser(
@@ -352,7 +357,14 @@ def main():
         pr.bip()
 
         try:
-            file_id = upload_file(drive, path, video_folder, path.name, desc)
+            file_id = upload_file(
+                drive,
+                path,
+                video_folder,
+                path.name,
+                desc,
+                progress_label="    Drive video upload progress",
+            )
             confirm_and_save_nested(
                 GDRIVE_HISTORY_PATH,
                 args.lang,
@@ -385,6 +397,7 @@ def main():
                         audio_path.name,
                         desc,
                         "audio/mpeg",
+                        progress_label="    Drive audio upload progress",
                     )
                     confirm_and_save_nested(
                         GDRIVE_HISTORY_PATH,
