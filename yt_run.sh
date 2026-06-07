@@ -349,7 +349,8 @@ if [ "$COVER" -eq 1 ]; then
     echo "COVERS GENERATED."
     COVER_DIR="output/covers${EFFECTIVE_FOLDER:+/$EFFECTIVE_FOLDER}"
     echo "Review covers in $COVER_DIR"
-    echo "Press Enter to continue, or 'r' to re-run cover generation."
+    echo "To change cover text, edit **Suggested Title:** in reviews/${LANG_FOLDER}_review.md."
+    echo "Press Enter to continue, or 'r' to remove generated covers, sync titles, and re-run cover generation."
     echo "----------------------------------------------------------------"
     if [ "$DRY_RUN" -eq 1 ]; then rm -f "$COVER_LOG"; break; fi
     read -r user_input
@@ -358,6 +359,13 @@ if [ "$COVER" -eq 1 ]; then
       break
     fi
     confirm_and_remove_log "$COVER_LOG"
+    echo "→ Starting: yt_export.py (--sync-titles)"
+    uv run python scripts/yt_export.py --lang "$LANG" \
+      --folder "$EFFECTIVE_FOLDER" \
+      ${NAME:+--name "$NAME"} \
+      --created-log "$EXPORT_LOG" \
+      --sync-titles \
+      $EXPORT_FLAGS $LIMIT_FLAG $DRY_RUN_FLAG $FORCE_FLAG
     rm -f "$COVER_LOG"
   done
 fi

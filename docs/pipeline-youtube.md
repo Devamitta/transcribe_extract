@@ -163,11 +163,12 @@ The export script only processes entries where Recording Dates are filled and `A
 Renames source files and embeds reviewed metadata **in-place**.
 
 ```bash
-uv run python scripts/yt_export.py --lang ru|en [--folder <folder>] [--name NAME] [--video-mode]
+uv run python scripts/yt_export.py --lang ru|en [--folder <folder>] [--name NAME] [--video-mode] [--sync-titles]
 ```
 
 - **Rename:** Renames files in `output/audio/` and `output/transcribed/` to `YYYY-MM-DD - Suggested Title`. Also renames matching .jpg files in output/thumbnails/<folder>/ and output/covers/<folder>/ to keep image filenames in sync.
 - **Embed:** Embeds metadata into the `.mp3` (and `.mp4` in video mode) using ffmpeg and a temporary file.
+- **Title sync:** `--sync-titles` only reruns the rename/source-line sync from the review file and skips ffmpeg metadata embedding. Use it after editing `**Suggested Title:**` on already-exported entries.
 
 ### 3.2: Generate AI Thumbnails (Audio Mode; or Video Mode with `--cover`)
 Uses reviewed metadata to generate photorealistic base thumbnails via FLUX.
@@ -194,7 +195,7 @@ uv run python scripts/yt_cover_gen.py --lang ru|en [--folder <folder>] [--limit 
 - `--list-fonts` generates paginated font preview sheets (`temp/font_preview_<lang>_01.png`, …) and an index (`temp/font_list_<lang>.md`), then exits — useful for picking a font before the first run.
 - Font and overlay parameters are configurable via `.env` (`COVER_FONT_PATH`, `COVER_RU_FONT_PATH`, `COVER_GRADIENT_HEIGHT_PCT`, etc.); all have sensible defaults and the script works with no `.env` entries.
 
-The pipeline pauses after this step for visual review. Pressing `r` lists the files created in this run, asks for confirmation, deletes them, then reruns the generator. Pressing Enter continues to the next stage.
+The pipeline pauses after this step for visual review. If you edit `**Suggested Title:**` in the review file or want to regenerate the cover overlay for another reason, pressing `r` lists the covers created in this run, asks for confirmation, deletes them, runs `yt_export.py --sync-titles`, then reruns cover generation. Existing covers that were not removed are skipped. Pressing Enter continues to the next stage.
 
 ### 3.4: Create MP4 Videos (Audio Mode only)
 Combines thumbnails with MP3 audio files.

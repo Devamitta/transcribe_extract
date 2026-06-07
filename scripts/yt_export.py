@@ -297,6 +297,15 @@ def sort_review_file(review_file: Path, dry_run: bool) -> None:
     pr.green("  Sorted review file by recording date")
 
 
+def write_created_log(created_log: Path | None, paths: list[Path]) -> None:
+    """Write paths that downstream upload steps should process."""
+    if created_log and paths:
+        created_log.write_text(
+            "\n".join(str(path) for path in paths) + "\n",
+            encoding="utf-8",
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Rename source files and export approved audio or video with metadata."
@@ -331,6 +340,11 @@ def main() -> None:
         "--dry-run",
         action="store_true",
         help="Preview renames without making changes; skips export.",
+    )
+    parser.add_argument(
+        "--sync-titles",
+        action="store_true",
+        help="Only sync filenames from review titles and update Source lines; skip ffmpeg metadata export.",
     )
     parser.add_argument(
         "--limit",
@@ -417,6 +431,9 @@ def main() -> None:
             f"  Entries: {total} total | {with_date} with date | {approved} approved"
         )
 
+        if args.sync_titles:
+            continue
+
         if args.dry_run:
             continue
 
@@ -469,6 +486,10 @@ def main() -> None:
     if args.limit > 0:
         all_items = all_items[: args.limit]
 
+    if args.sync_titles:
+        write_created_log(args.created_log, all_renamed_media)
+        return
+
     history = load_nested_history(HISTORY_PATH, args.lang or "en")
     if not args.force:
         all_items = [
@@ -479,11 +500,7 @@ def main() -> None:
             )
         ]
 
-    if args.created_log and all_renamed_media:
-        args.created_log.write_text(
-            "\n".join(str(p) for p in all_renamed_media) + "\n",
-            encoding="utf-8",
-        )
+    write_created_log(args.created_log, all_renamed_media)
 
     if not all_items:
         if not args.dry_run:
