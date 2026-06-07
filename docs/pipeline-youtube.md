@@ -180,17 +180,7 @@ Output: `output/thumbnails/<folder>/`
 
 The pipeline pauses here for visual review. Pressing `r` lists the files created in this run, asks for confirmation, deletes them, then reruns the generator. Pressing Enter continues.
 
-### 3.3: Create MP4 Videos (Audio Mode only)
-Combines thumbnails with MP3 audio files.
-
-```bash
-uv run python scripts/yt_video.py --lang ru|en [--folder <folder>]
-```
-
-- **Input:** `output/thumbnails/<folder>/` and `output/audio/<folder>/`
-- **Output:** `output/video/<folder>/`
-
-### 3.4: Generate Cover Thumbnails (Video Mode + `--cover` only)
+### 3.3: Generate Cover Thumbnails (`--cover` only)
 Composites a text overlay (title, teacher name, AI-generated highlights) onto the base thumbnail to create a YouTube cover image.
 
 ```bash
@@ -199,12 +189,22 @@ uv run python scripts/yt_cover_gen.py --lang ru|en [--folder <folder>] [--limit 
 
 - **Input:** `output/thumbnails/<folder>/` (FLUX images from 3.2)
 - **Output:** `output/covers/<folder>/`
-- Only processes entries where `**Media:** video` is set in the review file.
+- Processes approved entries from the review file.
 - Cover titles force new lines at common separators such as `:`, `|`, `/`, `;`, `,`, `.`, `?`, `!`, bullets, and spaced dashes.
 - `--list-fonts` generates paginated font preview sheets (`temp/font_preview_<lang>_01.png`, …) and an index (`temp/font_list_<lang>.md`), then exits — useful for picking a font before the first run.
 - Font and overlay parameters are configurable via `.env` (`COVER_FONT_PATH`, `COVER_RU_FONT_PATH`, `COVER_GRADIENT_HEIGHT_PCT`, etc.); all have sensible defaults and the script works with no `.env` entries.
 
-The pipeline pauses after this step for visual review. Pressing `r` lists the files created in this run, asks for confirmation, deletes them, then reruns the generator. Pressing Enter continues to upload.
+The pipeline pauses after this step for visual review. Pressing `r` lists the files created in this run, asks for confirmation, deletes them, then reruns the generator. Pressing Enter continues to the next stage.
+
+### 3.4: Create MP4 Videos (Audio Mode only)
+Combines thumbnails with MP3 audio files.
+
+```bash
+uv run python scripts/yt_video.py --lang ru|en [--folder <folder>]
+```
+
+- **Input:** `output/thumbnails/<folder>/` and `output/audio/<folder>/`
+- **Output:** `output/video/<folder>/`
 
 ### 3.4: Generate Cover Thumbnails (Video Mode + `--cover` only)
 Composites a text overlay (title, teacher name, AI-generated highlights) onto the base thumbnail to create a YouTube cover image.

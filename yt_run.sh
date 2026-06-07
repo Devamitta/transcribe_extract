@@ -336,13 +336,6 @@ if [ "$VIDEO_MODE" -eq 0 ] || [ "$COVER" -eq 1 ]; then
   done
 fi
 
-if [ "$VIDEO_MODE" -eq 0 ]; then
-  # 8. Create MP4 videos → output/video/
-  echo "→ Starting: yt_video.py"
-  uv run python scripts/yt_video.py --lang "$LANG" \
-    --folder "$EFFECTIVE_FOLDER" $LIMIT_FLAG $DRY_RUN_FLAG $FORCE_FLAG
-fi
-
 if [ "$COVER" -eq 1 ]; then
   # 7b. Cover thumbnails — only when --cover is passed (audio or video mode)
   while true; do
@@ -367,6 +360,13 @@ if [ "$COVER" -eq 1 ]; then
     confirm_and_remove_log "$COVER_LOG"
     rm -f "$COVER_LOG"
   done
+fi
+
+if [ "$VIDEO_MODE" -eq 0 ]; then
+  # 8. Create MP4 videos → output/video/
+  echo "→ Starting: yt_video.py"
+  uv run python scripts/yt_video.py --lang "$LANG" \
+    --folder "$EFFECTIVE_FOLDER" $LIMIT_FLAG $DRY_RUN_FLAG $FORCE_FLAG
 fi
 
 # 9. Upload to YouTube (from output/video/)
