@@ -28,7 +28,7 @@ class ProviderCachePromptTests(unittest.TestCase):
         text = "extract me"
 
         with patch(
-            "scripts.extract_dhamma.generate_content", return_value="ok"
+            "scripts.extract_dhamma.generate_with_timeout", return_value="ok"
         ) as mock_call:
             extract_dhamma.extract_dhamma_points(text)
 
@@ -40,7 +40,7 @@ class ProviderCachePromptTests(unittest.TestCase):
         text = "polish me"
 
         with patch(
-            "scripts.polish_extract.generate_content", return_value="ok"
+            "scripts.polish_extract.generate_with_timeout", return_value="ok"
         ) as mock_call:
             polish_extract.polish_text(text)
 
@@ -52,7 +52,7 @@ class ProviderCachePromptTests(unittest.TestCase):
         text = "semantic chunk"
 
         with patch(
-            "scripts.evaluate_semantic.generate_content", return_value="[]"
+            "scripts.evaluate_semantic.generate_with_timeout", return_value="[]"
         ) as mock_call:
             evaluate_semantic.evaluate_chunk(text)
 
@@ -64,7 +64,7 @@ class ProviderCachePromptTests(unittest.TestCase):
         text = "pali chunk"
 
         with patch(
-            "scripts.correct_pali.generate_content", return_value="[]"
+            "scripts.correct_pali.generate_with_timeout", return_value="[]"
         ) as mock_call:
             correct_pali.correct_pali_transcription(text, Path("talk.md"))
 
@@ -76,7 +76,7 @@ class ProviderCachePromptTests(unittest.TestCase):
         text = "metadata body"
 
         with patch(
-            "scripts.yt_metadata.generate_content", return_value="ok"
+            "scripts.yt_metadata.generate_with_timeout", return_value="ok"
         ) as mock_call:
             yt_metadata.generate_metadata(text, "en")
 

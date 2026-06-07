@@ -10,6 +10,7 @@ load_dotenv()
 
 PROVIDER = os.getenv("PROVIDER", "google").lower()
 TEST_MODE = "--test" in sys.argv or "-t" in sys.argv
+CLI_TEST_MODE = TEST_MODE or "--dry-run" in sys.argv
 
 CACHE_PREFIX = (
     "The task instructions are provided separately and remain constant across requests.\n"
@@ -18,7 +19,8 @@ CACHE_PREFIX = (
 )
 
 PROVIDER_ERROR_MSG = (
-    "Set PROVIDER=google, PROVIDER=openrouter, or PROVIDER=deepseek in .env"
+    "Set PROVIDER=google, PROVIDER=gemini-cli, PROVIDER=openrouter, "
+    "or PROVIDER=deepseek in .env"
 )
 
 
@@ -29,6 +31,13 @@ def build_cacheable_contents(unique_text: str) -> str:
 
 GEMINI_WORK_MODELS = ["gemini-2.5-flash"]
 GEMINI_TEST_MODELS = ["gemini-3.1-flash-lite-preview"]
+
+GEMINI_CLI_WORK_MODELS = [
+    "gemini-3.1-pro-preview",
+    "gemini-2.5-pro",
+    "gemini-3-flash-preview",
+]
+GEMINI_CLI_TEST_MODELS = ["gemini-3.1-flash-lite"]
 
 OPENROUTER_WORK_MODELS = [
     "deepseek/deepseek-v4-flash",
@@ -151,6 +160,51 @@ elif PROVIDER == "google":
             except Exception as e:
                 print(f"Model {model} failed: {e}, trying next...", flush=True)
         raise Exception("All Gemini models failed")
+
+    generate_content = _wrap_generate_content
+
+elif PROVIDER == "gemini-cli":
+    from tools.gemini_cli import (
+        generate_content as gemini_cli_generate_content,
+    )
+    from tools.gemini_cli import (
+        get_working_key as gemini_cli_get_working_key,
+    )
+
+    def get_working_key() -> bool:
+        models = GEMINI_CLI_TEST_MODELS if CLI_TEST_MODE else GEMINI_CLI_WORK_MODELS
+        for model in models:
+            try:
+                if gemini_cli_get_working_key(model):
+                    return True
+            except Exception as e:
+                print(
+                    f"Gemini CLI model {model} key check failed: {e}, trying next...",
+                    flush=True,
+                )
+        return False
+
+    def _wrap_generate_content(
+        contents: str,
+        system_instruction: str,
+        max_output_tokens: int = 32768,
+        temperature: float = 0.1,
+    ) -> str:
+        models = GEMINI_CLI_TEST_MODELS if CLI_TEST_MODE else GEMINI_CLI_WORK_MODELS
+        for model in models:
+            try:
+                return gemini_cli_generate_content(
+                    contents=contents,
+                    system_instruction=system_instruction,
+                    model=model,
+                    max_output_tokens=max_output_tokens,
+                    temperature=temperature,
+                )
+            except Exception as e:
+                print(
+                    f"Gemini CLI model {model} failed: {e}, trying next...", flush=True
+                )
+        raise Exception("All Gemini CLI models failed")
 
     generate_content = _wrap_generate_content
 

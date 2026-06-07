@@ -17,9 +17,9 @@ uv sync
 ```
 
 **Fill in `.env`** (created by `setup_folders.sh`):
-- `PROVIDER` — `openrouter`, `gemini`, `openai`, or `deepseek`
-- Matching API key — `OPENROUTER_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `DEEPSEEK_API_KEY`
-- `IMAGE_PROVIDER` — provider used for thumbnail generation
+- `PROVIDER` — `google`, `gemini-cli`, `openrouter`, or `deepseek`
+- Matching API key — `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, or `DEEPSEEK_API_KEY`; `gemini-cli` uses your local Gemini CLI auth instead
+- `IMAGE_PROVIDER` — provider used for thumbnail image generation; Gemini CLI only handles text prompt generation, not image bytes
 - **Bio links:** set `BIO_EN` and `BIO_RU` to append a speaker bio to YouTube descriptions. Leave empty (default) for no bio.
 
 **YouTube OAuth** (first-time only): [docs/upload-youtube.md](docs/upload-youtube.md)
