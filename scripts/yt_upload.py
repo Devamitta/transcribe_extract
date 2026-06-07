@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from googleapiclient.http import MediaFileUpload
 
 from tools.printer import printer as pr
+from tools.source_scope import path_matches_filter, read_source_filter
 from tools.uploader_common import (
     build_description,
     check_api_probe,
@@ -221,13 +222,7 @@ def main():
     # Pre-load specific file paths from log (NFC-normalized).
     # Log paths are NFC (built from review strings); find_mp4s_with_album returns
     # NFD paths (macOS APFS) — normalise both sides to NFC at comparison time.
-    specific: set[str] = set()
-    if args.files_from_log and args.files_from_log.exists():
-        specific = {
-            unicodedata.normalize("NFC", line.strip())
-            for line in args.files_from_log.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        }
+    specific = read_source_filter(args.files_from_log)
 
     # Gather all pending uploads from selected folders
     all_to_upload: list[tuple[Path, dict, str]] = []
@@ -251,7 +246,9 @@ def main():
                 # file so the dry-run can show what the upload step would do even
                 # when the file is already in history (e.g. testing with a real file).
                 if not (
-                    args.dry_run and unicodedata.normalize("NFC", str(path)) in specific
+                    args.dry_run
+                    and specific is not None
+                    and path_matches_filter(path, specific)
                 ):
                     continue
 
@@ -270,11 +267,9 @@ def main():
         return
 
     # Restrict to specific files if a created-log was provided.
-    if specific:
+    if specific is not None:
         all_to_upload = [
-            t
-            for t in all_to_upload
-            if unicodedata.normalize("NFC", str(t[0])) in specific
+            t for t in all_to_upload if path_matches_filter(t[0], specific)
         ]
 
     if not all_to_upload:
@@ -290,7 +285,7 @@ def main():
         except (ValueError, KeyError):
             return datetime.min
 
-    newest_first = bool(specific)
+    newest_first = specific is not None
     all_to_upload.sort(key=_parse_date, reverse=newest_first)
 
     if args.limit > 0:

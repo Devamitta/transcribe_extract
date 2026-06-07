@@ -338,6 +338,14 @@ def _write_dry_run_entry(
         fh.write(section)
 
 
+def append_created_log(created_log: Path | None, file_path: Path) -> None:
+    """Append a source path that received a new review entry."""
+    if created_log is None:
+        return
+    with created_log.open("a", encoding="utf-8") as log_f:
+        log_f.write(str(file_path) + "\n")
+
+
 def process_files(
     md_files: list[Path],
     lang: str,
@@ -351,6 +359,7 @@ def process_files(
     append_speaker: bool = True,
     playlist_overview: str | None = None,
     simple_english_description: bool = False,
+    created_log: Path | None = None,
 ) -> None:
     """Processes a list of markdown files and appends results to the review file."""
     output_file = Path(output_file_path)
@@ -403,6 +412,7 @@ def process_files(
                     append_speaker=append_speaker,
                     playlist_overview=playlist_overview,
                 )
+                append_created_log(created_log, f)
         return
 
     # Write header only for a fresh file
@@ -475,6 +485,7 @@ def process_files(
             )
             with output_file.open("a", encoding="utf-8") as fh:
                 fh.write(section)
+            append_created_log(created_log, file_path)
 
         except Exception as e:
             pr.no(f"    Failed on '{file_path.name}': {e}")
@@ -545,6 +556,11 @@ def main() -> None:
         action="store_true",
         help="Process even when YouTube history marks the final video uploaded.",
     )
+    parser.add_argument(
+        "--created-log",
+        type=Path,
+        help="Write sources that received new review entries to this file.",
+    )
     args = parser.parse_args()
     load_dotenv()
     media = "video" if args.video_mode else "audio"
@@ -594,6 +610,7 @@ def main() -> None:
             bio_link=bio_link,
             append_speaker=append_speaker,
             simple_english_description=simple_english_description,
+            created_log=args.created_log,
         )
         return
 
@@ -665,6 +682,7 @@ def main() -> None:
             bio_link=bio_link,
             append_speaker=append_speaker,
             simple_english_description=simple_english_description,
+            created_log=args.created_log,
         )
 
 

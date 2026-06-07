@@ -14,6 +14,7 @@ from tools.provider import (
     generate_with_timeout,
     get_working_key,
 )
+from tools.source_scope import read_source_filter, source_matches_filter
 from tools.uploader_common import minutes_to_hms
 from tools.yt_chapters_merge import merge_close_chapters
 from tools.yt_chapters_retry import LLMRetryError, retry_llm_request
@@ -443,6 +444,11 @@ def main() -> None:
     parser.add_argument("--review-file", type=Path, help="Override review file path.")
     parser.add_argument("--file", type=Path, help="Process a single transcript file.")
     parser.add_argument(
+        "--source-log",
+        type=Path,
+        help="Only process transcript sources listed in this log.",
+    )
+    parser.add_argument(
         "--test", "-t", action="store_true", help="Use test LLM models."
     )
     parser.add_argument(
@@ -495,6 +501,7 @@ def main() -> None:
         help="Print what would be processed; skip API calls and review edits.",
     )
     args = parser.parse_args()
+    source_filter = read_source_filter(args.source_log)
 
     debug_buffer: list[str] = []
 
@@ -556,6 +563,8 @@ def main() -> None:
         review_text = review_path.read_text(encoding="utf-8")
         for f in md_files:
             nfc_name = unicodedata.normalize("NFC", f.name)
+            if not source_matches_filter(nfc_name, source_filter):
+                continue
             if not has_review_entry(review_text, nfc_name):
                 if args.folder:
                     pr.amber(f"  Skipping {f.name} — no review entry found")

@@ -11,6 +11,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from tools.dry_run import create_stub, is_pipeline_dry_run
 from tools.printer import printer as pr
+from tools.source_scope import read_source_filter, source_matches_filter
 from tools.uploader_common import get_uploaded_history_entry, load_nested_history
 
 LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
@@ -429,6 +430,11 @@ def main() -> None:
         help="Path to a file where created cover paths are appended (one per line).",
     )
     parser.add_argument(
+        "--source-log",
+        type=Path,
+        help="Only process review sources listed in this log.",
+    )
+    parser.add_argument(
         "--title-override",
         type=str,
         default=None,
@@ -441,6 +447,7 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+    source_filter = read_source_filter(args.source_log)
     cfg = load_overlay_cfg()
     if args.lang == "ru" and cfg.ru_font_path:
         cfg.font_path = cfg.ru_font_path
@@ -461,6 +468,11 @@ def main() -> None:
         return
 
     talks = parse_review(review_path)
+    talks = [
+        talk
+        for talk in talks
+        if source_matches_filter(talk.get("source", ""), source_filter)
+    ]
     if args.limit > 0:
         talks = talks[: args.limit]
 

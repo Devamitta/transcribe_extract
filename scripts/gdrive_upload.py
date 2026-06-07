@@ -16,6 +16,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
 from tools.printer import printer as pr
+from tools.source_scope import path_matches_filter, read_source_filter
 from tools.uploader_common import (
     build_description,
     confirm_and_save_nested,
@@ -196,7 +197,13 @@ def main():
         action="store_true",
         help="Upload even when Drive history marks the file uploaded.",
     )
+    parser.add_argument(
+        "--files-from-log",
+        type=Path,
+        help="Only upload media files listed in this log (one path per line).",
+    )
     args = parser.parse_args()
+    file_filter = read_source_filter(args.files_from_log)
 
     env_key = gdrive_folder_env_key(args.lang)
     root_folder_id = os.getenv(env_key)
@@ -237,6 +244,8 @@ def main():
 
         mp4s = find_mp4s_with_album(input_dir)
         for path, _album in mp4s:
+            if not path_matches_filter(path, file_filter):
+                continue
             meta = match_mp4_to_review(path, review)
             if meta:
                 drive_subfolder = resolve_drive_subfolder(meta, path.name)
@@ -257,7 +266,10 @@ def main():
                     )
 
     if not all_to_upload:
-        pr.green("Everything already uploaded.")
+        if file_filter is None:
+            pr.green("Everything already uploaded.")
+        else:
+            pr.green("No new Drive uploads for this run.")
         return
 
     if args.limit > 0:
@@ -268,8 +280,6 @@ def main():
         to_upload = all_to_upload
 
     pr.green(f"{len(to_upload)} video(s) queued for Google Drive upload.")
-
-    drive = get_google_client("drive", "v3")
 
     if args.dry_run:
         pr.green_title(
@@ -301,6 +311,8 @@ def main():
             else:
                 pr.white(f"  Audio:       not found in {audio_dir}")
         return
+
+    drive = get_google_client("drive", "v3")
     folder_cache: dict[str, str] = {}
 
     for path, drive_subfolder, meta, _in_dir, audio_dir in to_upload:

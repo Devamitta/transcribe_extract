@@ -8,6 +8,7 @@ from tools.dry_run import create_stub, is_pipeline_dry_run
 from tools.image_gen import generate_image
 from tools.printer import printer as pr
 from tools.provider import generate_content, get_working_key
+from tools.source_scope import read_source_filter, source_matches_filter
 from tools.uploader_common import is_uploaded_in_history, load_nested_history
 
 
@@ -169,12 +170,18 @@ def main() -> None:
         help="Path to a file where created image paths are appended (one per line).",
     )
     parser.add_argument(
+        "--source-log",
+        type=Path,
+        help="Only process review sources listed in this log.",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Generate images even when YouTube history marks videos uploaded.",
     )
 
     args = parser.parse_args()
+    source_filter = read_source_filter(args.source_log)
 
     if args.folder is not None:
         folder_names = [args.folder]
@@ -206,6 +213,8 @@ def main() -> None:
             continue
 
         for talk in talks:
+            if not source_matches_filter(talk.get("source", ""), source_filter):
+                continue
             all_talks.append((folder_name, output_dir, talk))
 
     # Apply global limit

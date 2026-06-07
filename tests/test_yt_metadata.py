@@ -176,6 +176,36 @@ def test_process_files_appends_custom_speaker_name_to_suggested_title(
     assert "**Suggested Title:** Clear Seeing | Tissa Thero\n" in content
 
 
+def test_process_files_writes_created_log_for_new_review_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    transcript = tmp_path / "talk.md"
+    transcript.write_text("Transcript body.", encoding="utf-8")
+    review = tmp_path / "review.md"
+    created_log = tmp_path / "created.log"
+
+    monkeypatch.setattr(yt_metadata, "get_working_key", lambda: "key")
+    monkeypatch.setattr(yt_metadata, "get_playlist_overview", lambda lang, dry_run: "")
+    monkeypatch.setattr(yt_metadata, "load_nested_history", lambda path, lang: {})
+    monkeypatch.setattr(
+        yt_metadata,
+        "generate_metadata",
+        lambda text, lang, speaker_name=None, **kwargs: (
+            "TITLE: Clear Seeing\nDESCRIPTION: A clear description.\nTAGS: #dhamma"
+        ),
+    )
+
+    process_files(
+        [transcript],
+        "en",
+        str(review),
+        "english",
+        created_log=created_log,
+    )
+
+    assert created_log.read_text(encoding="utf-8").splitlines() == [str(transcript)]
+
+
 def test_dry_run_entry_does_not_append_no_suffix_speaker_name(tmp_path: Path) -> None:
     transcript = tmp_path / "dummy.md"
     transcript.write_text("Transcript body.", encoding="utf-8")

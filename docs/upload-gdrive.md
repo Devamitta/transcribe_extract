@@ -31,6 +31,8 @@ Browser opens → log in as your **Drive Account** → creates `gdrive_token.jso
 
 Drive upload stores media under `video/` and `audio/` in the configured language root. Video files always go under `video/`; audio files always go under `audio/`. `**Selected Playlist:**` is the only field that can add a subfolder inside those base folders. When one playlist is selected, that playlist name becomes the matching subfolder in both places. When multiple playlists are selected, Drive asks which single subfolder to use. If `Selected Playlist` is blank, no extra subfolder is used.
 
+`yt_run.sh --gdrive` passes `--files-from-log` so Drive upload is limited to media exported in the current run. Direct `gdrive_upload.py` runs without that flag still scan the selected output folder.
+
 ---
 
 ## Files Reference

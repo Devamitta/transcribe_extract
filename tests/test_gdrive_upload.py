@@ -129,3 +129,58 @@ def test_dry_run_uses_base_folders_when_selected_playlist_is_blank(
     assert "Audio:       audio/talk.mp3" in output
     assert "video/Meditation/talk.mp4" not in output
     assert "audio/Meditation/talk.mp3" not in output
+
+
+def test_dry_run_with_empty_files_log_does_not_fall_back_to_backlog(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "reviews").mkdir()
+    (tmp_path / "output/transcribed/english").mkdir(parents=True)
+    (tmp_path / "output/audio/english").mkdir(parents=True)
+    (tmp_path / "output/video/english").mkdir(parents=True)
+    (tmp_path / "output/audio/english/talk.mp3").write_bytes(b"stub")
+    (tmp_path / "output/video/english/talk.mp4").write_bytes(b"stub")
+    (tmp_path / "reviews/english_review.md").write_text(
+        "\n".join(
+            [
+                "# English Audio Metadata Review",
+                "--- ",
+                "## Source: talk.md",
+                "**Recording Date:** 29-05-2026",
+                "**Publish Date:**",
+                "**Approved:** yes",
+                "**Media:** video",
+                "**Channel Playlist Overview:** Meditation",
+                "**Selected Playlist:** Meditation",
+                "**Suggested Title:** Talk",
+                "**Suggested Description:** Description.",
+                "",
+                "**Suggested Tags:** #dhamma",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    files_log = tmp_path / "empty.log"
+    files_log.write_text("", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GDRIVE_FOLDER_ID_EN", "root_folder")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "gdrive_upload.py",
+            "--lang",
+            "en",
+            "--folder",
+            "english",
+            "--dry-run",
+            "--files-from-log",
+            str(files_log),
+        ],
+    )
+
+    gdrive_upload.main()
+
+    output = capsys.readouterr().out
+    assert "No new Drive uploads for this run." in output
+    assert "video(s) queued for Google Drive upload." not in output

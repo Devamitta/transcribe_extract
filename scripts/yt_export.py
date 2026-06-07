@@ -8,6 +8,7 @@ from pathlib import Path
 
 from tools.dry_run import is_pipeline_dry_run, is_stub, log_stub
 from tools.printer import printer as pr
+from tools.source_scope import read_source_filter, source_matches_filter
 from tools.uploader_common import is_uploaded_in_history, load_nested_history
 
 LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
@@ -51,6 +52,8 @@ def rename_step(
     video_dir: Path,
     video_mode: bool,
     dry_run: bool,
+    source_filter: set[str] | None = None,
+    limit: int = 0,
 ) -> list[Path]:
     """Rename source files in original folders to 'YYYY-MM-DD - Suggested Title'."""
     if not review_file.exists():
@@ -76,6 +79,9 @@ def rename_step(
             continue
 
         source = source_match.group(1).strip()
+        if not source_matches_filter(source, source_filter):
+            continue
+
         date_raw = date_match.group(1).strip() if date_match else ""
         title_raw = title_match.group(1).strip() if title_match else ""
 
@@ -92,6 +98,8 @@ def rename_step(
         return []
 
     dated.sort(key=lambda x: x[2])
+    if limit > 0:
+        dated = dated[:limit]
 
     renamed: list[tuple[str, str]] = []
     renamed_media_paths: list[Path] = []
@@ -363,6 +371,11 @@ def main() -> None:
         help="Write renamed media file paths to this file (one per line).",
     )
     parser.add_argument(
+        "--source-log",
+        type=Path,
+        help="Only process review sources listed in this log (one path per line).",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Export even when YouTube history marks the final video uploaded.",
@@ -391,6 +404,7 @@ def main() -> None:
 
     all_items: list[tuple[str, dict, Path, Path, Path]] = []
     all_renamed_media: list[Path] = []
+    source_filter = read_source_filter(args.source_log)
 
     for folder_name in folder_names:
         transcript_dir = transcribed_base / folder_name
@@ -412,8 +426,11 @@ def main() -> None:
             video_dir,
             args.video_mode,
             args.dry_run,
+            source_filter,
+            args.limit,
         )
         all_renamed_media.extend(renamed_media)
+        renamed_media_stems = {path.stem for path in renamed_media}
         sort_review_file(review_path, args.dry_run)
 
         stats_content = review_path.read_text(encoding="utf-8")
@@ -471,9 +488,15 @@ def main() -> None:
                 continue
 
             recording_date = date_match.group(1).strip() if date_match else ""
+            source_name = source_match.group(1).strip()
+            if source_filter is not None and not source_matches_filter(
+                source_name, renamed_media_stems
+            ):
+                continue
+
             if recording_date:
                 item = {
-                    "source": source_match.group(1).strip(),
+                    "source": source_name,
                     "title": title_match.group(1).strip(),
                     "description": desc_match.group(1).strip(),
                     "recording_date": recording_date,

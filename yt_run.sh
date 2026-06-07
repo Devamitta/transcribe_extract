@@ -209,11 +209,13 @@ if [ "$FROM_EXPORT" -eq 0 ]; then
 
   # 4. Metadata
   echo "→ Starting: yt_metadata.py"
+  METADATA_LOG=$(mktemp)
   METADATA_LANG_FLAG=""
   [ -n "$USER_LANG" ] && METADATA_LANG_FLAG="--lang $USER_LANG"
   uv run python scripts/yt_metadata.py $METADATA_LANG_FLAG \
     --folder "$EFFECTIVE_FOLDER" \
     ${NAME:+--name "$NAME"} \
+    --created-log "$METADATA_LOG" \
     $EXPORT_FLAGS $LIMIT_FLAG $DRY_RUN_FLAG $FORCE_FLAG
 
   echo ""
@@ -236,7 +238,9 @@ if [ "$FROM_EXPORT" -eq 0 ]; then
   # 5. Chapters
   echo "→ Starting: yt_chapters.py"
   uv run python scripts/yt_chapters.py --lang "$LANG" \
-    --folder "$EFFECTIVE_FOLDER" $LIMIT_FLAG $DRY_RUN_FLAG
+    --folder "$EFFECTIVE_FOLDER" \
+    --source-log "$METADATA_LOG" \
+    $LIMIT_FLAG $DRY_RUN_FLAG
 
   echo ""
   echo "----------------------------------------------------------------"
@@ -304,11 +308,14 @@ confirm_and_remove_log() {
 # 6. Export (rename + embed metadata in-place)
 echo "→ Starting: yt_export.py"
 EXPORT_LOG=$(mktemp)
+EXPORT_SOURCE_LOG_FLAG=""
+[ "$FROM_EXPORT" -eq 0 ] && EXPORT_SOURCE_LOG_FLAG="--source-log $METADATA_LOG"
 uv run python scripts/yt_export.py --lang "$LANG" \
   --folder "$EFFECTIVE_FOLDER" \
   ${NAME:+--name "$NAME"} \
   --created-log "$EXPORT_LOG" \
-  $EXPORT_FLAGS $LIMIT_FLAG $DRY_RUN_FLAG $FORCE_FLAG
+  $EXPORT_SOURCE_LOG_FLAG $EXPORT_FLAGS $LIMIT_FLAG $DRY_RUN_FLAG $FORCE_FLAG
+[ "$FROM_EXPORT" -eq 0 ] && rm -f "$METADATA_LOG"
 
 # 7. Thumbnails — audio mode always; video mode only with --cover
 if [ "$VIDEO_MODE" -eq 0 ] || [ "$COVER" -eq 1 ]; then
@@ -316,7 +323,10 @@ if [ "$VIDEO_MODE" -eq 0 ] || [ "$COVER" -eq 1 ]; then
     THUMB_LOG=$(mktemp)
     echo "→ Starting: yt_image_gen.py"
     uv run python scripts/yt_image_gen.py --lang "$LANG" \
-      --folder "$EFFECTIVE_FOLDER" --created-log "$THUMB_LOG" $LIMIT_FLAG $DRY_RUN_FLAG $FORCE_FLAG
+      --folder "$EFFECTIVE_FOLDER" \
+      --created-log "$THUMB_LOG" \
+      --source-log "$EXPORT_LOG" \
+      $LIMIT_FLAG $DRY_RUN_FLAG $FORCE_FLAG
 
     echo ""
     echo "----------------------------------------------------------------"
@@ -342,7 +352,10 @@ if [ "$COVER" -eq 1 ]; then
     COVER_LOG=$(mktemp)
     echo "→ Starting: yt_cover_gen.py"
     uv run python scripts/yt_cover_gen.py --lang "$LANG" \
-      --folder "$EFFECTIVE_FOLDER" --created-log "$COVER_LOG" $LIMIT_FLAG $DRY_RUN_FLAG $FORCE_FLAG
+      --folder "$EFFECTIVE_FOLDER" \
+      --created-log "$COVER_LOG" \
+      --source-log "$EXPORT_LOG" \
+      $LIMIT_FLAG $DRY_RUN_FLAG $FORCE_FLAG
 
     echo ""
     echo "----------------------------------------------------------------"
@@ -360,12 +373,14 @@ if [ "$COVER" -eq 1 ]; then
     fi
     confirm_and_remove_log "$COVER_LOG"
     echo "→ Starting: yt_export.py (--sync-titles)"
+    SYNC_SOURCE_LOG_FLAG=""
+    [ -s "$EXPORT_LOG" ] && SYNC_SOURCE_LOG_FLAG="--source-log $EXPORT_LOG"
     uv run python scripts/yt_export.py --lang "$LANG" \
       --folder "$EFFECTIVE_FOLDER" \
       ${NAME:+--name "$NAME"} \
       --created-log "$EXPORT_LOG" \
       --sync-titles \
-      $EXPORT_FLAGS $LIMIT_FLAG $DRY_RUN_FLAG $FORCE_FLAG
+      $SYNC_SOURCE_LOG_FLAG $EXPORT_FLAGS $LIMIT_FLAG $DRY_RUN_FLAG $FORCE_FLAG
     rm -f "$COVER_LOG"
   done
 fi
@@ -374,13 +389,19 @@ if [ "$VIDEO_MODE" -eq 0 ]; then
   # 8. Create MP4 videos → output/video/
   echo "→ Starting: yt_video.py"
   uv run python scripts/yt_video.py --lang "$LANG" \
-    --folder "$EFFECTIVE_FOLDER" $LIMIT_FLAG $DRY_RUN_FLAG $FORCE_FLAG
+    --folder "$EFFECTIVE_FOLDER" \
+    --source-log "$EXPORT_LOG" \
+    $LIMIT_FLAG $DRY_RUN_FLAG $FORCE_FLAG
 fi
 
 # 9. Upload to YouTube (from output/video/)
 echo "→ Starting: yt_upload.py"
 UPLOAD_FILES_FLAG=""
-[ -s "$EXPORT_LOG" ] && UPLOAD_FILES_FLAG="--files-from-log $EXPORT_LOG"
+if [ "$FROM_EXPORT" -eq 0 ]; then
+  UPLOAD_FILES_FLAG="--files-from-log $EXPORT_LOG"
+elif [ -s "$EXPORT_LOG" ]; then
+  UPLOAD_FILES_FLAG="--files-from-log $EXPORT_LOG"
+fi
 # --from-export means "upload the current video only, not the whole backlog"
 UPLOAD_BATCH_FLAG=""
 [ "$FROM_EXPORT" -eq 1 ] && UPLOAD_BATCH_FLAG="--batch-size 1"
@@ -393,14 +414,20 @@ else
   uv run python scripts/yt_upload.py --lang "$LANG" \
     --folder "$EFFECTIVE_FOLDER" $UPLOAD_FILES_FLAG $UPLOAD_BATCH_FLAG $LIMIT_FLAG $DRY_RUN_FLAG $FORCE_FLAG ${NAME:+--name "$NAME"}
 fi
-rm -f "$EXPORT_LOG"
 
 if [ "$GDRIVE" -eq 1 ]; then
   # 10. Upload to Google Drive
   echo "→ Starting: gdrive_upload.py"
+  GDRIVE_FILES_FLAG=""
+  if [ "$FROM_EXPORT" -eq 0 ]; then
+    GDRIVE_FILES_FLAG="--files-from-log $EXPORT_LOG"
+  elif [ -s "$EXPORT_LOG" ]; then
+    GDRIVE_FILES_FLAG="--files-from-log $EXPORT_LOG"
+  fi
   uv run python scripts/gdrive_upload.py --lang "$LANG" \
-    --folder "$EFFECTIVE_FOLDER" $LIMIT_FLAG $DRY_RUN_FLAG
+    --folder "$EFFECTIVE_FOLDER" $GDRIVE_FILES_FLAG $LIMIT_FLAG $DRY_RUN_FLAG
 fi
+rm -f "$EXPORT_LOG"
 
 if [ "$DRY_RUN" -eq 1 ]; then
   echo ""

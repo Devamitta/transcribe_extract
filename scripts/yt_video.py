@@ -8,6 +8,7 @@ from pathlib import Path
 
 from tools.dry_run import create_stub, is_pipeline_dry_run
 from tools.printer import printer as pr
+from tools.source_scope import read_source_filter, source_matches_filter
 from tools.uploader_common import is_uploaded_in_history, load_nested_history
 
 LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
@@ -110,8 +111,14 @@ def main() -> None:
         action="store_true",
         help="Create videos even when YouTube history marks them uploaded.",
     )
+    parser.add_argument(
+        "--source-log",
+        type=Path,
+        help="Only process review sources listed in this log.",
+    )
 
     args = parser.parse_args()
+    source_filter = read_source_filter(args.source_log)
 
     transcribed_base = Path("output/transcribed")
 
@@ -146,6 +153,8 @@ def main() -> None:
             continue
         talks.sort(key=_parse_date)
         for talk in talks:
+            if not source_matches_filter(talk.get("source", ""), source_filter):
+                continue
             all_talks.append((folder_name, talk, audio_dir, thumbnails_dir, output_dir))
 
     # Apply global limit

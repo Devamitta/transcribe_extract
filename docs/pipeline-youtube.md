@@ -118,11 +118,12 @@ Checks that the last Whisper timestamp in each transcript is within 120 s of the
 Generates titles and descriptions using the configured LLM provider.
 
 ```bash
-uv run python scripts/yt_metadata.py [--lang ru|en] [--folder <folder>] [--name NAME] [--limit 5] [--video-mode]
+uv run python scripts/yt_metadata.py [--lang ru|en] [--folder <folder>] [--name NAME] [--limit 5] [--video-mode] [--created-log <path>]
 ```
 
 - A bio link is appended to the description when the BIO_EN or BIO_RU environment variable (set in .env) is non-empty. Language selection: --lang ru → BIO_RU, otherwise BIO_EN. Leave empty for no bio. See setup_folders.sh for template.
 - `--video-mode` marks new review entries with `**Media:** video` instead of the default `audio`. This field is used downstream by `yt_cover_gen.py` to filter which entries receive a cover thumbnail.
+- `--created-log` is used internally by `yt_run.sh` to record sources that received new review entries. `yt_export.py` uses this log to avoid renaming unrelated approved backlog entries.
 - New review entries include playlist controls:
   - `**Channel Playlist Overview:** Meditation, Personal`
   - `**Selected Playlist:** Meditation, Personal`
@@ -137,12 +138,13 @@ After the user fills in dates and edits the review file, `yt_review_dedup.py` ru
 Generates AI chapter timestamps based on the transcript and appends them to the review file.
 
 ```bash
-uv run python scripts/yt_chapters.py --lang ru|en [--folder <folder>] [--limit 5]
+uv run python scripts/yt_chapters.py --lang ru|en [--folder <folder>] [--limit 5] [--source-log <path>]
 ```
 
 - **Placement Accuracy:** Transcribe with `--chunk-seconds 20` for best results.
 - **Chapter Spacing:** Enforces a minimum of 2 minutes between chapters. Talks shorter than 3 minutes are skipped entirely.
 - **LLM retries:** Empty responses, timeouts, and provider errors are retried for the same transcript up to 3 total attempts. If all attempts fail, `yt_chapters.py` exits non-zero so `yt_run.sh` stops at that file.
+- `yt_run.sh` passes `--source-log` so chapter generation only considers review entries created in the current metadata step.
 
 ---
 
@@ -163,34 +165,35 @@ The export script only processes entries where Recording Dates are filled and `A
 Renames source files and embeds reviewed metadata **in-place**.
 
 ```bash
-uv run python scripts/yt_export.py --lang ru|en [--folder <folder>] [--name NAME] [--video-mode] [--sync-titles]
+uv run python scripts/yt_export.py --lang ru|en [--folder <folder>] [--name NAME] [--video-mode] [--sync-titles] [--source-log <path>]
 ```
 
 - **Rename:** Renames files in `output/audio/` and `output/transcribed/` to `YYYY-MM-DD - Suggested Title`. Also renames matching .jpg files in output/thumbnails/<folder>/ and output/covers/<folder>/ to keep image filenames in sync.
 - **Embed:** Embeds metadata into the `.mp3` (and `.mp4` in video mode) using ffmpeg and a temporary file.
 - **Title sync:** `--sync-titles` only reruns the rename/source-line sync from the review file and skips ffmpeg metadata embedding. Use it after editing `**Suggested Title:**` on already-exported entries.
+- **Source scoping:** Direct `yt_export.py` runs still process the full approved review file. `yt_run.sh` passes `--source-log` so export is limited to sources created in the current metadata step; cover title-sync retries pass the previous export log for the same reason.
 
 ### 3.2: Generate AI Thumbnails (Audio Mode; or Video Mode with `--cover`)
 Uses reviewed metadata to generate photorealistic base thumbnails via FLUX.
 
 ```bash
-uv run python scripts/yt_image_gen.py --lang ru|en [--folder <folder>]
+uv run python scripts/yt_image_gen.py --lang ru|en [--folder <folder>] [--source-log <path>]
 ```
 
 Output: `output/thumbnails/<folder>/`
 
-The pipeline pauses here for visual review. Pressing `r` lists the files created in this run, asks for confirmation, deletes them, then reruns the generator. Pressing Enter continues.
+The pipeline pauses here for visual review. Pressing `r` lists the files created in this run, asks for confirmation, deletes them, then reruns the generator. Pressing Enter continues. `yt_run.sh` passes `--source-log` from the export stage, so thumbnail generation is limited to the current run's reviewed files.
 
 ### 3.3: Generate Cover Thumbnails (`--cover` only)
 Composites a text overlay (title, teacher name, AI-generated highlights) onto the base thumbnail to create a YouTube cover image.
 
 ```bash
-uv run python scripts/yt_cover_gen.py --lang ru|en [--folder <folder>] [--limit N] [--dry-run] [--list-fonts]
+uv run python scripts/yt_cover_gen.py --lang ru|en [--folder <folder>] [--limit N] [--dry-run] [--list-fonts] [--source-log <path>]
 ```
 
 - **Input:** `output/thumbnails/<folder>/` (FLUX images from 3.2)
 - **Output:** `output/covers/<folder>/`
-- Processes approved entries from the review file.
+- Processes approved entries from the review file. `yt_run.sh` passes `--source-log` from the export stage, so normal pipeline runs are limited to current-run files.
 - Cover titles force new lines at common separators such as `:`, `|`, `/`, `;`, `,`, `.`, `?`, `!`, bullets, and spaced dashes.
 - `--list-fonts` generates paginated font preview sheets (`temp/font_preview_<lang>_01.png`, …) and an index (`temp/font_list_<lang>.md`), then exits — useful for picking a font before the first run.
 - Font and overlay parameters are configurable via `.env` (`COVER_FONT_PATH`, `COVER_RU_FONT_PATH`, `COVER_GRADIENT_HEIGHT_PCT`, etc.); all have sensible defaults and the script works with no `.env` entries.
@@ -201,11 +204,12 @@ The pipeline pauses after this step for visual review. If you edit `**Suggested 
 Combines thumbnails with MP3 audio files.
 
 ```bash
-uv run python scripts/yt_video.py --lang ru|en [--folder <folder>]
+uv run python scripts/yt_video.py --lang ru|en [--folder <folder>] [--source-log <path>]
 ```
 
 - **Input:** `output/thumbnails/<folder>/` and `output/audio/<folder>/`
 - **Output:** `output/video/<folder>/`
+- `yt_run.sh` passes `--source-log` from the export stage, so video creation does not build old approved entries just because they remain in the review file.
 
 ### 3.4: Generate Cover Thumbnails (Video Mode + `--cover` only)
 Composites a text overlay (title, teacher name, AI-generated highlights) onto the base thumbnail to create a YouTube cover image.
@@ -230,7 +234,7 @@ The pipeline pauses after this step for visual review. Pressing `r` lists the fi
 Uploads MP4s from `output/video/<folder>/`.
 
 ```bash
-uv run python scripts/yt_upload.py --lang ru|en [--folder <folder>] [--dry-run]
+uv run python scripts/yt_upload.py --lang ru|en [--folder <folder>] [--dry-run] [--files-from-log <path>]
 ```
 
 Videos are uploaded as **private** with a scheduled publish time (10 minutes from upload by default, or the date set in the review file). Once the publish time arrives, YouTube makes the video public and notifies subscribers.
@@ -239,13 +243,17 @@ Playlist membership comes only from `**Selected Playlist:**` in the review file.
 
 Upload history in `output/youtube_history.json` is an extra safety guard: stages skip videos already marked `status: uploaded` when they can match the final MP4 filename exactly. Pass `--force` to rerun despite that history.
 
+`yt_run.sh` passes `--files-from-log` from the export stage. If the log is empty, upload treats that as "nothing from this run" and does not fall back to scanning the backlog.
+
 After each successful video upload, if a matching cover image exists at `output/covers/<folder>/<stem>.jpg`, it is automatically set as the YouTube thumbnail via the `thumbnails().set()` API.
 
 ### Google Drive Upload
 Uploads MP4s and MP3s from their respective output directories.
 
 ```bash
-uv run python scripts/gdrive_upload.py --lang ru|en [--folder <folder>] [--dry-run]
+uv run python scripts/gdrive_upload.py --lang ru|en [--folder <folder>] [--dry-run] [--files-from-log <path>]
 ```
 
 Drive creates top-level `video/` and `audio/` folders under the configured language root. Video files always go under `video/`; audio files always go under `audio/`. `**Selected Playlist:**` is the only field that can add a subfolder inside those base folders. If one playlist is selected, that playlist name is used as the subfolder under both `video/` and `audio/`. If multiple playlists are selected, Drive asks which single subfolder to use. If `Selected Playlist` is blank, no extra subfolder is used.
+
+`yt_run.sh` passes `--files-from-log` from the export stage when Drive upload is enabled, so Drive upload is scoped to the same current-run media as YouTube upload.
