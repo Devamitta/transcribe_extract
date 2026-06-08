@@ -7,6 +7,7 @@ import unicodedata
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
+from time import monotonic
 from typing import Any, Protocol
 
 from google.auth.transport.requests import Request
@@ -23,6 +24,9 @@ UPLOAD_CHUNK_SIZE_BYTES = 32 * 1024 * 1024
 
 class ResumableUploadStatus(Protocol):
     """Progress status returned by googleapiclient resumable upload chunks."""
+
+    resumable_progress: int
+    total_size: int | None
 
     def progress(self) -> float:
         """Return the completed upload fraction from 0.0 to 1.0."""
@@ -41,25 +45,97 @@ def execute_resumable_upload(
     request: ResumableUploadRequest,
     progress_label: str,
     progress_output: Callable[[str], None] = pr.white,
+    show_speed: bool = False,
+    clock: Callable[[], float] = monotonic,
 ) -> dict[str, Any]:
     """Run a resumable upload request and print percentage progress."""
     response: dict[str, Any] | None = None
     last_percent = -1
+    last_uploaded_bytes = 0
+    last_sample_time = clock()
+    last_speed_bytes_per_second: float | None = None
+    total_upload_size: int | None = None
 
     while response is None:
         status, response = request.next_chunk()
         if status is None:
             continue
 
+        now = clock()
+        uploaded_bytes = status.resumable_progress
+        total_upload_size = status.total_size
+        if uploaded_bytes >= last_uploaded_bytes and now > last_sample_time:
+            last_speed_bytes_per_second = (uploaded_bytes - last_uploaded_bytes) / (
+                now - last_sample_time
+            )
+        last_uploaded_bytes = max(last_uploaded_bytes, uploaded_bytes)
+        last_sample_time = now
+
         percent = min(100, max(0, int(status.progress() * 100)))
         if percent != last_percent:
-            progress_output(f"{progress_label}: {percent}%")
+            progress_output(
+                format_progress_message(
+                    progress_label,
+                    percent,
+                    show_speed,
+                    last_speed_bytes_per_second,
+                )
+            )
             last_percent = percent
 
     if last_percent < 100:
-        progress_output(f"{progress_label}: 100%")
+        if total_upload_size is not None and total_upload_size >= last_uploaded_bytes:
+            now = clock()
+            if now > last_sample_time:
+                last_speed_bytes_per_second = (
+                    total_upload_size - last_uploaded_bytes
+                ) / (now - last_sample_time)
+        progress_output(
+            format_progress_message(
+                progress_label,
+                100,
+                show_speed,
+                last_speed_bytes_per_second,
+            )
+        )
 
     return response
+
+
+def format_progress_message(
+    progress_label: str,
+    percent: int,
+    show_speed: bool = False,
+    speed_bytes_per_second: float | None = None,
+) -> str:
+    """Format a progress line with an optional transfer speed suffix."""
+    suffix = (
+        f" (speed: {format_transfer_rate(speed_bytes_per_second)})"
+        if show_speed
+        else ""
+    )
+    return f"{progress_label}: {percent}%{suffix}"
+
+
+def format_transfer_rate(bytes_per_second: float | None) -> str:
+    """Format an upload speed value for CLI progress output."""
+    if bytes_per_second is None or bytes_per_second <= 0:
+        return "calculating"
+    return f"{format_file_size(int(bytes_per_second))}/s"
+
+
+def format_file_size(size_bytes: int) -> str:
+    """Format a byte count for CLI output."""
+    size = float(size_bytes)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            if unit == "B":
+                return f"{int(size)} {unit}"
+            if size >= 100 or size.is_integer():
+                return f"{size:.0f} {unit}"
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.0f} GB"
 
 
 def get_google_client(
@@ -306,7 +382,7 @@ def chapters_to_youtube(chapters: list[tuple[float, str]]) -> str:
 def find_audio_for_mp4(
     mp4_path: Path, audio_dir: Path = Path("output/audio")
 ) -> Path | None:
-    mp3 = audio_dir / f"{mp4_path.stem}.mp3"
+    mp3 = find_path_by_normalized_name(audio_dir, f"{mp4_path.stem}.mp3")
     return mp3 if mp3.exists() else None
 
 
@@ -320,9 +396,35 @@ def load_history(history_path: Path) -> dict[str, dict[str, str]]:
     return {}
 
 
+def normalize_text(value: str) -> str:
+    """Return NFC text for reliable macOS-safe Unicode comparisons."""
+    return unicodedata.normalize("NFC", value)
+
+
 def normalize_history_name(name: str) -> str:
-    """Normalize a history key or filename for reliable macOS-safe comparison."""
-    return unicodedata.normalize("NFC", Path(name).name)
+    """Normalize a history key or filename by final filename."""
+    return normalize_text(Path(name).name)
+
+
+def normalize_history_key(key: str) -> str:
+    """Normalize a full history key while preserving slash-separated folders."""
+    return "/".join(normalize_text(part) for part in key.split("/"))
+
+
+def find_path_by_normalized_name(directory: Path, filename: str) -> Path:
+    """Return the existing child whose name matches filename after NFC normalization."""
+    candidate = directory / filename
+    if candidate.exists():
+        return candidate
+
+    target = normalize_history_name(filename)
+    if not directory.exists():
+        return candidate
+
+    for child in directory.iterdir():
+        if normalize_history_name(child.name) == target:
+            return child
+    return candidate
 
 
 def get_uploaded_history_entry(
@@ -339,6 +441,25 @@ def get_uploaded_history_entry(
 def is_uploaded_in_history(history: dict[str, dict[str, Any]], final_name: str) -> bool:
     """True when history has an uploaded entry for the exact final media filename."""
     return get_uploaded_history_entry(history, final_name) is not None
+
+
+def get_uploaded_history_key_entry(
+    history: dict[str, dict[str, Any]], key: str
+) -> dict[str, Any] | None:
+    """Return uploaded history entry matching a full normalized history key."""
+    target = normalize_history_key(key)
+    for existing_key, entry in history.items():
+        if (
+            normalize_history_key(existing_key) == target
+            and entry.get("status") == "uploaded"
+        ):
+            return entry
+    return None
+
+
+def is_uploaded_key_in_history(history: dict[str, dict[str, Any]], key: str) -> bool:
+    """True when history has an uploaded entry for the full normalized key."""
+    return get_uploaded_history_key_entry(history, key) is not None
 
 
 def load_nested_history(
@@ -451,7 +572,11 @@ def save_history(history_path: Path, history: dict[str, dict[str, str]]) -> None
 def mark_uploaded(
     history: dict[str, dict[str, str]], key: str, platform_id: str
 ) -> None:
-    history[key] = {
+    normalized_key = normalize_history_key(key)
+    for existing_key in list(history):
+        if normalize_history_key(existing_key) == normalized_key:
+            history.pop(existing_key)
+    history[normalized_key] = {
         "platform_id": platform_id,
         "status": "uploaded",
         "uploaded_at": datetime.now(timezone.utc).isoformat(),
@@ -499,7 +624,8 @@ def find_mp4s_with_album(input_dir: Path) -> list[tuple[Path, str | None]]:
 
 
 def make_history_key(mp4_path: Path, album: str | None) -> str:
-    return f"{album}/{mp4_path.name}" if album else mp4_path.name
+    raw_key = f"{album}/{mp4_path.name}" if album else mp4_path.name
+    return normalize_history_key(raw_key)
 
 
 def match_mp4_to_review(

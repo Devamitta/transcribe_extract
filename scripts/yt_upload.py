@@ -18,6 +18,8 @@ from tools.uploader_common import (
     check_api_probe,
     check_token_local,
     execute_resumable_upload,
+    format_file_size,
+    find_path_by_normalized_name,
     find_mp4s_with_album,
     get_google_client,
     list_channel_playlists,
@@ -160,6 +162,7 @@ def upload_video(
     response = execute_resumable_upload(
         request,
         "    Video upload progress",
+        show_speed=True,
     )
     return response["id"]
 
@@ -378,6 +381,7 @@ def main() -> None:
         privacy_status = "private"
         publish_at: str | None = compute_publish_at(meta.get("publish_date", ""))
         pr.white(f"Uploading: {meta['title']}...")
+        pr.white(f"    Video size: {format_file_size(path.stat().st_size)}")
         pr.bip()
 
         try:
@@ -407,7 +411,9 @@ def main() -> None:
             # Thumbnail upload logic
             thumb_was_set = False
             cover_stem = unicodedata.normalize("NFC", path.stem)
-            cover_path = Path("output/covers") / folder_name / f"{cover_stem}.jpg"
+            cover_path = find_path_by_normalized_name(
+                Path("output/covers") / folder_name, f"{cover_stem}.jpg"
+            )
             if cover_path.exists():
                 try:
                     thumbnail_request = youtube.thumbnails().set(

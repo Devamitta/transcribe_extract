@@ -15,7 +15,7 @@ from tools.provider import (
     get_working_key,
 )
 from tools.source_scope import read_source_filter, source_matches_filter
-from tools.uploader_common import minutes_to_hms
+from tools.uploader_common import find_path_by_normalized_name, minutes_to_hms
 from tools.yt_chapters_merge import merge_close_chapters
 from tools.yt_chapters_retry import LLMRetryError, retry_llm_request
 from tools.yt_chapters_silence import (
@@ -265,7 +265,7 @@ def already_has_chapters(review_text: str, source_name: str) -> bool:
     """Checks if a review entry already has a timed chapters block."""
     sections = re.split(r"\n---", review_text)
     for section in sections:
-        if f"## Source: {source_name}" in section:
+        if section_matches_source(section, source_name):
             if "**Chapters:**" not in section:
                 return False
             # Only counts as "has chapters" if at least one line has a timestamp
@@ -282,7 +282,7 @@ def has_untimed_chapters(review_text: str, source_name: str) -> bool:
     """Checks if a review entry has a chapters block with names but no timestamps."""
     sections = re.split(r"\n---", review_text)
     for section in sections:
-        if f"## Source: {source_name}" in section:
+        if section_matches_source(section, source_name):
             if "**Chapters:**" not in section:
                 return False
             m = re.search(
@@ -302,7 +302,7 @@ def parse_untimed_chapter_names(review_text: str, source_name: str) -> list[str]
     """Returns the list of untimed chapter names from the review entry."""
     sections = re.split(r"\n---", review_text)
     for section in sections:
-        if f"## Source: {source_name}" in section:
+        if section_matches_source(section, source_name):
             m = re.search(
                 r"\*\*Chapters:\*\*\n(.*?)(?=\n\*\*|\n##|\Z)", section, re.DOTALL
             )
@@ -315,7 +315,28 @@ def parse_untimed_chapter_names(review_text: str, source_name: str) -> list[str]
 
 def has_review_entry(review_text: str, source_name: str) -> bool:
     """Checks if a review entry exists for the given source file."""
-    return bool(re.search(rf"## Source: {re.escape(source_name)}", review_text))
+    return any(
+        section_matches_source(section, source_name)
+        for section in re.split(r"\n---", review_text)
+    )
+
+
+def section_matches_source(section: str, source_name: str) -> bool:
+    """Return true when a review section source matches after NFC normalization."""
+    source_match = re.search(r"## Source: (.+)", section)
+    if not source_match:
+        return False
+    return unicodedata.normalize("NFC", source_match.group(1).strip()) == (
+        unicodedata.normalize("NFC", source_name)
+    )
+
+
+def append_created_log(created_log: Path | None, file_path: Path) -> None:
+    """Append a transcript path whose chapter block was written."""
+    if created_log is None:
+        return
+    with created_log.open("a", encoding="utf-8") as log_f:
+        log_f.write(str(file_path) + "\n")
 
 
 def insert_chapters_block(
@@ -328,15 +349,21 @@ def insert_chapters_block(
     chapter_lines = "\n".join(f"[{minutes_to_hms(ts)}] {name}" for ts, name in chapters)
     block = f"**Chapters:**\n{chapter_lines}"
 
-    # Insert after **Suggested Tags:** line within this source's section
-    pattern = rf"(## Source: {re.escape(source_name)}.*?\*\*Suggested Tags:\*\*[^\n]*)"
-    replacement = rf"\1\n{block}"
-    new_content, n = re.subn(pattern, replacement, content, count=1, flags=re.DOTALL)
-    if n == 0:
-        pr.no(f"    Could not locate **Suggested Tags:** for {source_name}")
-        return False
-    review_path.write_text(new_content, encoding="utf-8")
-    return True
+    sections = content.split("\n---")
+    for idx, section in enumerate(sections):
+        if not section_matches_source(section, source_name):
+            continue
+        pattern = r"(\*\*Suggested Tags:\*\*[^\n]*)"
+        replacement = rf"\1\n{block}"
+        new_section, n = re.subn(pattern, replacement, section, count=1)
+        if n == 0:
+            pr.no(f"    Could not locate **Suggested Tags:** for {source_name}")
+            return False
+        sections[idx] = new_section
+        review_path.write_text("\n---".join(sections), encoding="utf-8")
+        return True
+    pr.no(f"    Could not locate review section for {source_name}")
+    return False
 
 
 def replace_untimed_chapters_block(
@@ -352,15 +379,11 @@ def replace_untimed_chapters_block(
     # Replace the existing untimed block (names without [HH:MM:SS] prefix)
     pattern = r"(\*\*Chapters:\*\*\n)((?:(?!\[[\d:]+\])(?!\*\*).+\n?)*)"
 
-    def _in_source_section(text: str) -> bool:
-        # Verify the match is within the correct source section
-        return f"## Source: {source_name}" in text
-
     # Scope replacement to the correct source section by splitting on ---
     sections = content.split("\n---")
     replaced = False
     for idx, section in enumerate(sections):
-        if f"## Source: {source_name}" in section:
+        if section_matches_source(section, source_name):
             new_section, n = re.subn(pattern, timed_block + "\n", section, count=1)
             if n > 0:
                 sections[idx] = new_section
@@ -449,6 +472,11 @@ def main() -> None:
         help="Only process transcript sources listed in this log.",
     )
     parser.add_argument(
+        "--created-log",
+        type=Path,
+        help="Append transcript paths whose chapter blocks were written.",
+    )
+    parser.add_argument(
         "--test", "-t", action="store_true", help="Use test LLM models."
     )
     parser.add_argument(
@@ -518,15 +546,23 @@ def main() -> None:
         log_path.write_text("\n".join(buf), encoding="utf-8")
         buf.clear()
 
+    model_checked = False
+
+    def ensure_model_available() -> bool:
+        nonlocal model_checked
+        if model_checked:
+            return True
+        if not get_working_key():
+            pr.no("All API keys failed. Exiting.")
+            return False
+        model_checked = True
+        return True
+
     transcribed_base = Path("output/transcribed")
     audio_base = Path("output/audio")
 
     if not transcribed_base.exists():
         pr.no(f"Base directory not found: {transcribed_base}")
-        return
-
-    if not args.dry_run and not get_working_key():
-        pr.no("All API keys failed. Exiting.")
         return
 
     # Determine folders to process
@@ -643,6 +679,8 @@ def main() -> None:
                 instruction = build_timestamp_finding_instruction(
                     chapter_names, args.lang
                 )
+                if not ensure_model_available():
+                    return
                 pr.bip()
                 response = retry_llm_request(
                     lambda _attempt: generate_with_timeout(
@@ -682,6 +720,7 @@ def main() -> None:
 
                 ok = replace_untimed_chapters_block(review_path, nfc_name, chapters)
                 if ok:
+                    append_created_log(args.created_log, file_path)
                     pr.yes(
                         f"    {len(chapters)} chapters timed ({minutes_to_hms(duration_mins)})"
                     )
@@ -694,7 +733,9 @@ def main() -> None:
 
             # --- Normal mode: generate chapters from scratch ---
             # Look for audio in audio/{folder_name}/
-            audio_path = audio_base / folder_name / (file_path.stem + ".mp3")
+            audio_path = find_path_by_normalized_name(
+                audio_base / folder_name, f"{file_path.stem}.mp3"
+            )
             silence_pairs: list[tuple[float, float]] | None = None
             if args.silence_mode and audio_path.exists():
                 duration_mins = get_audio_duration(audio_path)
@@ -775,6 +816,9 @@ def main() -> None:
                     _flush_debug_log(file_path, debug_buffer)
                 continue
 
+            if not ensure_model_available():
+                return
+
             active_silence_times: list[float] | None = None
 
             def generate_chapters_attempt(attempt: int) -> str | None:
@@ -836,6 +880,7 @@ def main() -> None:
 
             ok = insert_chapters_block(review_path, nfc_name, chapters)
             if ok:
+                append_created_log(args.created_log, file_path)
                 pr.yes(
                     f"    {len(chapters)} chapters written ({minutes_to_hms(duration_mins)})"
                 )

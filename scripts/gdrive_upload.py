@@ -24,7 +24,9 @@ from tools.uploader_common import (
     execute_resumable_upload,
     find_audio_for_mp4,
     find_mp4s_with_album,
+    format_file_size,
     gdrive_folder_env_key,
+    is_uploaded_key_in_history,
     load_nested_history,
     make_history_key,
     match_mp4_to_review,
@@ -156,7 +158,7 @@ def upload_file(
         media_body=media,
         fields="id",
     )
-    response = execute_resumable_upload(request, progress_label)
+    response = execute_resumable_upload(request, progress_label, show_speed=True)
     return response["id"]
 
 
@@ -255,10 +257,7 @@ def main() -> None:
             if meta:
                 drive_subfolder = resolve_drive_subfolder(meta, path.name)
                 key = make_history_key(path, drive_subfolder)
-                if not args.force and (
-                    key in video_history
-                    and video_history[key].get("status") == "uploaded"
-                ):
+                if not args.force and is_uploaded_key_in_history(video_history, key):
                     continue
 
                 all_to_upload.append(
@@ -354,6 +353,7 @@ def main() -> None:
             audio_folder = audio_root
 
         pr.white(f"Uploading to Drive: {path.name}...")
+        pr.white(f"    Video size: {format_file_size(path.stat().st_size)}")
         pr.bip()
 
         try:
@@ -381,13 +381,13 @@ def main() -> None:
         audio_path = find_audio_for_mp4(path, audio_dir)
         if audio_path:
             audio_key = make_history_key(audio_path, drive_subfolder)
-            if (
-                audio_key in audio_history
-                and audio_history[audio_key].get("status") == "uploaded"
-            ):
+            if is_uploaded_key_in_history(audio_history, audio_key):
                 pr.green(f"Audio already uploaded: {audio_path.name}")
             else:
                 pr.white(f"Uploading audio to Drive: {audio_path.name}...")
+                pr.white(
+                    f"    Audio size: {format_file_size(audio_path.stat().st_size)}"
+                )
                 pr.bip()
                 try:
                     audio_id = upload_file(

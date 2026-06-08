@@ -3,13 +3,18 @@
 import argparse
 import re
 import subprocess
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
 from tools.dry_run import create_stub, is_pipeline_dry_run
 from tools.printer import printer as pr
 from tools.source_scope import read_source_filter, source_matches_filter
-from tools.uploader_common import is_uploaded_in_history, load_nested_history
+from tools.uploader_common import (
+    find_path_by_normalized_name,
+    is_uploaded_in_history,
+    load_nested_history,
+)
 
 LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 HISTORY_PATH = Path("output/youtube_history.json")
@@ -32,7 +37,7 @@ def parse_review(review_path: Path) -> list[dict[str, str]]:
         source_match = re.search(r"Source:\s*(.+)", section)
         if source_match:
             source_full = source_match.group(1).strip()
-            talk["source"] = Path(source_full).stem
+            talk["source"] = unicodedata.normalize("NFC", Path(source_full).stem)
 
         # Title
         title_match = re.search(r"\*\*Suggested Title:\*\*\s*(.+)", section)
@@ -179,7 +184,9 @@ def main() -> None:
 
     # Pass 2: process
     existing = sum(
-        1 for _, talk, _, _, od in all_talks if (od / f"{talk['source']}.mp4").exists()
+        1
+        for _, talk, _, _, od in all_talks
+        if find_path_by_normalized_name(od, f"{talk['source']}.mp4").exists()
     )
     new_count = len(all_talks) - existing
     pr.green_title(
@@ -191,9 +198,10 @@ def main() -> None:
         source = talk["source"]
         title = talk["title"]
 
-        audio_path = audio_dir / f"{source}.mp3"
-        image_path = thumbnails_dir / f"{source}.jpg"
+        audio_path = find_path_by_normalized_name(audio_dir, f"{source}.mp3")
+        image_path = find_path_by_normalized_name(thumbnails_dir, f"{source}.jpg")
         output_mp4 = output_dir / f"{source}.mp4"
+        existing_output_mp4 = find_path_by_normalized_name(output_dir, output_mp4.name)
 
         if not audio_path.exists():
             pr.amber(f"    Audio not found: {audio_path.name}")
@@ -205,7 +213,7 @@ def main() -> None:
             errors += 1
             continue
 
-        if output_mp4.exists():
+        if existing_output_mp4.exists():
             skipped += 1
             continue
 

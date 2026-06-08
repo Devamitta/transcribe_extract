@@ -9,6 +9,7 @@ from typing import Any
 
 from tools.glossary import DHAMMA, SANGHA, VINAYA
 from tools.printer import printer as pr
+from tools.uploader_common import find_path_by_normalized_name
 
 VOCAB_PROMPTS = {
     "sangha": f"Buddhist Saṅgha discussion. Pali terms: {', '.join(SANGHA)}",
@@ -126,7 +127,9 @@ def main():
     pending = [
         f
         for f in audio_files
-        if not (output_dir / f.relative_to(audio_dir).with_suffix(".md")).exists()
+        if not find_path_by_normalized_name(
+            output_dir, f.relative_to(audio_dir).with_suffix(".md").name
+        ).exists()
     ]
     if not pending:
         pr.yes(f"All {len(audio_files)} transcripts up to date — nothing to do.")

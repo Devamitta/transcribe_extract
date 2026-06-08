@@ -1,13 +1,18 @@
 """Tests shared YouTube uploader parsing and playlist helpers."""
 
 from pathlib import Path
+import unicodedata
 
 from typing import Any
 
 from tools.uploader_common import (
     execute_resumable_upload,
+    find_path_by_normalized_name,
+    format_file_size,
     is_uploaded_in_history,
+    is_uploaded_key_in_history,
     list_channel_playlists,
+    make_history_key,
     parse_review,
 )
 
@@ -54,8 +59,10 @@ class FakeYouTube:
 
 
 class FakeUploadStatus:
-    def __init__(self, value: float) -> None:
+    def __init__(self, value: float, total_size: int = 100) -> None:
         self.value = value
+        self.total_size: int | None = total_size
+        self.resumable_progress = int(value * total_size)
 
     def progress(self) -> float:
         return self.value
@@ -63,16 +70,34 @@ class FakeUploadStatus:
 
 class FakeResumableUploadRequest:
     def __init__(
-        self, chunks: list[tuple[float | None, dict[str, Any] | None]]
+        self,
+        chunks: list[tuple[float | None, dict[str, Any] | None]],
+        total_size: int = 100,
     ) -> None:
         self.chunks = chunks
+        self.total_size = total_size
         self.index = 0
 
     def next_chunk(self) -> tuple[FakeUploadStatus | None, dict[str, Any] | None]:
         progress, response = self.chunks[self.index]
         self.index += 1
-        status = FakeUploadStatus(progress) if progress is not None else None
+        status = (
+            FakeUploadStatus(progress, self.total_size)
+            if progress is not None
+            else None
+        )
         return status, response
+
+
+class FakeClock:
+    def __init__(self, ticks: list[float]) -> None:
+        self.ticks = ticks
+        self.index = 0
+
+    def __call__(self) -> float:
+        tick = self.ticks[self.index]
+        self.index += 1
+        return tick
 
 
 def test_execute_resumable_upload_reports_percentages_and_returns_response() -> None:
@@ -94,6 +119,38 @@ def test_execute_resumable_upload_reports_percentages_and_returns_response() -> 
         "Upload progress: 50%",
         "Upload progress: 100%",
     ]
+
+
+def test_execute_resumable_upload_reports_dynamic_progress_with_speed() -> None:
+    total_size = 100 * 1024 * 1024
+    request = FakeResumableUploadRequest(
+        [
+            (0.32, None),
+            (0.64, None),
+            (None, {"id": "uploaded_1"}),
+        ],
+        total_size=total_size,
+    )
+    messages: list[str] = []
+
+    response = execute_resumable_upload(
+        request,
+        "Video upload progress",
+        messages.append,
+        show_speed=True,
+        clock=FakeClock([0.0, 2.0, 4.0, 6.0]),
+    )
+
+    assert response == {"id": "uploaded_1"}
+    assert messages == [
+        "Video upload progress: 32% (speed: 16 MB/s)",
+        "Video upload progress: 64% (speed: 16 MB/s)",
+        "Video upload progress: 100% (speed: 18 MB/s)",
+    ]
+
+
+def test_format_file_size_uses_human_readable_units() -> None:
+    assert format_file_size(100 * 1024 * 1024) == "100 MB"
 
 
 def test_parse_review_reads_playlist_fields(tmp_path: Path) -> None:
@@ -228,3 +285,37 @@ def test_is_uploaded_in_history_matches_exact_final_names_and_nested_keys() -> N
     assert is_uploaded_in_history(history, "2026-05-29 - Talk.mp4")
     assert not is_uploaded_in_history(history, "2026-05-30 - Other.mp4")
     assert not is_uploaded_in_history(history, "Talk.mp4")
+
+
+def test_uploaded_history_matches_unicode_composition() -> None:
+    filename = "2026-06-01 - Ёж и йога — ёлка Йога ānāpānasati ṭīkā.mp4"
+    history = {
+        f"english/{unicodedata.normalize('NFD', filename)}": {"status": "uploaded"}
+    }
+
+    assert is_uploaded_in_history(history, filename)
+    assert is_uploaded_in_history(history, unicodedata.normalize("NFD", filename))
+
+
+def test_uploaded_drive_key_matches_unicode_composition() -> None:
+    filename = "2026-06-01 - Ёж и йога ānāpānasati.mp4"
+    key = make_history_key(Path(filename), "Meditation")
+    history = {unicodedata.normalize("NFD", key): {"status": "uploaded"}}
+
+    assert is_uploaded_key_in_history(history, key)
+
+
+def test_find_path_by_normalized_name_returns_existing_decomposed_file(
+    tmp_path: Path,
+) -> None:
+    filename = "2026-06-01 - Ёж и ānāpānasati.mp4"
+    decomposed = unicodedata.normalize("NFD", filename)
+    existing = tmp_path / decomposed
+    existing.write_bytes(b"video")
+
+    found = find_path_by_normalized_name(tmp_path, filename)
+
+    assert found.exists()
+    assert unicodedata.normalize("NFC", found.name) == unicodedata.normalize(
+        "NFC", existing.name
+    )

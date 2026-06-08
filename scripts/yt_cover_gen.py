@@ -4,6 +4,7 @@ import argparse
 import dataclasses
 import os
 import re
+import unicodedata
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -12,7 +13,11 @@ from PIL import Image, ImageDraw, ImageFont
 from tools.dry_run import create_stub, is_pipeline_dry_run
 from tools.printer import printer as pr
 from tools.source_scope import read_source_filter, source_matches_filter
-from tools.uploader_common import get_uploaded_history_entry, load_nested_history
+from tools.uploader_common import (
+    find_path_by_normalized_name,
+    get_uploaded_history_entry,
+    load_nested_history,
+)
 
 LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 HISTORY_PATH = Path("output/youtube_history.json")
@@ -81,7 +86,7 @@ def parse_review(review_path: Path) -> list[dict[str, str]]:
         source_match = re.search(r"Source:\s*(.+)", section)
         if source_match:
             source_full = source_match.group(1).strip()
-            talk["source"] = Path(source_full).stem
+            talk["source"] = unicodedata.normalize("NFC", Path(source_full).stem)
 
         # Title
         title_match = re.search(r"\*\*Suggested Title:\*\*\s*(.+)", section)
@@ -497,13 +502,13 @@ def main() -> None:
 
     for talk in talks:
         source = talk["source"]
-        out_path = output_dir / f"{source}.jpg"
+        out_path = find_path_by_normalized_name(output_dir, f"{source}.jpg")
 
         if out_path.exists():
             skipped += 1
             continue
 
-        in_path = input_dir / f"{source}.jpg"
+        in_path = find_path_by_normalized_name(input_dir, f"{source}.jpg")
         if not in_path.exists():
             pr.amber(f"  Source not found: {source}")
             errors += 1

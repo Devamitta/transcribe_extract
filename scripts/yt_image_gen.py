@@ -2,6 +2,7 @@
 
 import argparse
 import re
+import unicodedata
 from pathlib import Path
 
 from tools.dry_run import create_stub, is_pipeline_dry_run
@@ -9,7 +10,11 @@ from tools.image_gen import generate_image
 from tools.printer import printer as pr
 from tools.provider import generate_content, get_working_key
 from tools.source_scope import read_source_filter, source_matches_filter
-from tools.uploader_common import is_uploaded_in_history, load_nested_history
+from tools.uploader_common import (
+    find_path_by_normalized_name,
+    is_uploaded_in_history,
+    load_nested_history,
+)
 
 
 SYSTEM_INSTRUCTIONS: dict[str, str] = {
@@ -65,7 +70,7 @@ def parse_review(review_path: Path) -> list[dict[str, str]]:
         source_match = re.search(r"Source:\s*(.+)", section)
         if source_match:
             source_full = source_match.group(1).strip()
-            talk["source"] = Path(source_full).stem
+            talk["source"] = unicodedata.normalize("NFC", Path(source_full).stem)
 
         # Title
         title_match = re.search(r"\*\*Suggested Title:\*\*\s*(.+)", section)
@@ -192,10 +197,6 @@ def main() -> None:
         pr.no("No subfolders found in 'output/transcribed/'.")
         return
 
-    if not args.dry_run and not get_working_key():
-        pr.no("All API keys failed. Exiting.")
-        return
-
     # Pass 1: collect all approved talks from all folders
     all_talks: list[tuple[str, Path, dict]] = []
     lang_folder = LANG_TO_FOLDER.get(args.lang, "english")
@@ -237,28 +238,39 @@ def main() -> None:
         pr.green("All approved talks are already uploaded.")
         return
 
+    pending_talks: list[tuple[str, Path, dict]] = []
+    existing = 0
+    for item in all_talks:
+        _, output_dir, talk = item
+        source = talk.get("source", sanitize_filename(talk.get("title", "Untitled")))
+        out_path = find_path_by_normalized_name(output_dir, f"{source}.jpg")
+        if out_path.exists() and not args.show_prompts:
+            existing += 1
+            continue
+        pending_talks.append(item)
+
+    if not pending_talks:
+        pr.green("Nothing to do.")
+        return
+
+    if not args.dry_run and not get_working_key():
+        pr.no("All API keys failed. Exiting.")
+        return
+
     # Pass 2: process
-    existing = sum(
-        1
-        for _, od, t in all_talks
-        if (
-            od / f"{t.get('source', sanitize_filename(t.get('title', 'Untitled')))}.jpg"
-        ).exists()
-        and not args.show_prompts
-    )
-    new_count = len(all_talks) - existing
+    new_count = len(pending_talks)
     pr.green_title(
         f"Generating thumbnails for {new_count} of {len(all_talks)} talks ({existing} already exist)..."
     )
     created, skipped, errors = 0, 0, 0
 
-    for folder_name, output_dir, talk in all_talks:
+    for folder_name, output_dir, talk in pending_talks:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         title = talk.get("title", "Untitled")
         description = talk.get("description", "")
         source = talk.get("source", sanitize_filename(title))
-        out_path = output_dir / f"{source}.jpg"
+        out_path = find_path_by_normalized_name(output_dir, f"{source}.jpg")
 
         if out_path.exists() and not args.show_prompts:
             skipped += 1

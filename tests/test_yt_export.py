@@ -1,6 +1,7 @@
 """Tests scripts.yt_export title synchronization behavior."""
 
 import sys
+import unicodedata
 from pathlib import Path
 
 import pytest
@@ -109,6 +110,7 @@ def test_sync_titles_renames_files_and_skips_ffmpeg(
     (audio_dir / f"{old_stem}.mp3").write_bytes(b"audio")
     (thumbnail_dir / f"{old_stem}.jpg").write_bytes(b"thumbnail")
     (cover_dir / f"{old_stem}.jpg").write_bytes(b"cover")
+    created_log.write_text("stale.mp4\n", encoding="utf-8")
 
     def fail_run(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("ffmpeg should not run during title sync")
@@ -144,3 +146,38 @@ def test_sync_titles_renames_files_and_skips_ffmpeg(
     assert created_log.read_text(encoding="utf-8") == (
         f"output/video/english/{new_stem}.mp4\n"
     )
+
+
+def test_rename_step_skips_uploaded_unicode_final_name_before_rename(
+    tmp_path: Path,
+) -> None:
+    old_stem = "source"
+    final_stem = "2026-06-01 - Ёж и йога ānāpānasati"
+    review = tmp_path / "reviews" / "russian_review.md"
+    transcript_dir = tmp_path / "output" / "transcribed" / "russian"
+    audio_dir = tmp_path / "output" / "audio" / "russian"
+    video_dir = tmp_path / "output" / "video" / "russian"
+    for directory in (review.parent, transcript_dir, audio_dir, video_dir):
+        directory.mkdir(parents=True)
+    _write_review(review, [(f"{old_stem}.md", "01-06-2026", "Ёж и йога ānāpānasati")])
+    (transcript_dir / f"{old_stem}.md").write_text("Transcript.", encoding="utf-8")
+    (audio_dir / f"{old_stem}.mp3").write_bytes(b"audio")
+    (video_dir / f"{old_stem}.mp4").write_bytes(b"video")
+    history = {
+        unicodedata.normalize("NFD", f"{final_stem}.mp4"): {"status": "uploaded"}
+    }
+
+    renamed = yt_export.rename_step(
+        review,
+        transcript_dir,
+        audio_dir,
+        video_dir,
+        video_mode=False,
+        dry_run=False,
+        uploaded_history=history,
+    )
+
+    assert renamed == []
+    assert (transcript_dir / f"{old_stem}.md").exists()
+    assert not (transcript_dir / f"{final_stem}.md").exists()
+    assert f"## Source: {old_stem}.md" in review.read_text(encoding="utf-8")

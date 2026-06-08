@@ -9,7 +9,12 @@ from pathlib import Path
 from tools.dry_run import is_pipeline_dry_run, is_stub, log_stub
 from tools.printer import printer as pr
 from tools.source_scope import read_source_filter, source_matches_filter
-from tools.uploader_common import is_uploaded_in_history, load_nested_history
+from tools.uploader_common import (
+    find_path_by_normalized_name,
+    is_uploaded_in_history,
+    load_nested_history,
+    normalize_text,
+)
 
 LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 HISTORY_PATH = Path("output/youtube_history.json")
@@ -54,6 +59,8 @@ def rename_step(
     dry_run: bool,
     source_filter: set[str] | None = None,
     limit: int = 0,
+    uploaded_history: dict[str, dict[str, str]] | None = None,
+    force: bool = False,
 ) -> list[Path]:
     """Rename source files in original folders to 'YYYY-MM-DD - Suggested Title'."""
     if not review_file.exists():
@@ -106,37 +113,44 @@ def rename_step(
     skipped = 0
 
     for source_name, iso_date, _dt, title_raw in dated:
-        old_stem = Path(source_name).stem
-        new_stem = f"{iso_date} - {sanitize_filename(title_raw)}"
+        old_stem = normalize_text(Path(source_name).stem)
+        new_stem = normalize_text(f"{iso_date} - {sanitize_filename(title_raw)}")
 
-        if old_stem == new_stem:
-            # Already correctly named. Only add to the upload filter log when the MP4
-            # doesn't exist yet — meaning the file was renamed in a previous partial run
-            # but video creation didn't complete. If the MP4 already exists it's either
-            # already uploaded (correct) or will be caught by the no-filter fallback
-            # (oldest-first sort) without contaminating the specific set with stale
-            # history entries.
+        if (
+            uploaded_history is not None
+            and not force
+            and (
+                is_uploaded_in_history(uploaded_history, f"{old_stem}.mp4")
+                or is_uploaded_in_history(uploaded_history, f"{new_stem}.mp4")
+            )
+        ):
+            skipped += 1
+            continue
+
+        if normalize_text(old_stem) == normalize_text(new_stem):
+            # Already correctly named. Keep the final media path in the export log
+            # so any explicit log-scoped downstream run sees the current filename.
             if video_mode:
-                _mp4 = video_dir / f"{old_stem}.mp4"
+                _mp4 = find_path_by_normalized_name(video_dir, f"{old_stem}.mp4")
                 if _mp4.exists():
                     renamed_media_paths.append(_mp4)
             else:
-                _mp3 = source_audio_dir / f"{old_stem}.mp3"
+                _mp3 = find_path_by_normalized_name(source_audio_dir, f"{old_stem}.mp3")
                 _mp4 = video_dir / f"{old_stem}.mp4"
-                if _mp3.exists() and not _mp4.exists():
+                if _mp3.exists():
                     renamed_media_paths.append(_mp4)
             skipped += 1
             continue
         new_md_name = f"{new_stem}.md"
-        old_md = transcript_dir / source_name
+        old_md = find_path_by_normalized_name(transcript_dir, source_name)
         new_md = transcript_dir / new_md_name
 
         # Audio always exists (or should)
-        old_mp3 = source_audio_dir / f"{old_stem}.mp3"
+        old_mp3 = find_path_by_normalized_name(source_audio_dir, f"{old_stem}.mp3")
         new_mp3 = source_audio_dir / f"{new_stem}.mp3"
 
         # Video only if video mode
-        old_mp4 = video_dir / f"{old_stem}.mp4"
+        old_mp4 = find_path_by_normalized_name(video_dir, f"{old_stem}.mp4")
         new_mp4 = video_dir / f"{new_stem}.mp4"
 
         if dry_run:
@@ -153,9 +167,9 @@ def rename_step(
             thumb_dir = Path("output/thumbnails") / _img_rel
             cover_dir = Path("output/covers") / _img_rel
 
-            old_thumb = thumb_dir / f"{old_stem}.jpg"
+            old_thumb = find_path_by_normalized_name(thumb_dir, f"{old_stem}.jpg")
             new_thumb = thumb_dir / f"{new_stem}.jpg"
-            old_cover = cover_dir / f"{old_stem}.jpg"
+            old_cover = find_path_by_normalized_name(cover_dir, f"{old_stem}.jpg")
             new_cover = cover_dir / f"{new_stem}.jpg"
 
             if old_thumb.exists():
@@ -185,12 +199,13 @@ def rename_step(
             renamed.append((source_name, new_md_name))
             continue
 
-        if not old_md.exists():
+        if not old_md.exists() and not new_md.exists():
             pr.amber(f"      Transcript not found: {old_md}")
             continue
 
-        old_md.rename(new_md)
-        if old_mp3.exists():
+        if old_md.exists() and not new_md.exists():
+            old_md.rename(new_md)
+        if old_mp3.exists() and not new_mp3.exists():
             old_mp3.rename(new_mp3)
         # Always record the target MP4 path when the transcript is renamed, even if the
         # MP3 was already renamed by a previous partial run (old_mp3 absent). This ensures
@@ -199,7 +214,7 @@ def rename_step(
             renamed_media_paths.append(video_dir / f"{new_stem}.mp4")
 
         if video_mode:
-            if old_mp4.exists():
+            if old_mp4.exists() and not new_mp4.exists():
                 old_mp4.rename(new_mp4)
             # Record new MP4 path whether or not rename happened (partial-run safety).
             renamed_media_paths.append(new_mp4)
@@ -215,14 +230,14 @@ def rename_step(
         thumb_dir = Path("output/thumbnails") / _img_rel
         cover_dir = Path("output/covers") / _img_rel
 
-        old_thumb = thumb_dir / f"{old_stem}.jpg"
+        old_thumb = find_path_by_normalized_name(thumb_dir, f"{old_stem}.jpg")
         new_thumb = thumb_dir / f"{new_stem}.jpg"
-        old_cover = cover_dir / f"{old_stem}.jpg"
+        old_cover = find_path_by_normalized_name(cover_dir, f"{old_stem}.jpg")
         new_cover = cover_dir / f"{new_stem}.jpg"
 
-        if old_thumb.exists():
+        if old_thumb.exists() and not new_thumb.exists():
             old_thumb.rename(new_thumb)
-        if old_cover.exists():
+        if old_cover.exists() and not new_cover.exists():
             old_cover.rename(new_cover)
 
         renamed.append((source_name, new_md_name))
@@ -307,11 +322,10 @@ def sort_review_file(review_file: Path, dry_run: bool) -> None:
 
 def write_created_log(created_log: Path | None, paths: list[Path]) -> None:
     """Write paths that downstream upload steps should process."""
-    if created_log and paths:
-        created_log.write_text(
-            "\n".join(str(path) for path in paths) + "\n",
-            encoding="utf-8",
-        )
+    if not created_log:
+        return
+    content = "\n".join(str(path) for path in paths)
+    created_log.write_text(f"{content}\n" if content else "", encoding="utf-8")
 
 
 def main() -> None:
@@ -405,6 +419,7 @@ def main() -> None:
     all_items: list[tuple[str, dict, Path, Path, Path]] = []
     all_renamed_media: list[Path] = []
     source_filter = read_source_filter(args.source_log)
+    history = load_nested_history(HISTORY_PATH, args.lang or "en")
 
     for folder_name in folder_names:
         transcript_dir = transcribed_base / folder_name
@@ -428,9 +443,11 @@ def main() -> None:
             args.dry_run,
             source_filter,
             args.limit,
+            history,
+            args.force,
         )
         all_renamed_media.extend(renamed_media)
-        renamed_media_stems = {path.stem for path in renamed_media}
+        renamed_media_stems = {normalize_text(path.stem) for path in renamed_media}
         sort_review_file(review_path, args.dry_run)
 
         stats_content = review_path.read_text(encoding="utf-8")
@@ -513,7 +530,6 @@ def main() -> None:
         write_created_log(args.created_log, all_renamed_media)
         return
 
-    history = load_nested_history(HISTORY_PATH, args.lang or "en")
     if not args.force:
         all_items = [
             item
@@ -536,9 +552,11 @@ def main() -> None:
         source_stem = Path(item["source"]).stem
 
         if args.video_mode:
-            source_file = video_dir / f"{source_stem}.mp4"
+            source_file = find_path_by_normalized_name(video_dir, f"{source_stem}.mp4")
         else:
-            source_file = source_audio_dir / f"{source_stem}.mp3"
+            source_file = find_path_by_normalized_name(
+                source_audio_dir, f"{source_stem}.mp3"
+            )
 
         if source_file.exists():
             tmp_file = source_file.with_suffix(".tmp" + source_file.suffix)
