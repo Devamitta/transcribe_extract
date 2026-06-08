@@ -1,25 +1,71 @@
 #!/usr/bin/env bash
 # CLI entry point for the Ariyadhammika Bhikkhu YouTube video pipeline.
 
+set -euo pipefail
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+SYNC_REMOTE="origin"
+SYNC_REF="origin/master"
+REVIEWS_STASH_CREATED=0
+
+current_stash_ref() {
+    git rev-parse -q --verify refs/stash 2>/dev/null || true
+}
+
+restore_reviews_from_stash() {
+    local stash_ref="stash@{0}"
+    local restored=0
+    local review_path
+
+    while IFS= read -r -d '' review_path; do
+        echo "Running: git restore --source=$stash_ref --staged --worktree -- $review_path"
+        git restore --source="$stash_ref" --staged --worktree -- "$review_path"
+        restored=1
+    done < <(git diff --name-only -z "$stash_ref^1" "$stash_ref" -- reviews/)
+
+    if git rev-parse -q --verify "$stash_ref^3" >/dev/null; then
+        while IFS= read -r -d '' review_path; do
+            echo "Running: git checkout $stash_ref^3 -- $review_path"
+            git checkout "$stash_ref^3" -- "$review_path"
+            restored=1
+        done < <(git ls-tree -rz --name-only "$stash_ref^3" -- reviews/)
+    fi
+
+    if [[ "$restored" -eq 1 ]]; then
+        git restore --staged -- reviews/
+    fi
+
+    echo "Running: git stash drop $stash_ref"
+    git stash drop "$stash_ref"
+}
 
 cd "$PROJECT_ROOT" || { echo "Error: Cannot cd to project root: $PROJECT_ROOT"; exit 1; }
 
-echo "Running: git stash"
-git stash
-EXIT_CODE=$?
-[ $EXIT_CODE -ne 0 ] && exit $EXIT_CODE
+STASH_BEFORE="$(current_stash_ref)"
 
-echo "Running: git pull"
-git pull
-EXIT_CODE=$?
-[ $EXIT_CODE -ne 0 ] && exit $EXIT_CODE
+echo 'Running: git stash push --include-untracked -m "yt-ardmk reviews backup" -- reviews/'
+git stash push --include-untracked -m "yt-ardmk reviews backup" -- reviews/
 
-echo "Running: git stash pop"
-git stash pop
-EXIT_CODE=$?
-[ $EXIT_CODE -ne 0 ] && exit $EXIT_CODE
+STASH_AFTER="$(current_stash_ref)"
+if [[ "$STASH_AFTER" != "$STASH_BEFORE" ]]; then
+    REVIEWS_STASH_CREATED=1
+fi
+
+echo "Running: git fetch --prune $SYNC_REMOTE"
+git fetch --prune "$SYNC_REMOTE"
+
+echo "Running: git reset --hard $SYNC_REF"
+git reset --hard "$SYNC_REF"
+
+echo "Running: git clean -fd -e reviews/"
+git clean -fd -e reviews/
+
+if [[ "$REVIEWS_STASH_CREATED" -eq 1 ]]; then
+    restore_reviews_from_stash
+else
+    echo "No reviews/ changes to restore."
+fi
 
 echo 'Updating dependencies'
 uv sync --all-groups
