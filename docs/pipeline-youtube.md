@@ -134,7 +134,7 @@ Checks that the last Whisper timestamp in each transcript is within 120 s of the
 ### 2.1: Metadata Suggestions
 Generates titles and descriptions using the configured LLM provider.
 
-Provider and model configuration lives in `tools/ai_models.json`. The default cross-provider fallback order is `antigravity-cli (Gemini 3.5 Flash) → deepseek (deepseek-v4-flash) → openrouter (deepseek/deepseek-v4-flash)`; this list is fully editable without touching Python. To restrict routing to a single provider for one run, set `PROVIDER=google|gemini-cli|agy|deepseek|openrouter` on the command line (e.g. `PROVIDER=agy ./yt_run.sh ...`); a `PROVIDER` value in `.env` is ignored, so requests always follow `tools/ai_models.json` by default.
+Provider and model configuration lives in `tools/ai_models.json`. The default cross-provider fallback order is `antigravity-cli (Gemini 3.5 Flash) → deepseek (deepseek-v4-flash) → openrouter (deepseek/deepseek-v4-flash)`; this list is fully editable without touching Python. To restrict routing to a single provider for one run, set `PROVIDER=google|agy|deepseek|openrouter` on the command line (e.g. `PROVIDER=agy ./yt_run.sh ...`); a `PROVIDER` value in `.env` is ignored, so requests always follow `tools/ai_models.json` by default.
 
 Normal `yt_run.sh` runs do not make a separate provider probe before metadata generation. The first real metadata request is the availability check; if it fails after retries, the stage exits non-zero and `yt_run.sh` stops through `set -e`.
 

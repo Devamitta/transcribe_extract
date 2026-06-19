@@ -14,14 +14,13 @@ load_dotenv()
 
 TEXT_PROVIDER_NAMES = {
     "google",
-    "gemini-cli",
     "antigravity-cli",
     "agy",
     "deepseek",
     "openrouter",
 }
 TEXT_PROVIDER_ERROR = (
-    "Set PROVIDER=google, PROVIDER=gemini-cli, "
+    "Set PROVIDER=google, "
     "PROVIDER=antigravity-cli, PROVIDER=agy, PROVIDER=deepseek, "
     "or PROVIDER=openrouter in .env"
 )

@@ -1,12 +1,6 @@
 {
   "default_models": [
     {
-      "provider": "gemini-cli",
-      "model": "gemini-3-flash-preview",
-      "delay": 0,
-      "timeout": 150
-    },
-    {
       "provider": "antigravity-cli",
       "model": "Gemini 3.5 Flash (Low)",
       "delay": 0,
@@ -37,10 +31,6 @@
     "google": {
       "work": ["gemini-2.5-flash"],
       "test": ["gemini-3.1-flash-lite-preview"]
-    },
-    "gemini-cli": {
-      "work": ["gemini-3-flash-preview", "gemini-2.5-pro"],
-      "test": ["gemini-3.1-flash-lite"]
     },
     "antigravity-cli": {
       "work": ["Gemini 3.5 Flash (Low)", "Gemini 3.1 Pro (Low)"],

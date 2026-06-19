@@ -17,7 +17,7 @@ uv sync
 ```
 
 **Fill in `.env`** (created by `setup_folders.sh`):
-- API keys — `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, or `DEEPSEEK_API_KEY`; `gemini-cli` and `antigravity-cli` use local CLI auth instead
+- API keys — `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, or `DEEPSEEK_API_KEY`; `antigravity-cli` uses local CLI auth instead
 - **Provider/model routing is configured in `tools/ai_models.json`, not `.env`.** Requests follow the cross-provider `default_models` fallback order there. To restrict routing to a single provider, set `PROVIDER=<name>` on the command line for that run (e.g. `PROVIDER=agy uv run ...`); a `PROVIDER` value in `.env` is ignored.
 - **Bio links:** set `BIO_EN` and `BIO_RU` to append a speaker bio to YouTube descriptions. Leave empty (default) for no bio.
 

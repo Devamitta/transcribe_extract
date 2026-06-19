@@ -29,13 +29,12 @@ CACHE_PREFIX = (
 )
 
 PROVIDER_ERROR_MSG = (
-    "Set PROVIDER=google, PROVIDER=gemini-cli, PROVIDER=antigravity-cli, "
+    "Set PROVIDER=google, PROVIDER=antigravity-cli, "
     "PROVIDER=agy, PROVIDER=openrouter, or PROVIDER=deepseek in .env"
 )
 
 _KNOWN_PROVIDERS = {
     "google",
-    "gemini-cli",
     "antigravity-cli",
     "agy",
     "deepseek",
@@ -69,8 +68,6 @@ GEMINI_WORK_MODELS: list[str] = _pm.get("google", {}).get("work", ["gemini-2.5-f
 GEMINI_TEST_MODELS: list[str] = _pm.get("google", {}).get(
     "test", ["gemini-3.1-flash-lite-preview"]
 )
-GEMINI_CLI_WORK_MODELS: list[str] = _pm.get("gemini-cli", {}).get("work", [])
-GEMINI_CLI_TEST_MODELS: list[str] = _pm.get("gemini-cli", {}).get("test", [])
 ANTIGRAVITY_CLI_WORK_MODELS: list[str] = _pm.get("antigravity-cli", {}).get("work", [])
 ANTIGRAVITY_CLI_TEST_MODELS: list[str] = _pm.get("antigravity-cli", {}).get("test", [])
 

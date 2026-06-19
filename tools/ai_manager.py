@@ -17,7 +17,7 @@ from tools.printer import printer as pr
 AI_MODELS_PATH = Path("tools/ai_models.json")
 
 # Providers using CLI_TEST_MODE (--dry-run) for test-model selection; others use TEST_MODE.
-_CLI_TEST_MODE_PROVIDERS: frozenset[str] = frozenset({"gemini-cli", "antigravity-cli"})
+_CLI_TEST_MODE_PROVIDERS: frozenset[str] = frozenset({"antigravity-cli"})
 
 # Canonical alias map (normalise before use)
 _PROVIDER_ALIASES: dict[str, str] = {"agy": "antigravity-cli"}
@@ -25,7 +25,6 @@ _PROVIDER_ALIASES: dict[str, str] = {"agy": "antigravity-cli"}
 # How each provider's get_working_key is called
 _KEY_STYLE: dict[str, str] = {
     "google": "single_model",
-    "gemini-cli": "loop_models",
     "antigravity-cli": "loop_models",
     "deepseek": "no_args",
     "openrouter": "no_args",
@@ -34,14 +33,13 @@ _KEY_STYLE: dict[str, str] = {
 # Provider name → Python module path
 _PROVIDER_MODULE_PATHS: dict[str, str] = {
     "google": "tools.gemini",
-    "gemini-cli": "tools.gemini_cli",
     "antigravity-cli": "tools.antigravity_cli",
     "deepseek": "tools.deepseek",
     "openrouter": "tools.openrouter",
 }
 
 # Providers whose generate_content accepts a `timeout` kwarg.
-# CLI providers (gemini-cli, antigravity-cli) use their own built-in default timeout.
+# CLI providers (e.g. antigravity-cli) use their own built-in default timeout.
 _ACCEPTS_TIMEOUT: frozenset[str] = frozenset({"deepseek", "openrouter"})
 
 
@@ -125,9 +123,6 @@ class AIManager:
 
         if _has_gemini_key():
             self._providers["google"] = importlib.import_module("tools.gemini")
-
-        if shutil.which("gemini"):
-            self._providers["gemini-cli"] = importlib.import_module("tools.gemini_cli")
 
         # agy: check PATH without blocking; confirm via background probe.
         if shutil.which("agy"):
