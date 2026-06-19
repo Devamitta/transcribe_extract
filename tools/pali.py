@@ -1,5 +1,11 @@
-# Shared glossary, system instruction, and chunking logic for the Pali correction stage.
+"""Shared glossary, system instruction, and chunking logic for the Pali correction stage."""
+
+import json
+import re
+from dataclasses import dataclass
 from pathlib import Path
+
+from tools.chunking import chunk_text_by_paragraph
 from tools.glossary import (
     DHAMMA,
     EXTENDED_TERMS,
@@ -12,6 +18,94 @@ from tools.glossary import (
 )
 
 BASE_LISTS = SANGHA + DHAMMA + VINAYA + EXTENDED_TERMS + PLACES + SUTTA_TERMS
+DATA_DIR = Path(__file__).parent / "data"
+
+
+@dataclass(frozen=True)
+class OverridePair:
+    original: str
+    corrected: str
+
+
+@dataclass(frozen=True)
+class AppliedFix:
+    original: str
+    corrected: str
+    count: int
+
+
+def _load_pair_list(path: Path) -> list[OverridePair]:
+    raw: object = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, list):
+        raise ValueError(f"Expected a list in {path}")
+
+    pairs: list[OverridePair] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        original = item.get("original")
+        corrected = item.get("corrected")
+        if isinstance(original, str) and isinstance(corrected, str):
+            pairs.append(OverridePair(original=original, corrected=corrected))
+    return pairs
+
+
+def _load_examples(path: Path) -> dict[str, list[OverridePair]]:
+    raw: object = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"Expected an object in {path}")
+
+    examples: dict[str, list[OverridePair]] = {}
+    for key, value in raw.items():
+        if not isinstance(key, str) or not isinstance(value, list):
+            continue
+        pairs: list[OverridePair] = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            original = item.get("original")
+            corrected = item.get("corrected")
+            if isinstance(original, str) and isinstance(corrected, str):
+                pairs.append(OverridePair(original=original, corrected=corrected))
+        examples[key] = pairs
+    return examples
+
+
+PALI_OVERRIDES = _load_pair_list(DATA_DIR / "pali_overrides.json")
+PALI_EXAMPLES = _load_examples(DATA_DIR / "pali_examples.json")
+
+
+def apply_overrides(text: str) -> tuple[str, list[AppliedFix]]:
+    corrected = text
+    applied: list[AppliedFix] = []
+
+    for pair in sorted(
+        PALI_OVERRIDES, key=lambda item: len(item.original), reverse=True
+    ):
+        pattern = re.compile(rf"\b{re.escape(pair.original)}\b", re.IGNORECASE)
+        corrected, count = pattern.subn(pair.corrected, corrected)
+        if count:
+            applied.append(
+                AppliedFix(
+                    original=pair.original,
+                    corrected=pair.corrected,
+                    count=count,
+                )
+            )
+
+    return corrected, applied
+
+
+def _format_inline_examples(examples: list[OverridePair]) -> str:
+    return ", ".join(
+        f"'{example.original}' -> '{example.corrected}'" for example in examples
+    )
+
+
+def _format_bullet_examples(examples: list[OverridePair]) -> str:
+    return "".join(
+        f"   - '{example.original}' -> '{example.corrected}'\n" for example in examples
+    )
 
 
 def get_pali_system_instruction(file_path: Path) -> str:
@@ -27,6 +121,11 @@ def get_pali_system_instruction(file_path: Path) -> str:
 
     _combined = sorted(set(lists))
     pali_glossary: str = ", ".join(_combined)
+    bridging_examples = _format_inline_examples(PALI_EXAMPLES["multi_word_bridging"])
+    semantic_examples = _format_bullet_examples(
+        PALI_EXAMPLES["semantic_hallucinations"]
+    )
+    monastic_examples = _format_inline_examples(PALI_EXAMPLES["monastic_names"])
 
     instruction = (
         "You are an expert Pali proofreader. Your task is to identify phonetic and semantic misspellings of Pali words, Buddhist terms, or monastery names in a provided text and suggest corrections based on a glossary.\n\n"
@@ -36,30 +135,15 @@ def get_pali_system_instruction(file_path: Path) -> str:
         "3. WATCH CAPITALIZATION: Be highly suspicious of capitalized English names (e.g., 'Sutter', 'Mach', 'Vinyan') if the context points to a Pali term. Speech-to-text software frequently capitalizes Pali words by mistake.\n"
         "4. IGNORE ACRONYMS: Do NOT correct ALL CAPS acronyms (e.g., 'SPS', 'MBS') UNLESS they are in the glossary (e.g., 'SBS'). Watch for phonetic garbles of these glossary acronyms (e.g., 'S-Base' -> 'SBS').\n"
         "5. MULTI-WORD BRIDGING: Whisper often inserts spaces into the middle of Pali words. You MUST identify two-word or three-word sequences that together form a single glossary term.\n"
-        "   Example: 'Viragadham Mikam' -> 'Virāgadhammikaṁ', 'Ios Mokiti' -> 'āyasmā Kittisobhana', 'Satin-Varibhung-Kang-Battapetva' -> 'parimukhaṃ satiṃ upaṭṭhapetvā'.\n"
+        f"   Example: {bridging_examples}.\n"
         "6. CONSISTENCY: If you identify a correction, scan the rest of the text for phonetic variations of that same term (e.g., if you fix 'Raghadamica', also fix 'Ergadamica').\n"
         "7. SEMANTIC HALLUCINATIONS & ENGLISH CONJUNCTIONS: Watch for 'Deep Hallucinations' where the transcriber replaces complex terms with common English phrases, often using conjunctions like 'and' or 'or'.\n"
         "   Examples:\n"
-        "   - 'Norway for far' -> 'Noble Eightfold Path'\n"
-        "   - 'Marginal Triad' -> 'Majjhima Nikāya'\n"
-        "   - 'put up' -> 'patta'\n"
-        "   - 'Logan needed' -> 'lokavidū'\n"
-        "   - 'the ergonomic big group' -> 'the Virāgadhammika Bhikkhu'\n"
-        "   - 'share the down' -> 'share the Dhamma'\n"
-        "   - 'Brahma and hara' -> 'Brahmavihāra'\n"
-        "   - 'five-year-old' -> 'five aggregates'\n"
-        "   - 'wire tomorrow' -> 'vaya-dhamma'\n"
-        "   - 'much money car' -> 'Majjhima Nikāya'\n"
-        "   - 'much money' -> 'Majjhima Nikāya'\n"
-        "   - 'epidemic' -> 'Abhidhamma'\n"
-        "   - 'exists in another has been a reason' -> 'ceases and another has arisen'\n"
-        "   - 'proper pancha' -> 'papañca'\n"
-        "   - 'sun disappeared' -> 'saññā disappeared'\n"
-        "   - 'global group' -> 'noble eightfold path'\n"
+        f"{semantic_examples}"
         "8. MONASTIC NAMES & TITLES: Correct phonetic misspellings of names and titles.\n"
-        "   - Examples: 'Bandiaga Jitta' -> 'Bhante Aggacitta', 'Kusalacāra Bikku' -> 'Kusalacāra Bhikkhu', 'Mande' or 'Wanda' -> 'Bhante', 'Gammaji' -> 'Dhammajī', 'Genesiri' -> 'Jinasiri'.\n"
+        f"   - Examples: {monastic_examples}.\n"
         "9. Output ONLY a valid JSON array of objects with 'original' and 'corrected' keys. No other text.\n"
-        "10. ENGLISH BUDDHIST TERMS & OVERRIDES: Watch for phonetic mistranslations of common English Buddhist words, and unrelated English words or names forced onto Pali terms. The following English words are ALWAYS hallucinations in this corpus and MUST be corrected regardless of perceived English plausibility: 'vagina' or 'vaginas' -> 'paññā' or 'sampajañña', 'some vagina' -> 'sampajañña', 'winner' -> 'Vinaya', 'linear' -> 'Vinaya', 'the singer' or 'singers' -> 'the Sangha', 'Europa' -> 'arūpa', 'cookie' or 'cookies' -> 'kutī' or 'kutis', and 'cook' -> 'kutī' (DO NOT change 'cook' if context is explicitly about food, meals, or kitchens). Other examples: 'false janas' -> 'fourth jhāna', 'hook-up' -> 'bhikkhu', 'Potapa' -> 'phoṭṭhabba', 'red cock noise' -> 'recognition', 'polyvots' -> 'body parts', 'fire fire rivers' -> 'five aggregates', 'super-ganda' or 'upa-kanta' or 'super-cold' -> 'upādānakkhandha', 'sliver' -> 'saliva', 'Siddhippa' -> 'Satipaṭṭhāna', 'Tamanu Pasana' -> 'Dhammānupassanā', 'Anathasp' -> 'anattā aspect', 'Pesankara Dukkha' -> 'saṅkhāra dukkha', 'civilization' -> 'volition', 'jayetana' or 'Jaitana' -> 'cetanā', 'Hupa Kalapa' -> 'rūpa kalāpa', 'palanomiker' -> 'Virāgadhammika', 'he was sicko' -> 'ehipassiko', 'Pache' -> 'paccaya', 'Vyana-beta' -> 'viññāṇapeta', 'Smiley Tyson' -> 'smelling tasting', 'Indiana' -> 'viññāṇa', 'Insaniya Vedetem Nebola' -> 'saññā vedayita nirodha', 'Sadi the Fisherman' -> 'Sāti the fisherman', 'Baron Katie' or 'Bayon Katie' or 'Baranket' -> 'Byron Katie', 'Yostovicia' -> 'euthanasia', 'kailet meditation' -> 'guided meditation', 'nano loop' -> 'nāma-rūpa', 'fajra' -> 'phassa', 'bunya, apuñña and anunce' -> 'puñña, apuñña, āneñja', 'duper' -> 'Dukkha', 'noise' -> 'knowing', 'kurtis' -> 'kutis', 'minerals' -> 'monastics' or 'Vinaya rules', 'stonic' -> 'tonic', 'manoeuvres' -> 'monastics', 'chocolate model', 'Chateau Mahdra', 'Chaturmādha', 'Chaturmattu', or 'Chathumattā' -> 'catumadhura', 'John Chakras' -> 'pañcadvāra', 'handcuffs' -> 'robe', 'rape' or 'raped' -> 'robe' or 'robed', 'slave food' -> 'alms food'). DO NOT replace a less common Pali term with a more common one (e.g., don't change 'phoṭṭhabba' to 'vedanā') if the phonetic match for the less common term is strong.\n"
+        "10. ENGLISH BUDDHIST TERMS & CONTEXTUAL OVERRIDES: Watch for phonetic mistranslations of common English Buddhist words, and unrelated English words or names forced onto Pali terms. Deterministic corpus-wide overrides are applied locally before this LLM call and omitted here to save tokens. Still evaluate context-dependent or ambiguous cases here: 'vagina' or 'vaginas' -> 'paññā' or 'sampajañña' depending on context, and 'cook' -> 'kutī' only when context is not explicitly about food, meals, or kitchens. Other examples: 'false janas' -> 'fourth jhāna', 'hook-up' -> 'bhikkhu', 'Potapa' -> 'phoṭṭhabba', 'red cock noise' -> 'recognition', 'polyvots' -> 'body parts', 'fire fire rivers' -> 'five aggregates', 'super-ganda' or 'upa-kanta' or 'super-cold' -> 'upādānakkhandha', 'sliver' -> 'saliva', 'Siddhippa' -> 'Satipaṭṭhāna', 'Tamanu Pasana' -> 'Dhammānupassanā', 'Anathasp' -> 'anattā aspect', 'Pesankara Dukkha' -> 'saṅkhāra dukkha', 'civilization' -> 'volition', 'jayetana' or 'Jaitana' -> 'cetanā', 'Hupa Kalapa' -> 'rūpa kalāpa', 'palanomiker' -> 'Virāgadhammika', 'he was sicko' -> 'ehipassiko', 'Pache' -> 'paccaya', 'Vyana-beta' -> 'viññāṇapeta', 'Smiley Tyson' -> 'smelling tasting', 'Indiana' -> 'viññāṇa', 'Insaniya Vedetem Nebola' -> 'saññā vedayita nirodha', 'Sadi the Fisherman' -> 'Sāti the fisherman', 'Baron Katie' or 'Bayon Katie' or 'Baranket' -> 'Byron Katie', 'Yostovicia' -> 'euthanasia', 'kailet meditation' -> 'guided meditation', 'nano loop' -> 'nāma-rūpa', 'fajra' -> 'phassa', 'bunya, apuñña and anunce' -> 'puñña, apuñña, āneñja', 'duper' -> 'Dukkha', 'noise' -> 'knowing', 'kurtis' -> 'kutis', 'minerals' -> 'monastics' or 'Vinaya rules', 'stonic' -> 'tonic', 'manoeuvres' -> 'monastics', 'chocolate model', 'Chateau Mahdra', 'Chaturmādha', 'Chaturmattu', or 'Chathumattā' -> 'catumadhura', 'John Chakras' -> 'pañcadvāra', 'handcuffs' -> 'robe', 'rape' or 'raped' -> 'robe' or 'robed', 'slave food' -> 'alms food'). DO NOT replace a less common Pali term with a more common one (e.g., don't change 'phoṭṭhabba' to 'vedanā') if the phonetic match for the less common term is strong.\n"
         "11. EXTREME PHONETIC DISTORTIONS: Whisper severely distorts foreign place names. Look for extreme phonetic matches (e.g., 'Waddenwood-Pupon' -> 'Wat Nong Pah Pong', 'Fittincau' -> 'viññāṇa', 'Bauch' -> 'Pa-Auk').\n"
         "12. THERAVADA PALI BIAS & GARBLE ABSORPTION: Prioritize common Theravada Pali terms over obscure or Sanskrit terms. If an English word is clearly part of a phonetic garble for a single Pali term (e.g., 'India Asambara'), ABSORB the English word into the correction (e.g., 'India Asambara' -> 'Indriyasaṃvara', NOT 'India Indriyasaṃvara'). Do not invent complex compounds if a simpler glossary term fits the phonetic footprint (e.g., 'samiltonica' -> 'Saṃyutta Nikāya').\n"
         "13. SURGICAL INTEGRITY: The 'original' field in your JSON response MUST NOT contain line breaks (\\n), timestamps (e.g., [12.3]), or span across multiple sentences or paragraphs. You MUST target the absolute shortest possible phrase (e.g., 1-4 words). NEVER attempt to rewrite or merge entire sentences. If you include line breaks or timestamps, the replacement script will fail, causing fatal metadata loss.\n"
@@ -70,21 +154,7 @@ def get_pali_system_instruction(file_path: Path) -> str:
 
 
 def chunk_text_no_overlap(text: str, chunk_size: int = 2000) -> list[str]:
-    paragraphs = text.split("\n\n")
-    chunks = []
-    current_chunk = []
-    current_length = 0
-    for p in paragraphs:
-        words = len(p.split())
-        if current_length + words > chunk_size and current_chunk:
-            chunks.append("\n\n".join(current_chunk))
-            current_chunk = []
-            current_length = 0
-        current_chunk.append(p)
-        current_length += words
-    if current_chunk:
-        chunks.append("\n\n".join(current_chunk))
-    return chunks
+    return chunk_text_by_paragraph(text, chunk_size=chunk_size)
 
 
 def get_semantic_eval_instruction() -> str:

@@ -1,0 +1,104 @@
+{
+  "multi_word_bridging": [
+    {
+      "original": "Viragadham Mikam",
+      "corrected": "Virāgadhammikaṁ"
+    },
+    {
+      "original": "Ios Mokiti",
+      "corrected": "āyasmā Kittisobhana"
+    },
+    {
+      "original": "Satin-Varibhung-Kang-Battapetva",
+      "corrected": "parimukhaṃ satiṃ upaṭṭhapetvā"
+    }
+  ],
+  "semantic_hallucinations": [
+    {
+      "original": "Norway for far",
+      "corrected": "Noble Eightfold Path"
+    },
+    {
+      "original": "Marginal Triad",
+      "corrected": "Majjhima Nikāya"
+    },
+    {
+      "original": "put up",
+      "corrected": "patta"
+    },
+    {
+      "original": "Logan needed",
+      "corrected": "lokavidū"
+    },
+    {
+      "original": "the ergonomic big group",
+      "corrected": "the Virāgadhammika Bhikkhu"
+    },
+    {
+      "original": "share the down",
+      "corrected": "share the Dhamma"
+    },
+    {
+      "original": "Brahma and hara",
+      "corrected": "Brahmavihāra"
+    },
+    {
+      "original": "five-year-old",
+      "corrected": "five aggregates"
+    },
+    {
+      "original": "wire tomorrow",
+      "corrected": "vaya-dhamma"
+    },
+    {
+      "original": "much money car",
+      "corrected": "Majjhima Nikāya"
+    },
+    {
+      "original": "much money",
+      "corrected": "Majjhima Nikāya"
+    },
+    {
+      "original": "exists in another has been a reason",
+      "corrected": "ceases and another has arisen"
+    },
+    {
+      "original": "proper pancha",
+      "corrected": "papañca"
+    },
+    {
+      "original": "sun disappeared",
+      "corrected": "saññā disappeared"
+    },
+    {
+      "original": "global group",
+      "corrected": "noble eightfold path"
+    }
+  ],
+  "monastic_names": [
+    {
+      "original": "Bandiaga Jitta",
+      "corrected": "Bhante Aggacitta"
+    },
+    {
+      "original": "Kusalacāra Bikku",
+      "corrected": "Kusalacāra Bhikkhu"
+    },
+    {
+      "original": "Mande",
+      "corrected": "Bhante"
+    },
+    {
+      "original": "Wanda",
+      "corrected": "Bhante"
+    },
+    {
+      "original": "Gammaji",
+      "corrected": "Dhammajī"
+    },
+    {
+      "original": "Genesiri",
+      "corrected": "Jinasiri"
+    }
+  ]
+}

@@ -134,7 +134,7 @@ from tools.pali import (
     chunk_text_no_overlap,
     get_semantic_eval_instruction,
 )
-from tools.extract import EXTRACT_SYSTEM_INSTRUCTION, chunk_text
+from tools.extract import EXTRACT_SYSTEM_INSTRUCTION_WITH_OVERLAP, chunk_text
 from tools.polish import POLISH_SYSTEM_INSTRUCTION
 from tools import printer as _p
 
@@ -153,7 +153,7 @@ TASK_CONFIG = {
     "extract": {
         "input_dir": Path("output/corrected_pali"),
         "output_dir": Path("output/extracted"),
-        "get_instruction": lambda _: EXTRACT_SYSTEM_INSTRUCTION,
+        "get_instruction": lambda _: EXTRACT_SYSTEM_INSTRUCTION_WITH_OVERLAP,
         "chunk_fn": chunk_text,
         "model_env": "OPENAI_EXTRACT_MODEL",
     },
@@ -476,6 +476,10 @@ def retrieve(batch_id: str) -> None:
                     text += f"**Suggestion:** {item.get('suggestion', '')}\n\n---\n\n"
             else:
                 text += "_No anomalies detected._\n"
+        else:
+            pr.amber(f"unknown task {job_task!r} for {rel_stem}, skipping")
+            n_skipped += 1
+            continue
 
         out_path = out_dir / f"{rel_stem}.md"
         out_path.parent.mkdir(parents=True, exist_ok=True)

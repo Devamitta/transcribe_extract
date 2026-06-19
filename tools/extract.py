@@ -1,6 +1,6 @@
 # Shared system instruction and chunking logic for the Dhamma extraction stage.
 
-EXTRACT_SYSTEM_INSTRUCTION: str = """You are extracting a public-safe Dhamma-Vinaya teaching extract from an interview transcript.
+_EXTRACT_PROMPT_BEFORE_OVERLAP: str = """You are extracting a public-safe Dhamma-Vinaya teaching extract from an interview transcript.
 
 OBJECTIVE: Produce output suitable for public release. Preserve the teaching content, but do not preserve identifying details. Privacy rules override verbatim preservation whenever the two conflict.
 
@@ -89,14 +89,18 @@ LONG EXCHANGES:
 - Do not compress teacher explanations to "key points."
 - When a topic has multiple Q&A turns (Q→A→Q→A), include all turns — do not stop after the first exchange and move on to the next topic.
 - The elaboration, follow-up questions, and further explanation in a teaching dialogue are part of the teaching, not optional context. Include them.
+"""
 
+EXTRACT_OVERLAP_CONTEXT: str = """
 OVERLAP CONTEXT:
 - This text is one chunk of a longer transcript.
 - The first ~50 words overlap with the end of the previous chunk.
 - Scan the first 50–100 words only: if they clearly end a sentence or exchange that began in the previous chunk, omit them.
 - Otherwise, include them.
 
-OUTPUT FORMAT:
+"""
+
+_EXTRACT_PROMPT_AFTER_OVERLAP: str = """OUTPUT FORMAT:
 - Preserve conversational continuity, but still structure the extract clearly.
 - Use topic tags regularly to organize the conversation.
 - Start a new `## [topic-tag]` section whenever the discussion settles into a recognizable topic, even if the transition is gradual.
@@ -146,6 +150,20 @@ FINAL DE-IDENTIFICATION CHECK (required before completing output):
   - Layperson name → remove or replace with role ("a layperson", "a donor")
 - Do not skip this step even if you believe you have already de-identified the content.
 - Common leak pattern: sentences like "When I was at [MONASTERY]..." or "As [MONK NAME] explained..." appear as teaching content and get copied verbatim. These must be caught here."""
+
+EXTRACT_SYSTEM_INSTRUCTION: str = (
+    _EXTRACT_PROMPT_BEFORE_OVERLAP + _EXTRACT_PROMPT_AFTER_OVERLAP
+)
+EXTRACT_SYSTEM_INSTRUCTION_WITH_OVERLAP: str = (
+    _EXTRACT_PROMPT_BEFORE_OVERLAP
+    + EXTRACT_OVERLAP_CONTEXT
+    + _EXTRACT_PROMPT_AFTER_OVERLAP
+)
+
+
+def is_no_points(result: str) -> bool:
+    """Return True when an extraction chunk reports no teaching content."""
+    return "NO_POINTS" in result.strip().upper()
 
 
 def chunk_text(text: str, chunk_size: int = 4000, overlap: int = 50) -> list[str]:

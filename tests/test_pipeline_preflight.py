@@ -47,6 +47,42 @@ esac
     return env
 
 
+def _prepare_fake_extract_runner(tmp_path: Path) -> dict[str, str]:
+    shutil.copy2(PROJECT_ROOT / "extract_run.sh", tmp_path / "extract_run.sh")
+    (tmp_path / ".env").write_text("PROVIDER=openrouter\n", encoding="utf-8")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _write_executable(
+        bin_dir / "caffeinate",
+        """#!/bin/sh
+if [ "$1" = "-i" ]; then
+  shift
+fi
+"$@"
+""",
+    )
+    _write_executable(
+        bin_dir / "uv",
+        """#!/bin/sh
+append() { echo "$1" >> "$SENTINEL_DIR/order"; }
+case " $* " in
+  *" scripts/transcribe.py "*) append transcribe; exit 0 ;;
+  *" scripts/check_keys.py --text "*) append preflight; exit 0 ;;
+  *" scripts/correct_pali.py "*) append correct; exit 0 ;;
+  *" scripts/extract_dhamma.py "*) append extract; exit 0 ;;
+  *" scripts/polish_extract.py "*) append polish; exit 0 ;;
+  *" scripts/check_privacy.py "*) append privacy; touch "$SENTINEL_DIR/privacy"; exit "${PRIVACY_STATUS:-0}" ;;
+  *" scripts/consolidate.py "*) append consolidate; touch "$SENTINEL_DIR/consolidate"; exit 0 ;;
+  *) append other; exit 0 ;;
+esac
+""",
+    )
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    env["SENTINEL_DIR"] = str(tmp_path)
+    return env
+
+
 def test_yt_run_text_preflight_is_before_metadata_and_skips_dry_run() -> None:
     script = _read("yt_run.sh")
     preflight = "uv run python scripts/check_keys.py --text"
@@ -77,14 +113,64 @@ def test_yt_run_image_preflight_is_before_thumbnail_generation() -> None:
     ) in script
 
 
-def test_extract_run_preflight_is_after_transcription_before_correction() -> None:
-    script = _read("extract_run.sh")
-    transcribe = "uv run python scripts/transcribe.py"
-    preflight = "uv run python scripts/check_keys.py --text"
-    correct_pali = "uv run python scripts/correct_pali.py"
+def test_extract_run_preflight_is_after_transcription_before_correction(
+    tmp_path: Path,
+) -> None:
+    env = _prepare_fake_extract_runner(tmp_path)
 
-    assert script.index(transcribe) < script.index(preflight)
-    assert script.index(preflight) < script.index(correct_pali)
+    result = subprocess.run(
+        ["bash", "extract_run.sh", "--from", "transcribe"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    order = (tmp_path / "order").read_text(encoding="utf-8").splitlines()
+
+    assert result.returncode == 0
+    assert order[:3] == ["transcribe", "preflight", "correct"]
+
+
+def test_extract_run_from_consolidate_runs_privacy_then_consolidate(
+    tmp_path: Path,
+) -> None:
+    env = _prepare_fake_extract_runner(tmp_path)
+
+    result = subprocess.run(
+        ["bash", "extract_run.sh", "--from", "consolidate"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    order = (tmp_path / "order").read_text(encoding="utf-8").splitlines()
+
+    assert result.returncode == 0
+    assert order == ["privacy", "consolidate"]
+    assert (tmp_path / "privacy").exists()
+    assert (tmp_path / "consolidate").exists()
+
+
+def test_extract_run_partial_stage_warns_and_continues(tmp_path: Path) -> None:
+    env = _prepare_fake_extract_runner(tmp_path)
+    env["PRIVACY_STATUS"] = "2"
+
+    result = subprocess.run(
+        ["bash", "extract_run.sh", "--from", "consolidate"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    order = (tmp_path / "order").read_text(encoding="utf-8").splitlines()
+
+    assert result.returncode == 0
+    assert order == ["privacy", "consolidate"]
+    assert "completed with partial failures" in result.stdout
+    assert (tmp_path / "consolidate").exists()
 
 
 def test_yt_run_failed_text_preflight_stops_before_metadata(tmp_path: Path) -> None:

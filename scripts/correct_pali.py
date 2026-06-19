@@ -1,259 +1,228 @@
 #!/usr/bin/env python3
-"""Corrects Pāli phonetic spellings in transcribed text using Gemini API and a Pāli glossary.
+"""Corrects Pāli phonetic spellings in transcribed text using configured LLM providers."""
 
-Usage examples:
-    # Process all files in output/transcribed/
-    uv run python scripts/correct_pali.py
-
-    # Process only files in output/transcribed/sangha/
-    uv run python scripts/correct_pali.py sangha
-
-    # Process a specific file
-    uv run python scripts/correct_pali.py interview/talk.md
-"""
-
-import concurrent.futures
+import argparse
 import json
 import re
-import sys
-import time
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from tools.pali import get_pali_system_instruction, chunk_text_no_overlap
+from tools import printer as _p
+from tools.chunk_runner import FileRunResult, RunnerConfig, RunResult, run
+from tools.pali import (
+    apply_overrides,
+    chunk_text_no_overlap,
+    get_pali_system_instruction,
+)
 from tools.provider import (
     TEST_MODE,
     build_cacheable_contents,
     generate_with_timeout,
 )
 
+pr = _p.printer
 
-def correct_pali_transcription(chunk: str, file_path: Path) -> str:
+INTER_CALL_PACING_SECONDS = 2.0
+REPORT_DIR = Path("reports/pali_corrections")
+
+
+@dataclass(frozen=True)
+class CorrectionPair:
+    original: str
+    corrected: str
+
+
+@dataclass(frozen=True)
+class AppliedCorrection:
+    chunk_index: int
+    original: str
+    corrected: str
+    count: int
+
+
+def generate_pali_corrections(chunk: str, file_path: Path) -> str:
     system_instruction = get_pali_system_instruction(file_path)
-    result = generate_with_timeout(
-        contents=build_cacheable_contents(chunk),
+    corrected_chunk, _applied = apply_overrides(chunk)
+    return generate_with_timeout(
+        contents=build_cacheable_contents(corrected_chunk),
         system_instruction=system_instruction,
     )
 
+
+def correct_pali_transcription(chunk: str, file_path: Path) -> str:
+    corrected_chunk, _pre_pass_applied = apply_overrides(chunk)
+    response = generate_pali_corrections(chunk, file_path)
+    corrected, _applied = apply_correction_response(
+        corrected_chunk,
+        response,
+        chunk_index=0,
+    )
+    return corrected
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Correct Pāli terms in transcripts.")
+    parser.add_argument("file", nargs="?", help="Specific file or folder to process")
+    parser.add_argument(
+        "--folder",
+        help="Process all files in this subfolder of output/transcribed",
+    )
+    parser.add_argument("--limit", type=int, help="Limit to first N unprocessed files")
+    return parser
+
+
+def build_chunks(text: str) -> list[str]:
+    chunks = chunk_text_no_overlap(text)
+    if TEST_MODE:
+        return chunks[:3]
+    return chunks
+
+
+def apply_correction_response(
+    chunk: str,
+    response: str,
+    chunk_index: int,
+) -> tuple[str, list[AppliedCorrection]]:
     try:
-        # Clean and parse JSON
-        json_str = result.strip()
-        if json_str.startswith("```json"):
-            json_str = json_str[7:].strip()
-        if json_str.endswith("```"):
-            json_str = json_str[:-3].strip()
+        pairs = parse_correction_pairs(response)
+    except json.JSONDecodeError as exc:
+        pr.amber(f"  Warning: JSON correction failed for chunk: {exc}")
+        return chunk, []
 
-        corrections = json.loads(json_str)
+    corrected_chunk = chunk
+    applied: list[AppliedCorrection] = []
+    for pair in pairs:
+        pattern = re.compile(rf"\b{re.escape(pair.original)}\b", re.IGNORECASE)
+        corrected_chunk, count = pattern.subn(pair.corrected, corrected_chunk)
+        if count:
+            applied.append(
+                AppliedCorrection(
+                    chunk_index=chunk_index,
+                    original=pair.original,
+                    corrected=pair.corrected,
+                    count=count,
+                )
+            )
 
-        # Apply replacements to the original chunk using regex for whole words
-        corrected_chunk = chunk
-        for item in corrections:
-            # Ensure the item is a dictionary and has the required keys before proceeding
-            if (
-                not isinstance(item, dict)
-                or "original" not in item
-                or "corrected" not in item
-            ):
-                continue
-
-            orig = str(item["original"])
-            corr = str(item["corrected"])
-
-            # Use regex to replace whole words only, case-insensitive for the search
-            pattern = re.compile(rf"\b{re.escape(orig)}\b", re.IGNORECASE)
-            corrected_chunk = pattern.sub(corr, corrected_chunk)
-
-        return corrected_chunk
-
-    except (json.JSONDecodeError, Exception) as e:
-        # Fallback: if JSON fails or replacement fails, return the original uncorrupted chunk
-        print(
-            f"  Warning: JSON correction failed for chunk: {e}. Skipping corrections."
-        )
-        return chunk
+    return corrected_chunk, applied
 
 
-def get_completed_chunks(output_file: Path) -> int:
-    status_dir = output_file.parent / ".status"
-    status_dir.mkdir(exist_ok=True)
-    sf = status_dir / f"{output_file.stem}.status"
-    if sf.exists():
-        try:
-            return int(sf.read_text().strip())
-        except ValueError:
-            return 0
-    return 0
+def parse_correction_pairs(response: str) -> list[CorrectionPair]:
+    json_str = response.strip()
+    if json_str.startswith("```json"):
+        json_str = json_str[7:].strip()
+    if json_str.endswith("```"):
+        json_str = json_str[:-3].strip()
 
+    parsed = json.loads(json_str)
+    if not isinstance(parsed, list):
+        return []
 
-def mark_completed_chunks(output_file: Path, completed: int) -> None:
-    status_dir = output_file.parent / ".status"
-    status_dir.mkdir(exist_ok=True)
-    sf = status_dir / f"{output_file.stem}.status"
-    sf.write_text(str(completed))
-
-
-def _try_correct(chunks: list[str], i: int, file_path: Path) -> str | None:
-    for attempt in range(3):
-        try:
-            return correct_pali_transcription(chunks[i], file_path)
-        except concurrent.futures.TimeoutError:
-            print(f"  Timeout (attempt {attempt + 1}/3)", flush=True)
-        except Exception as e:
-            print(f"  Error (attempt {attempt + 1}/3): {e}", flush=True)
-    return None
-
-
-def main() -> None:
-    input_dir = Path("output/transcribed")
-    output_dir = Path("output/corrected_pali")
-    output_dir.mkdir(exist_ok=True, parents=True)
-
-    # Parse args: optional file (--test flag handled by provider)
-    args = [a for a in sys.argv[1:] if not a.startswith("-")]
-    specific_file = args[0] if args else None
-
-    if specific_file:
-        path = Path(specific_file)
-        if not path.is_absolute() and not path.exists():
-            path = input_dir / specific_file
-
-        if not path.exists():
-            print(f"Path not found: {path}")
-            return
-
-        if path.is_dir():
-            md_files = sorted(list(path.rglob("*.md")))
-        else:
-            md_files = [path]
-
-        if not md_files:
-            print(f"No .md files found in {path}")
-            return
-    else:
-        # Recursively find all markdown files in input_dir
-        md_files = sorted(list(input_dir.rglob("*.md")))
-        if not md_files:
-            print(f"No files in '{input_dir}'.")
-            return
-
-    print(f"Found {len(md_files)} files:", flush=True)
-    for f in md_files:
-        print(f" - {f.name}", flush=True)
-
-    for idx, file_path in enumerate(md_files):
-        remaining = len(md_files) - idx
-        print(
-            f"\n[{remaining} files left] Processing '{file_path.name}'...", flush=True
-        )
-
-        # Preserve directory structure relative to input_dir
-        try:
-            relative_path = file_path.relative_to(input_dir)
-            final_output = output_dir / relative_path
-        except ValueError:
-            # Fallback for files outside input_dir (like specific_file)
-            final_output = output_dir / file_path.name
-
-        final_output.parent.mkdir(parents=True, exist_ok=True)
-        temp_output = final_output.parent / f".{final_output.name}.tmp"
-
-        with open(file_path, "r", encoding="utf-8") as f:
-            text = f.read()
-
-        chunks = chunk_text_no_overlap(text)
-        total = len(chunks)
-
-        completed = get_completed_chunks(final_output)
-
-        if final_output.exists() and completed >= total:
-            print("  Skipping (already done).", flush=True)
+    pairs: list[CorrectionPair] = []
+    for item in parsed:
+        if not isinstance(item, dict):
             continue
-
-        if TEST_MODE:
-            total = min(3, total)
-
-        # Load progress from temp file (new dict format; fall back to legacy list)
-        corrected: list[str] = []
-        failed_indices: set[int] = set()
-
-        if temp_output.exists():
-            try:
-                temp_data = json.loads(temp_output.read_text())
-                if isinstance(temp_data, dict):
-                    corrected = temp_data.get("corrected", [])
-                    failed_indices = set(temp_data.get("failed", []))
-                elif isinstance(temp_data, list):
-                    corrected = temp_data  # legacy format
-            except json.JSONDecodeError:
-                pass
-
-        start = len(corrected)
-
-        if start > 0:
-            label = f"  Resuming from chunk {start + 1}/{total}"
-            if failed_indices:
-                label += f" ({len(failed_indices)} chunks queued for retry)"
-            print(label, flush=True)
-        else:
-            print("  Starting correction...", flush=True)
-
-        print(f"  {total - start} chunks to process", flush=True)
-
-        def save_temp() -> None:
-            temp_output.write_text(
-                json.dumps({"corrected": corrected, "failed": sorted(failed_indices)})
+        if "original" not in item or "corrected" not in item:
+            continue
+        pairs.append(
+            CorrectionPair(
+                original=str(item["original"]),
+                corrected=str(item["corrected"]),
             )
+        )
+    return pairs
 
-        # First pass: process all remaining chunks; use original text as placeholder on failure
-        for i in range(start, total):
-            print(f"  Chunk {i + 1}/{total}...", flush=True)
-            result = _try_correct(chunks, i, file_path)
-            if result is not None:
-                corrected.append(result.strip())
-                failed_indices.discard(i)
-            else:
-                corrected.append(chunks[i])  # placeholder: keep original
-                failed_indices.add(i)
-                print(f"  Chunk {i + 1} queued for retry.", flush=True)
-            save_temp()
-            time.sleep(2)
 
-        # Retry pass: up to 2 rounds for chunks that failed in the first pass
-        for retry_round in range(2):
-            if not failed_indices:
-                break
-            print(
-                f"  Retry round {retry_round + 1}: {len(failed_indices)} chunks...",
-                flush=True,
+class CorrectionRecorder:
+    def __init__(self) -> None:
+        self.applied_by_file: dict[Path, list[AppliedCorrection]] = {}
+
+    def transform(
+        self,
+        chunk: str,
+        response: str,
+        file_path: Path,
+        chunk_index: int,
+    ) -> str:
+        corrected_chunk, pre_pass_applied = apply_overrides(chunk)
+        self.applied_by_file.setdefault(file_path, []).extend(
+            AppliedCorrection(
+                chunk_index=chunk_index,
+                original=fix.original,
+                corrected=fix.corrected,
+                count=fix.count,
             )
-            still_failed: set[int] = set()
-            for i in sorted(failed_indices):
-                print(f"  Retry chunk {i + 1}/{total}...", flush=True)
-                result = _try_correct(chunks, i, file_path)
-                if result is not None:
-                    corrected[i] = result.strip()
-                else:
-                    still_failed.add(i)
-                    print(f"  Chunk {i + 1} still failing.", flush=True)
-                save_temp()
-                time.sleep(2)
-            failed_indices = still_failed
+            for fix in pre_pass_applied
+        )
+        corrected, applied = apply_correction_response(
+            corrected_chunk,
+            response,
+            chunk_index=chunk_index,
+        )
+        self.applied_by_file.setdefault(file_path, []).extend(applied)
+        return corrected
 
-        if failed_indices:
-            print(
-                f"  Error: {len(failed_indices)} chunks failed after all retries: {sorted(failed_indices)}",
-                flush=True,
-            )
-            sys.exit(1)
 
-        mark_completed_chunks(final_output, total)
-        final_output.write_text("\n\n".join(corrected))
-        if temp_output.exists():
-            temp_output.unlink()
-        print(f"Saved to '{final_output}'.", flush=True)
+def write_correction_logs(
+    result: RunResult,
+    recorder: CorrectionRecorder,
+    input_dir: Path,
+    report_dir: Path = REPORT_DIR,
+) -> None:
+    for file_result in result.files:
+        if file_result.status != "success":
+            continue
+        report_path = _correction_report_path(
+            file_result,
+            input_dir=input_dir,
+            report_dir=report_dir,
+        )
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        applied = recorder.applied_by_file.get(file_result.input_path, [])
+        report_path.write_text(
+            json.dumps(
+                [asdict(item) for item in applied], indent=2, ensure_ascii=False
+            ),
+            encoding="utf-8",
+        )
 
-        print("  Waiting 5s between files...", flush=True)
-        time.sleep(5)
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args, _ = parser.parse_known_args(argv)
+
+    input_dir = Path("output/transcribed")
+    recorder = CorrectionRecorder()
+    config = RunnerConfig(
+        input_dir=input_dir,
+        output_dir=Path("output/corrected_pali"),
+        chunker=build_chunks,
+        generate=generate_pali_corrections,
+        result_transformer=recorder.transform,
+        pacing_seconds=INTER_CALL_PACING_SECONDS,
+        label="correcting",
+    )
+    result = run(
+        config,
+        file=args.file,
+        folder=args.folder,
+        limit=args.limit,
+    )
+    write_correction_logs(result, recorder, input_dir=input_dir)
+    return result.exit_code
+
+
+def _correction_report_path(
+    file_result: FileRunResult,
+    input_dir: Path,
+    report_dir: Path,
+) -> Path:
+    try:
+        relative_path = file_result.input_path.relative_to(input_dir)
+    except ValueError:
+        relative_path = Path(file_result.input_path.name)
+    return report_dir / relative_path.with_suffix(".json")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

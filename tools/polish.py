@@ -41,6 +41,7 @@ def validate_word_count(
     original: str,
     polished: str,
     tolerance: float = POLISH_WORD_TOLERANCE,
+    min_ratio: float | None = None,
 ) -> bool:
     """
     Validates that the polished text is within the specified word count tolerance of the original.
@@ -61,9 +62,14 @@ def validate_word_count(
     if orig_count == 0:
         return polish_count == 0
 
+    if min_ratio is not None:
+        ratio = polish_count / orig_count
+        is_valid = ratio >= min_ratio
+        ic(orig_count, polish_count, f"{ratio:.2%}", is_valid)
+        return is_valid
+
     diff = abs(orig_count - polish_count) / orig_count
     is_valid = diff <= tolerance
-
     ic(orig_count, polish_count, f"{diff:.2%}", is_valid)
 
     return is_valid
