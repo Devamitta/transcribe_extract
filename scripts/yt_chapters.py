@@ -111,7 +111,8 @@ def check_transcript_density(
     if len(paragraphs) < 3:
         return True, 0.0
     gaps = sorted(
-        [paragraphs[i + 1][0] - paragraphs[i][0] for i in range(len(paragraphs) - 1)]
+        round(paragraphs[i + 1][0] - paragraphs[i][0], 6)
+        for i in range(len(paragraphs) - 1)
     )
     median_gap = gaps[len(gaps) // 2]
     return (median_gap <= max_median_gap_mins, median_gap)
