@@ -39,7 +39,7 @@ echo "Done. Folders created."
 # Create .env template if it doesn't exist
 if [ ! -f .env ]; then
     cat > .env << 'EOF'
-# LLM provider: openrouter | gemini | openai | deepseek
+# LLM provider: google | gemini-cli | antigravity-cli | agy | openrouter | deepseek
 PROVIDER=
 IMAGE_PROVIDER=
 

@@ -19,8 +19,8 @@ CACHE_PREFIX = (
 )
 
 PROVIDER_ERROR_MSG = (
-    "Set PROVIDER=google, PROVIDER=gemini-cli, PROVIDER=openrouter, "
-    "or PROVIDER=deepseek in .env"
+    "Set PROVIDER=google, PROVIDER=gemini-cli, PROVIDER=antigravity-cli, "
+    "PROVIDER=agy, PROVIDER=openrouter, or PROVIDER=deepseek in .env"
 )
 
 
@@ -38,6 +38,12 @@ GEMINI_CLI_WORK_MODELS = [
     "gemini-3-flash-preview",
 ]
 GEMINI_CLI_TEST_MODELS = ["gemini-3.1-flash-lite"]
+
+ANTIGRAVITY_CLI_WORK_MODELS = [
+    "Gemini 3.1 Pro (Low)",
+    "Gemini 3.5 Flash (Medium)",
+]
+ANTIGRAVITY_CLI_TEST_MODELS = ["Gemini 3.5 Flash (Low)"]
 
 OPENROUTER_WORK_MODELS = [
     "deepseek/deepseek-v4-flash",
@@ -205,6 +211,61 @@ elif PROVIDER == "gemini-cli":
                     f"Gemini CLI model {model} failed: {e}, trying next...", flush=True
                 )
         raise Exception("All Gemini CLI models failed")
+
+    generate_content = _wrap_generate_content
+
+elif PROVIDER in {"antigravity-cli", "agy"}:
+    from tools.antigravity_cli import (
+        generate_content as antigravity_cli_generate_content,
+    )
+    from tools.antigravity_cli import (
+        get_working_key as antigravity_cli_get_working_key,
+    )
+
+    def get_working_key() -> bool:
+        models = (
+            ANTIGRAVITY_CLI_TEST_MODELS
+            if CLI_TEST_MODE
+            else ANTIGRAVITY_CLI_WORK_MODELS
+        )
+        for model in models:
+            try:
+                if antigravity_cli_get_working_key(model):
+                    return True
+            except Exception as e:
+                print(
+                    f"Antigravity CLI model {model} key check failed: {e}, "
+                    "trying next...",
+                    flush=True,
+                )
+        return False
+
+    def _wrap_generate_content(
+        contents: str,
+        system_instruction: str,
+        max_output_tokens: int = 32768,
+        temperature: float = 0.1,
+    ) -> str:
+        models = (
+            ANTIGRAVITY_CLI_TEST_MODELS
+            if CLI_TEST_MODE
+            else ANTIGRAVITY_CLI_WORK_MODELS
+        )
+        for model in models:
+            try:
+                return antigravity_cli_generate_content(
+                    contents=contents,
+                    system_instruction=system_instruction,
+                    model=model,
+                    max_output_tokens=max_output_tokens,
+                    temperature=temperature,
+                )
+            except Exception as e:
+                print(
+                    f"Antigravity CLI model {model} failed: {e}, trying next...",
+                    flush=True,
+                )
+        raise Exception("All Antigravity CLI models failed")
 
     generate_content = _wrap_generate_content
 

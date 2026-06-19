@@ -106,6 +106,15 @@ def _check_openrouter() -> None:
     get_working_key()
 
 
+def _check_local_cli_provider() -> None:
+    from tools.provider import get_working_key
+
+    if get_working_key():
+        print("Local CLI provider: OK")
+    else:
+        print("Local CLI provider: FAILED")
+
+
 def main() -> None:
     print(f"Provider: {PROVIDER}\n", flush=True)
     if PROVIDER == "google":
@@ -114,9 +123,15 @@ def main() -> None:
         _check_deepseek()
     elif PROVIDER == "openrouter":
         _check_openrouter()
+    elif PROVIDER in {"gemini-cli", "antigravity-cli", "agy"}:
+        _check_local_cli_provider()
     else:
         print(f"[ERROR] Unknown provider: {PROVIDER}")
-        print("Set PROVIDER=google, PROVIDER=deepseek, or PROVIDER=openrouter in .env")
+        print(
+            "Set PROVIDER=google, PROVIDER=gemini-cli, "
+            "PROVIDER=antigravity-cli, PROVIDER=agy, PROVIDER=deepseek, "
+            "or PROVIDER=openrouter in .env"
+        )
 
 
 if __name__ == "__main__":
