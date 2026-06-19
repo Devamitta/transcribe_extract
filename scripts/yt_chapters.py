@@ -289,10 +289,9 @@ def parse_lm_response(
     if not chapters:
         return []
 
-    # Force first chapter to 0.0 if available
-    if 0.0 in available:
-        ts0, name0 = chapters[0]
-        chapters[0] = (0.0, name0)
+    # Force first chapter to 0.0
+    ts0, name0 = chapters[0]
+    chapters[0] = (0.0, name0)
 
     # Deduplicate timestamps (keep first occurrence)
     seen: set[float] = set()
