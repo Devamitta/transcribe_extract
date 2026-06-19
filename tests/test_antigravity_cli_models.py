@@ -7,9 +7,9 @@ import pytest
 
 from tools import antigravity_cli_models
 from tools.antigravity_cli_models import (
+    PROBE_PROMPT,
     AntigravityCliModelError,
     CommandResult,
-    PROBE_PROMPT,
     SourceMetadata,
     normalize_registry,
     probe_model,
@@ -27,7 +27,7 @@ def _source() -> SourceMetadata:
 def test_text_output_models_are_normalized() -> None:
     raw_output = """
     \x1b[?25lFetching available models...
-    • Gemini 3.5 Flash (High) current
+    • Gemini 3.5 Flash (Low) current
     • Gemini 3.1 Pro (Low)
     • Claude Sonnet 4.6 (thinking)
     • GPT-OSS-120b (Medium)
@@ -37,7 +37,7 @@ def test_text_output_models_are_normalized() -> None:
 
     models = registry.display_models()
     assert [model.name for model in models] == [
-        "Gemini 3.5 Flash (High)",
+        "Gemini 3.5 Flash (Low)",
         "Gemini 3.1 Pro (Low)",
         "Claude Sonnet 4.6 (thinking)",
         "GPT-OSS-120b (Medium)",
@@ -73,7 +73,7 @@ def test_json_output_models_are_normalized() -> None:
         {
             "models": [
                 {
-                    "displayName": "Gemini 3.5 Flash (High)",
+                    "displayName": "Gemini 3.5 Flash (Low)",
                     "id": "gemini-rainsong",
                     "provider": "google",
                     "tier": "high",
@@ -90,13 +90,13 @@ def test_json_output_models_are_normalized() -> None:
 
     assert isinstance(models, list)
     assert models[0] == {
-        "name": "Gemini 3.5 Flash (High)",
+        "name": "Gemini 3.5 Flash (Low)",
         "model_id": "gemini-rainsong",
         "provider": "google",
         "tier": "high",
         "is_default": True,
         "raw_line": (
-            '{"displayName": "Gemini 3.5 Flash (High)", "id": '
+            '{"displayName": "Gemini 3.5 Flash (Low)", "id": '
             '"gemini-rainsong", "isDefault": true, "provider": "google", '
             '"tier": "high"}'
         ),
@@ -140,7 +140,7 @@ def test_load_registry_uses_models_command_with_optional_log_file(
         return CommandResult(
             command=command,
             returncode=0,
-            stdout="Gemini 3.5 Flash (High)",
+            stdout="Gemini 3.5 Flash (Low)",
             stderr=None,
         )
 

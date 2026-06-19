@@ -80,6 +80,7 @@ DHAMMA = [
     "rāga",
     "paṭigha",
     "māna",
+    "asmimāna",
     "bhava",
     "jāti",
     "saṃsāra",

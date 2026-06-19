@@ -43,7 +43,7 @@
       "test": ["gemini-3.1-flash-lite"]
     },
     "antigravity-cli": {
-      "work": ["Gemini 3.5 Flash (Medium)", "Gemini 3.1 Pro (Low)"],
+      "work": ["Gemini 3.5 Flash (Low)", "Gemini 3.1 Pro (Low)"],
       "test": ["Gemini 3.5 Flash (Low)"]
     },
     "openrouter": {
