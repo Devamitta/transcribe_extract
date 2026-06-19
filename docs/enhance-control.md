@@ -8,11 +8,18 @@ The enhance control workflow is powered by the following components:
 
 | Command / Script | Purpose | Type | State / Output Location |
 |------------------|---------|------|------------------------|
-| `/enhance` | **Single Front Door:** Detects state, runs batches, triggers QC, surfaces flags. | Orchestrator Skill | `.claude/enhance-state.md` |
-| `/enhance-semantic-fix` | Reviews and applies corrections to Whisper transcription hallucinations. | Engine Skill | `.claude/semantic-fix-state.md` |
-| `/enhance-prompt` | Targets regressions and improves stage prompts using the golden excerpt harness. | Engine Skill | `.claude/prompt-enhance-state.md` |
-| `/enhance-improve` | Clusters enhance backlog notes and applies prompt/skill improvements. | Engine Skill | `.claude/enhance-improvements.md` |
+| `/enhance` | **Single Front Door:** Detects state, runs batches, triggers QC, surfaces flags. | Orchestrator Skill | Shared hub `.claude/enhance-state.md` |
+| `/enhance-semantic-fix` | Reviews and applies corrections to Whisper transcription hallucinations. | Engine Skill | Shared hub `.claude/enhance-state.md` (+ sidecar `enhance-semantic-reference.md`, `.claude/semantic-ledger.json`, `.claude/semantic-manual-corrections.md`) |
+| `/enhance-prompt` | Targets regressions and improves stage prompts using the golden excerpt harness. | Engine Skill | Shared hub `.claude/enhance-state.md` |
+| `/enhance-improve` | Clusters enhance backlog notes and applies prompt/skill improvements. | Engine Skill | Shared hub `.claude/enhance-state.md` (Active Backlog) → `.claude/enhance-improvements-history.md` |
 | `scripts/evaluate_batch.py` | Production QC engine assessing file pairs for completeness and size ratios. | Python Script | `reports/batch/` |
+
+> **State architecture (2026-06-18):** all four `/enhance*` skills now share one
+> orchestration hub, `.claude/enhance-state.md`, with owned sections (Carried
+> Patterns, Routing Handoffs, Active Backlog, Session Ledger) and a Maintenance
+> size-cap/compaction convention. Bulky semantic reference data lives in the sidecar
+> `.claude/enhance-semantic-reference.md`; older sessions in
+> `.claude/enhance-session-archive.md`. Each skill reads only the section(s) it needs.
 
 ---
 
@@ -33,9 +40,9 @@ To maintain Sonnet/Opus session efficiency and avoid token bloat (target ≤120k
 - The agent only reads summary counts, the flagged-only report (`reports/batch/...`), and specific short excerpts for flagged files.
 
 ### 3. Backlog, Warning, and History Mechanism
-- When `/enhance` detects a enhance defect that cannot be solved with a trivial local fix, it appends a one-line description to `.claude/enhance-improvements.md`.
-- If `.claude/enhance-improvements.md` accumulates **5 or more** unprocessed issues, the agent warns the user to run `/enhance-improve` to address them.
-- `/enhance-improve` groups active backlog items, proposes a cohesive redesign, and upon approval, applies it and archives the processed issues to `.claude/enhance-improvements-history.md` under a dated heading.
+- When `/enhance` detects a enhance defect that cannot be solved with a trivial local fix, it appends a one-line description to the **Active Backlog** section of `.claude/enhance-state.md`.
+- If the Active Backlog accumulates **5 or more** unprocessed issues, the agent warns the user to run `/enhance-improve` to address them.
+- `/enhance-improve` groups active backlog items, proposes a cohesive redesign, and upon approval, applies it and archives the processed issues to `.claude/enhance-improvements-history.md` under a dated heading (emptying the hub's Active Backlog).
 
 ---
 

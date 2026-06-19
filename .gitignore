@@ -24,7 +24,8 @@ eval/
 archive
 CLAUDE.md
 GEMINI.md
-.claude/
+.claude/*
+!.claude/commands/
 .kilo/
 log/
 reports/
