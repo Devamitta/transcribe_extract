@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 
 from googleapiclient.http import MediaFileUpload
 
+from tools.lang import LANG_TO_FOLDER
 from tools.printer import printer as pr
 from tools.source_scope import path_matches_filter, read_source_filter
 from tools.uploader_common import (
@@ -47,8 +48,6 @@ TOKEN_PATHS: dict[str, Path] = {
     "ru": Path("youtube_token_ru.json"),
     "en": Path("youtube_token_en.json"),
 }
-
-LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 
 
 def add_video_to_selected_playlists(

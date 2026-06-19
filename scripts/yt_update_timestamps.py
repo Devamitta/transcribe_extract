@@ -19,6 +19,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
+from tools.lang import LANG_TO_FOLDER
 from tools.printer import printer as pr
 from tools.uploader_common import (
     build_description,
@@ -35,7 +36,6 @@ TOKEN_PATHS: dict[str, Path] = {
     "en": Path("youtube_token_en_edit.json"),
 }
 CLIENT_SECRET = Path("client_secret.json")
-LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 
 
 def get_youtube_client(token_path: Path):

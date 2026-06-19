@@ -3,6 +3,9 @@
 import concurrent.futures
 import os
 import sys
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Literal
 
 from dotenv import load_dotenv  # type: ignore[import-untyped]
 
@@ -40,8 +43,8 @@ GEMINI_CLI_WORK_MODELS = [
 GEMINI_CLI_TEST_MODELS = ["gemini-3.1-flash-lite"]
 
 ANTIGRAVITY_CLI_WORK_MODELS = [
+    "Gemini 3.5 Flash (High)",
     "Gemini 3.1 Pro (Low)",
-    "Gemini 3.5 Flash (Medium)",
 ]
 ANTIGRAVITY_CLI_TEST_MODELS = ["Gemini 3.5 Flash (Low)"]
 
@@ -60,219 +63,170 @@ OPENROUTER_TEST_MODELS = [
 DEEPSEEK_WORK_MODELS = ["deepseek-v4-flash"]
 DEEPSEEK_TEST_MODELS = ["deepseek-v4-flash"]
 
-if PROVIDER == "deepseek":
-    from tools.deepseek import (
-        generate_content as ds_generate_content,
-    )
-    from tools.deepseek import (
-        get_working_key as ds_get_working_key,
-    )
+GenerateFn = Callable[..., str]
+KeyCheckFn = Callable[..., bool]
 
-    def get_working_key() -> bool:
-        return ds_get_working_key()
 
-    def _wrap_generate_content(
+def _load_deepseek() -> tuple[GenerateFn, KeyCheckFn]:
+    from tools.deepseek import generate_content, get_working_key
+
+    return generate_content, get_working_key
+
+
+def _load_openrouter() -> tuple[GenerateFn, KeyCheckFn]:
+    from tools.openrouter import generate_content, get_working_key
+
+    return generate_content, get_working_key
+
+
+def _load_gemini() -> tuple[GenerateFn, KeyCheckFn]:
+    from tools.gemini import generate_content, get_working_key
+
+    return generate_content, get_working_key
+
+
+def _load_gemini_cli() -> tuple[GenerateFn, KeyCheckFn]:
+    from tools.gemini_cli import generate_content, get_working_key
+
+    return generate_content, get_working_key
+
+
+def _load_antigravity_cli() -> tuple[GenerateFn, KeyCheckFn]:
+    from tools.antigravity_cli import generate_content, get_working_key
+
+    return generate_content, get_working_key
+
+
+@dataclass(frozen=True)
+class ProviderSpec:
+    """Per-provider configuration: lazy module loader plus dispatch deltas."""
+
+    label: str
+    loader: Callable[[], tuple[GenerateFn, KeyCheckFn]]
+    work_models: list[str]
+    test_models: list[str]
+    timeout: int | None
+    use_cli_test_mode: bool
+    key_check_style: Literal["no_args", "single_model", "loop_models"]
+
+
+PROVIDER_REGISTRY: dict[str, ProviderSpec] = {
+    "deepseek": ProviderSpec(
+        label="DeepSeek",
+        loader=_load_deepseek,
+        work_models=DEEPSEEK_WORK_MODELS,
+        test_models=DEEPSEEK_TEST_MODELS,
+        timeout=30,
+        use_cli_test_mode=False,
+        key_check_style="no_args",
+    ),
+    "openrouter": ProviderSpec(
+        label="OpenRouter",
+        loader=_load_openrouter,
+        work_models=OPENROUTER_WORK_MODELS,
+        test_models=OPENROUTER_TEST_MODELS,
+        # Use 15s timeout as requested by user
+        timeout=15,
+        use_cli_test_mode=False,
+        key_check_style="no_args",
+    ),
+    "google": ProviderSpec(
+        label="Gemini",
+        loader=_load_gemini,
+        work_models=GEMINI_WORK_MODELS,
+        test_models=GEMINI_TEST_MODELS,
+        timeout=None,
+        use_cli_test_mode=False,
+        key_check_style="single_model",
+    ),
+    "gemini-cli": ProviderSpec(
+        label="Gemini CLI",
+        loader=_load_gemini_cli,
+        work_models=GEMINI_CLI_WORK_MODELS,
+        test_models=GEMINI_CLI_TEST_MODELS,
+        timeout=None,
+        use_cli_test_mode=True,
+        key_check_style="loop_models",
+    ),
+    "antigravity-cli": ProviderSpec(
+        label="Antigravity CLI",
+        loader=_load_antigravity_cli,
+        work_models=ANTIGRAVITY_CLI_WORK_MODELS,
+        test_models=ANTIGRAVITY_CLI_TEST_MODELS,
+        timeout=None,
+        use_cli_test_mode=True,
+        key_check_style="loop_models",
+    ),
+}
+PROVIDER_REGISTRY["agy"] = PROVIDER_REGISTRY["antigravity-cli"]
+
+
+def _active_models(spec: ProviderSpec) -> list[str]:
+    in_test = CLI_TEST_MODE if spec.use_cli_test_mode else TEST_MODE
+    return spec.test_models if in_test else spec.work_models
+
+
+def _make_generate_content(
+    spec: ProviderSpec, generate_fn: GenerateFn
+) -> Callable[..., str]:
+    def _generate_with_fallback(
         contents: str,
         system_instruction: str,
         max_output_tokens: int = 32768,
         temperature: float = 0.1,
     ) -> str:
-        models = DEEPSEEK_TEST_MODELS if TEST_MODE else DEEPSEEK_WORK_MODELS
-        for model in models:
+        extra: dict[str, int] = {}
+        if spec.timeout is not None:
+            extra["timeout"] = spec.timeout
+        for model in _active_models(spec):
             try:
-                return ds_generate_content(
+                return generate_fn(
                     contents=contents,
                     system_instruction=system_instruction,
                     model=model,
                     max_output_tokens=max_output_tokens,
                     temperature=temperature,
-                    timeout=30,
+                    **extra,
                 )
             except Exception as e:
                 print(
-                    f"Model {model} failed or timed out: {e}, trying next...",
+                    f"{spec.label} model {model} failed: {e}, trying next...",
                     flush=True,
                 )
-        raise Exception("All DeepSeek models failed")
+        raise Exception(f"All {spec.label} models failed")
 
-    generate_content = _wrap_generate_content
+    return _generate_with_fallback
 
-elif PROVIDER == "openrouter":
-    from tools.openrouter import (
-        generate_content as or_generate_content,
-    )
-    from tools.openrouter import (
-        get_working_key as or_get_working_key,
-    )
 
-    def get_working_key() -> bool:
-        return or_get_working_key()
-
-    def _wrap_generate_content(
-        contents: str,
-        system_instruction: str,
-        max_output_tokens: int = 32768,
-        temperature: float = 0.1,
-    ) -> str:
-        models = OPENROUTER_TEST_MODELS if TEST_MODE else OPENROUTER_WORK_MODELS
-        for model in models:
+def _make_get_working_key(spec: ProviderSpec, key_fn: KeyCheckFn) -> Callable[[], bool]:
+    def _get_working_key() -> bool:
+        if spec.key_check_style == "no_args":
+            return key_fn()
+        if spec.key_check_style == "single_model":
+            return key_fn(_active_models(spec)[0])
+        for model in _active_models(spec):
             try:
-                # Use 15s timeout as requested by user
-                return or_generate_content(
-                    contents=contents,
-                    system_instruction=system_instruction,
-                    model=model,
-                    max_output_tokens=max_output_tokens,
-                    temperature=temperature,
-                    timeout=15,
-                )
-            except Exception as e:
-                print(
-                    f"Model {model} failed or timed out: {e}, trying next...",
-                    flush=True,
-                )
-        raise Exception("All OpenRouter models failed")
-
-    generate_content = _wrap_generate_content
-
-elif PROVIDER == "google":
-    from tools.gemini import (
-        generate_content as gemini_generate_content,
-    )
-    from tools.gemini import (
-        get_working_key as gemini_get_working_key,
-    )
-
-    def get_working_key() -> bool:
-        model = GEMINI_TEST_MODELS[0] if TEST_MODE else GEMINI_WORK_MODELS[0]
-        return gemini_get_working_key(model)
-
-    def _wrap_generate_content(
-        contents: str,
-        system_instruction: str,
-        max_output_tokens: int = 32768,
-        temperature: float = 0.1,
-    ) -> str:
-        models = GEMINI_TEST_MODELS if TEST_MODE else GEMINI_WORK_MODELS
-        for model in models:
-            try:
-                return gemini_generate_content(
-                    contents=contents,
-                    system_instruction=system_instruction,
-                    model=model,
-                    max_output_tokens=max_output_tokens,
-                    temperature=temperature,
-                )
-            except Exception as e:
-                print(f"Model {model} failed: {e}, trying next...", flush=True)
-        raise Exception("All Gemini models failed")
-
-    generate_content = _wrap_generate_content
-
-elif PROVIDER == "gemini-cli":
-    from tools.gemini_cli import (
-        generate_content as gemini_cli_generate_content,
-    )
-    from tools.gemini_cli import (
-        get_working_key as gemini_cli_get_working_key,
-    )
-
-    def get_working_key() -> bool:
-        models = GEMINI_CLI_TEST_MODELS if CLI_TEST_MODE else GEMINI_CLI_WORK_MODELS
-        for model in models:
-            try:
-                if gemini_cli_get_working_key(model):
+                if key_fn(model):
                     return True
             except Exception as e:
                 print(
-                    f"Gemini CLI model {model} key check failed: {e}, trying next...",
+                    f"{spec.label} model {model} key check failed: {e}, trying next...",
                     flush=True,
                 )
         return False
 
-    def _wrap_generate_content(
-        contents: str,
-        system_instruction: str,
-        max_output_tokens: int = 32768,
-        temperature: float = 0.1,
-    ) -> str:
-        models = GEMINI_CLI_TEST_MODELS if CLI_TEST_MODE else GEMINI_CLI_WORK_MODELS
-        for model in models:
-            try:
-                return gemini_cli_generate_content(
-                    contents=contents,
-                    system_instruction=system_instruction,
-                    model=model,
-                    max_output_tokens=max_output_tokens,
-                    temperature=temperature,
-                )
-            except Exception as e:
-                print(
-                    f"Gemini CLI model {model} failed: {e}, trying next...", flush=True
-                )
-        raise Exception("All Gemini CLI models failed")
+    return _get_working_key
 
-    generate_content = _wrap_generate_content
 
-elif PROVIDER in {"antigravity-cli", "agy"}:
-    from tools.antigravity_cli import (
-        generate_content as antigravity_cli_generate_content,
-    )
-    from tools.antigravity_cli import (
-        get_working_key as antigravity_cli_get_working_key,
-    )
-
-    def get_working_key() -> bool:
-        models = (
-            ANTIGRAVITY_CLI_TEST_MODELS
-            if CLI_TEST_MODE
-            else ANTIGRAVITY_CLI_WORK_MODELS
-        )
-        for model in models:
-            try:
-                if antigravity_cli_get_working_key(model):
-                    return True
-            except Exception as e:
-                print(
-                    f"Antigravity CLI model {model} key check failed: {e}, "
-                    "trying next...",
-                    flush=True,
-                )
-        return False
-
-    def _wrap_generate_content(
-        contents: str,
-        system_instruction: str,
-        max_output_tokens: int = 32768,
-        temperature: float = 0.1,
-    ) -> str:
-        models = (
-            ANTIGRAVITY_CLI_TEST_MODELS
-            if CLI_TEST_MODE
-            else ANTIGRAVITY_CLI_WORK_MODELS
-        )
-        for model in models:
-            try:
-                return antigravity_cli_generate_content(
-                    contents=contents,
-                    system_instruction=system_instruction,
-                    model=model,
-                    max_output_tokens=max_output_tokens,
-                    temperature=temperature,
-                )
-            except Exception as e:
-                print(
-                    f"Antigravity CLI model {model} failed: {e}, trying next...",
-                    flush=True,
-                )
-        raise Exception("All Antigravity CLI models failed")
-
-    generate_content = _wrap_generate_content
-
-else:
+_spec = PROVIDER_REGISTRY.get(PROVIDER)
+if _spec is None:
     print(f"[ERROR] Unknown provider: {PROVIDER}")
     print(PROVIDER_ERROR_MSG)
     exit(1)
+
+_provider_generate, _provider_key_check = _spec.loader()
+generate_content = _make_generate_content(_spec, _provider_generate)
+get_working_key = _make_get_working_key(_spec, _provider_key_check)
 
 
 def generate_with_timeout(

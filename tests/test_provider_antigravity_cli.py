@@ -28,6 +28,11 @@ def load_provider(
 ]:
     original_provider = sys.modules.get("tools.provider")
     original_antigravity_cli = sys.modules.get("tools.antigravity_cli")
+    tools_package = sys.modules.get("tools")
+    had_provider_attr = tools_package is not None and hasattr(tools_package, "provider")
+    original_provider_attr = (
+        getattr(tools_package, "provider", None) if had_provider_attr else None
+    )
 
     def _load(
         provider_name: str,
@@ -36,6 +41,11 @@ def load_provider(
         generate_failures: set[str],
     ) -> tuple[ProviderModule, list[str], list[str]]:
         sys.modules.pop("tools.provider", None)
+        current_tools_package = sys.modules.get("tools")
+        if current_tools_package is not None and hasattr(
+            current_tools_package, "provider"
+        ):
+            delattr(current_tools_package, "provider")
         checked_models: list[str] = []
         generated_models: list[str] = []
 
@@ -72,6 +82,12 @@ def load_provider(
     sys.modules.pop("tools.provider", None)
     if original_provider is not None:
         sys.modules["tools.provider"] = original_provider
+    current_tools_package = sys.modules.get("tools")
+    if current_tools_package is not None:
+        if had_provider_attr:
+            setattr(current_tools_package, "provider", original_provider_attr)
+        elif hasattr(current_tools_package, "provider"):
+            delattr(current_tools_package, "provider")
     if original_antigravity_cli is not None:
         sys.modules["tools.antigravity_cli"] = original_antigravity_cli
 
@@ -86,21 +102,18 @@ def test_antigravity_cli_provider_uses_requested_work_model_order(
         "antigravity-cli",
         ["script.py"],
         {
+            "Gemini 3.5 Flash (High)": True,
             "Gemini 3.1 Pro (Low)": False,
-            "Gemini 3.5 Flash (Medium)": True,
         },
         set(),
     )
 
     assert provider.ANTIGRAVITY_CLI_WORK_MODELS == [
+        "Gemini 3.5 Flash (High)",
         "Gemini 3.1 Pro (Low)",
-        "Gemini 3.5 Flash (Medium)",
     ]
     assert provider.get_working_key() is True
-    assert checked_models == [
-        "Gemini 3.1 Pro (Low)",
-        "Gemini 3.5 Flash (Medium)",
-    ]
+    assert checked_models == ["Gemini 3.5 Flash (High)"]
 
 
 def test_antigravity_cli_dry_run_uses_low_flash(
@@ -132,15 +145,15 @@ def test_antigravity_cli_generation_rotates_to_next_model_on_failure(
         "antigravity-cli",
         ["script.py"],
         {},
-        {"Gemini 3.1 Pro (Low)"},
+        {"Gemini 3.5 Flash (High)"},
     )
 
     result = provider.generate_content("content", "system")
 
-    assert result.endswith(":Gemini 3.5 Flash (Medium)")
+    assert result.endswith(":Gemini 3.1 Pro (Low)")
     assert generated_models == [
+        "Gemini 3.5 Flash (High)",
         "Gemini 3.1 Pro (Low)",
-        "Gemini 3.5 Flash (Medium)",
     ]
 
 

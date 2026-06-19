@@ -1,7 +1,6 @@
 # DeepSeek API client for direct LLM access without OpenRouter.
 
 import os
-import time
 
 import requests
 from dotenv import load_dotenv
@@ -12,29 +11,22 @@ from tenacity import (
     wait_exponential,
 )
 
+from tools.openai_compat import RateLimiter, extract_content, post_chat_completion
+
 load_dotenv()
 
 BASE_URL = "https://api.deepseek.com"
-MIN_REQUEST_INTERVAL = 1
 
 
 class RetriableDeepSeekError(Exception):
     """Signals a transient DeepSeek API failure that should be retried."""
 
 
-class DeepSeekClient:
+class DeepSeekClient(RateLimiter):
     def __init__(self, api_key: str):
+        super().__init__()
         self.api_key = api_key
         self.base_url = BASE_URL
-        self.last_request_time = 0.0
-
-    def wait_for_rate_limit(self) -> None:
-        elapsed = time.time() - self.last_request_time
-        if elapsed < MIN_REQUEST_INTERVAL:
-            wait = MIN_REQUEST_INTERVAL - elapsed
-            print(f"Rate limiting: waiting {wait:.1f}s...", flush=True)
-            time.sleep(wait)
-        self.last_request_time = time.time()
 
 
 _client: DeepSeekClient | None = None
@@ -103,32 +95,17 @@ def generate_content(
     """Generate content using DeepSeek API."""
     client = _get_client()
     client.wait_for_rate_limit()
-    print(f"  -> {model} (timeout={timeout}s)...", flush=True)
-
-    try:
-        resp = requests.post(
-            f"{client.base_url}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {client.api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": system_instruction},
-                    {"role": "user", "content": contents},
-                ],
-                "max_tokens": max_output_tokens,
-                "temperature": temperature,
-            },
-            timeout=timeout,
-        )
-    except requests.exceptions.Timeout:
-        print(f"  [TIMEOUT] {model} exceeded {timeout}s", flush=True)
-        raise
-    except requests.exceptions.RequestException as exc:
-        print(f"  [REQUEST ERROR] {model}: {exc}", flush=True)
-        raise
+    resp = post_chat_completion(
+        base_url=client.base_url,
+        api_key=client.api_key,
+        model=model,
+        system_instruction=system_instruction,
+        contents=contents,
+        max_output_tokens=max_output_tokens,
+        temperature=temperature,
+        timeout=timeout,
+        log_request_errors=True,
+    )
 
     if resp.status_code == 429 or 500 <= resp.status_code < 600:
         raise RetriableDeepSeekError(
@@ -138,22 +115,7 @@ def generate_content(
     if resp.status_code != 200:
         raise ValueError(f"DeepSeek API error: {resp.status_code} {resp.text}")
 
-    data = resp.json()
-    if not data.get("choices"):
-        raise ValueError("Empty response from DeepSeek API")
-
-    message = data["choices"][0]["message"]
-    content = message.get("content") or ""
-    if not content:
-        finish_reason = data["choices"][0].get("finish_reason", "unknown")
-        reasoning = message.get("reasoning_content") or ""
-        print(
-            f"  [DeepSeek] null/empty content (finish_reason={finish_reason},"
-            f" reasoning_len={len(reasoning)})",
-            flush=True,
-        )
-        return reasoning  # fall back to reasoning trace if content is absent
-    return content
+    return extract_content(resp.json(), "DeepSeek")
 
 
 SUPPORTED_MODELS = ["deepseek-v4-flash", "deepseek-v4-pro"]

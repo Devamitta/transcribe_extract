@@ -10,6 +10,7 @@ from typing import Any
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 
+from tools.lang import LANG_TO_FOLDER
 from tools.printer import printer as pr
 from tools.uploader_common import check_api_probe, get_google_client
 
@@ -24,8 +25,6 @@ TOKEN_PATHS: dict[str, Path] = {
     "ru": Path("youtube_token_ru.json"),
     "en": Path("youtube_token_en.json"),
 }
-
-LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 
 
 UPLOAD_DELAY_SEC = 3

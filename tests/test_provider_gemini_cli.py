@@ -29,6 +29,11 @@ def load_provider(
     original_provider = sys.modules.get("tools.provider")
     original_gemini = sys.modules.get("tools.gemini")
     original_gemini_cli = sys.modules.get("tools.gemini_cli")
+    tools_package = sys.modules.get("tools")
+    had_provider_attr = tools_package is not None and hasattr(tools_package, "provider")
+    original_provider_attr = (
+        getattr(tools_package, "provider", None) if had_provider_attr else None
+    )
 
     def _load(
         provider_name: str,
@@ -37,6 +42,11 @@ def load_provider(
         generate_failures: set[str],
     ) -> tuple[ProviderModule, list[str], list[str]]:
         sys.modules.pop("tools.provider", None)
+        current_tools_package = sys.modules.get("tools")
+        if current_tools_package is not None and hasattr(
+            current_tools_package, "provider"
+        ):
+            delattr(current_tools_package, "provider")
         checked_models: list[str] = []
         generated_models: list[str] = []
 
@@ -76,6 +86,12 @@ def load_provider(
     sys.modules.pop("tools.provider", None)
     if original_provider is not None:
         sys.modules["tools.provider"] = original_provider
+    current_tools_package = sys.modules.get("tools")
+    if current_tools_package is not None:
+        if had_provider_attr:
+            setattr(current_tools_package, "provider", original_provider_attr)
+        elif hasattr(current_tools_package, "provider"):
+            delattr(current_tools_package, "provider")
     if original_gemini is not None:
         sys.modules["tools.gemini"] = original_gemini
     if original_gemini_cli is not None:

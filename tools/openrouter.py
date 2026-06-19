@@ -12,6 +12,8 @@ from tenacity import (
     wait_exponential,
 )
 
+from tools.openai_compat import RateLimiter, extract_content, post_chat_completion
+
 load_dotenv()
 
 API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -21,24 +23,15 @@ if not API_KEY:
 
 print("Loaded OPENROUTER_API_KEY", flush=True)
 
-MIN_REQUEST_INTERVAL = 1
 HOURS_TO_RESET = 24
 
 
-class OpenRouterClient:
+class OpenRouterClient(RateLimiter):
     def __init__(self, api_key: str):
+        super().__init__()
         self.api_key = api_key
         self.base_url = "https://openrouter.ai/api/v1"
         self.failed_models: dict[str, float] = {}
-        self.last_request_time = 0.0
-
-    def wait_for_rate_limit(self) -> None:
-        elapsed = time.time() - self.last_request_time
-        if elapsed < MIN_REQUEST_INTERVAL:
-            wait = MIN_REQUEST_INTERVAL - elapsed
-            print(f"Rate limiting: waiting {wait:.1f}s...", flush=True)
-            time.sleep(wait)
-        self.last_request_time = time.time()
 
     def handle_rate_limit_error(self, model: str) -> bool:
         print(f"{model} rate limited, trying next...", flush=True)
@@ -90,31 +83,24 @@ def generate_content(
 ) -> str:
     """Generate content using OpenRouter API."""
     client.wait_for_rate_limit()
-    print(f"  -> {model} (timeout={timeout}s)...", flush=True)
 
     try:
-        resp = requests.post(
-            f"{client.base_url}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {client.api_key}",
-                "Content-Type": "application/json",
+        resp = post_chat_completion(
+            base_url=client.base_url,
+            api_key=client.api_key,
+            model=model,
+            system_instruction=system_instruction,
+            contents=contents,
+            max_output_tokens=max_output_tokens,
+            temperature=temperature,
+            timeout=timeout,
+            extra_headers={
                 "HTTP-Referer": "https://localhost",
                 "X-Title": "Dhamma Extract",
             },
-            json={
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": system_instruction},
-                    {"role": "user", "content": contents},
-                ],
-                "max_tokens": max_output_tokens,
-                "temperature": temperature,
-            },
-            timeout=timeout,  # Use the provided timeout
         )
     except requests.exceptions.Timeout:
-        print(f"  [TIMEOUT] {model} exceeded {timeout}s", flush=True)
-        raise
+        raise  # already logged by post_chat_completion
     except Exception as e:
         if "429" in str(e) or "rate_limit" in str(e).lower():
             client.handle_rate_limit_error(model)
@@ -123,22 +109,7 @@ def generate_content(
     if resp.status_code != 200:
         raise ValueError(f"OpenRouter API error: {resp.status_code} {resp.text}")
 
-    data = resp.json()
-    if not data.get("choices"):
-        raise ValueError("Empty response from OpenRouter API")
-
-    message = data["choices"][0]["message"]
-    content = message.get("content") or ""
-    if not content:
-        finish_reason = data["choices"][0].get("finish_reason", "unknown")
-        reasoning = message.get("reasoning_content") or ""
-        print(
-            f"  [OpenRouter] null/empty content (finish_reason={finish_reason},"
-            f" reasoning_len={len(reasoning)})",
-            flush=True,
-        )
-        return reasoning  # fall back to reasoning trace if content is absent
-    return content
+    return extract_content(resp.json(), "OpenRouter")
 
 
 def list_models(free_only: bool = True) -> list[str]:

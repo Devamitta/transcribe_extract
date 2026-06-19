@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 
 from tools.dry_run import is_pipeline_dry_run
 from tools.glossary import TAG_POOL_EN, TAG_POOL_RU, TAG_SYNC_GROUPS
+from tools.lang import LANG_TO_FOLDER
 from tools.printer import printer as pr
 from tools.provider import (
     build_cacheable_contents,
@@ -101,7 +102,6 @@ TAG_POOLS: dict[str, list[str]] = {
     "en": TAG_POOL_EN,
 }
 
-LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 TOKEN_PATHS: dict[str, Path] = {
     "ru": Path("youtube_token_ru.json"),
     "en": Path("youtube_token_en.json"),

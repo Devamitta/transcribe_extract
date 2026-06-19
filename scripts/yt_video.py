@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from tools.dry_run import create_stub, is_pipeline_dry_run
+from tools.lang import LANG_TO_FOLDER
 from tools.printer import printer as pr
 from tools.source_scope import read_source_filter, source_matches_filter
 from tools.uploader_common import (
@@ -16,7 +17,6 @@ from tools.uploader_common import (
     load_nested_history,
 )
 
-LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 HISTORY_PATH = Path("output/youtube_history.json")
 
 

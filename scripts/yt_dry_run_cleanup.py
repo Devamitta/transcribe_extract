@@ -4,9 +4,8 @@ import argparse
 import re
 from pathlib import Path
 
+from tools.lang import LANG_TO_FOLDER
 from tools.printer import printer as pr
-
-LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 
 
 def main() -> None:

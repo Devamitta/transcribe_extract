@@ -8,12 +8,26 @@ from pathlib import Path
 from PIL import Image
 
 from tools.dry_run import create_stub, is_pipeline_dry_run
+from tools.lang import LANG_TO_FOLDER
 from tools.printer import printer as pr
 
 VIDEO_EXTS = {".mp4", ".mkv", ".mov", ".mpeg", ".mpg"}
 IMAGE_EXTS = {".png", ".jpg", ".jpeg"}
 AUDIO_EXTS = {".wav", ".m4a", ".aiff", ".flac", ".ogg", ".opus", ".wma"}
-LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
+RAW_AUDIO_EXTS = AUDIO_EXTS | {".mp3"}
+
+
+def find_same_stem_audio_source(video_path: Path, files: list[Path]) -> Path | None:
+    """Return a separate same-stem audio input when one should provide the MP3."""
+    for candidate in files:
+        if candidate == video_path:
+            continue
+        if (
+            candidate.stem == video_path.stem
+            and candidate.suffix.lower() in RAW_AUDIO_EXTS
+        ):
+            return candidate
+    return None
 
 
 def extract_audio(src: Path, dest: Path) -> bool:
@@ -172,6 +186,7 @@ def main() -> None:
                 dest_mp4_name = file.with_suffix(".mp4").name
                 dest_mp3 = audio_out / file.with_suffix(".mp3").name
                 dest_video = video_out / dest_mp4_name
+                same_stem_audio = find_same_stem_audio_source(file, files)
 
                 if dest_video.exists():
                     pr.white(f"  Skipping {file.name} (video already in output)")
@@ -181,17 +196,38 @@ def main() -> None:
 
                 if args.dry_run:
                     pr.white(f"  [DRY RUN] {file}")
-                    pr.white(f"    → audio: {dest_mp3}")
                     pr.white(f"    → video: {dest_video}")
+                    if same_stem_audio is None:
+                        pr.white(f"    → audio: {dest_mp3}")
+                    else:
+                        pr.white(f"    → audio: provided by {same_stem_audio}")
                     if is_pipeline_dry_run():
                         create_stub(dest_video)
-                        create_stub(dest_mp3)
+                        if same_stem_audio is None:
+                            create_stub(dest_mp3)
                     video_found = True
                     remaining -= 1
                     total_processed += 1
                     continue
 
-                if dest_mp3.exists():
+                if same_stem_audio is not None:
+                    pr.white_tmr(f"  {file.name}")
+                    moved_video = False
+                    if ext == ".mp4":
+                        file.rename(dest_video)
+                        moved_video = True
+                    else:
+                        moved_video = convert_to_mp4(file, dest_video)
+                        if moved_video:
+                            file.unlink()
+                    if moved_video:
+                        pr.yes(f"moved (audio from {same_stem_audio.name})")
+                        video_found = True
+                        remaining -= 1
+                        total_processed += 1
+                    else:
+                        pr.no("video conversion failed")
+                elif dest_mp3.exists():
                     pr.white_tmr(f"  {file.name}")
                     moved_video = False
                     if ext == ".mp4":

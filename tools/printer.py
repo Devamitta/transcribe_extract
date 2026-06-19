@@ -5,7 +5,7 @@ from datetime import datetime
 import time
 from pathlib import Path
 from rich import print
-from typing import Union, Optional, ClassVar
+from typing import ClassVar
 
 
 class TSVFormatter(logging.Formatter):
@@ -55,7 +55,7 @@ class TSVFormatter(logging.Formatter):
 class Printer:
     """Colored console output with timing and TSV logging."""
 
-    def __init__(self, log_file: Optional[Path] = None):
+    def __init__(self, log_file: Path | None = None):
         self.line = "-" * 40
         self.start_time: float | None = None
         self.session = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -154,7 +154,7 @@ class Printer:
         self.bip()
         self._log(logging.INFO, "info", message, type="info")
 
-    def yes(self, message: Union[int, str]) -> None:
+    def yes(self, message: int | str) -> None:
         """Print right-aligned blue message with timing."""
         if isinstance(message, int):
             formatted = f"{message:>10,}"
@@ -167,7 +167,7 @@ class Printer:
         print(f"[blue]{formatted}", end="")
         self.print_bop()
 
-    def no(self, message: Union[int, str]) -> None:
+    def no(self, message: int | str) -> None:
         """Print right-aligned red message with timing."""
         print(f"[red]{message:>10}", end="")
         self.print_bop()

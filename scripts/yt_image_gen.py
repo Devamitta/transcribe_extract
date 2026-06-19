@@ -7,6 +7,7 @@ from pathlib import Path
 
 from tools.dry_run import create_stub, is_pipeline_dry_run
 from tools.image_gen import generate_image
+from tools.lang import LANG_TO_FOLDER
 from tools.printer import printer as pr
 from tools.provider import generate_content, get_working_key
 from tools.source_scope import read_source_filter, source_matches_filter
@@ -44,7 +45,6 @@ Output: one paragraph only, no preamble, no labels, no quotes.
 """,
 }
 
-LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 HISTORY_PATH = Path("output/youtube_history.json")
 
 

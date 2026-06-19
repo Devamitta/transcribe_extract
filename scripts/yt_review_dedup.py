@@ -8,9 +8,9 @@ import unicodedata
 from collections import defaultdict
 from pathlib import Path
 
+from tools.lang import LANG_TO_FOLDER
 from tools.printer import printer as pr
 
-LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 YT_HISTORY_PATH = Path("output/youtube_history.json")
 TITLE_SIMILARITY_THRESHOLD = 0.95
 

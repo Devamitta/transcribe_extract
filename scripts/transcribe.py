@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from tools.glossary import DHAMMA, SANGHA, VINAYA
+from tools.lang import LANG_TO_FOLDER
 from tools.printer import printer as pr
 from tools.uploader_common import find_path_by_normalized_name
 
@@ -18,8 +19,6 @@ VOCAB_PROMPTS = {
     "interview": f"Buddhist meditation interview. Pali terms: {', '.join(DHAMMA)}",
     "russian": "Буддийская лекция о Дхамме. Pali terms: Nibbāna, Satipaṭṭhāna, Dhamma, Saṅgha",
 }
-
-LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 
 
 def main():

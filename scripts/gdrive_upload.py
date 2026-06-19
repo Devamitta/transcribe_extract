@@ -15,6 +15,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
+from tools.lang import LANG_TO_FOLDER
 from tools.printer import printer as pr
 from tools.source_scope import path_matches_filter, read_source_filter
 from tools.uploader_common import (
@@ -43,7 +44,6 @@ GDRIVE_HISTORY_PATH = Path("output/gdrive_history.json")
 LEGACY_VIDEO_HISTORY = Path("output/gdrive_video_history.json")
 LEGACY_AUDIO_HISTORY = Path("output/gdrive_audio_history.json")
 DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder"
-LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 
 
 def prompt_for_drive_subfolder(

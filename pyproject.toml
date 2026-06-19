@@ -1,7 +1,7 @@
 [project]
 name = "mlx-transcriber"
 version = "0.1.0"
-description = "Add your description here"
+description = "Local pipeline: MP3 Dhamma talks → Whisper transcripts → LLM-extracted Dhamma points."
 readme = "README.md"
 requires-python = "==3.12.*"
 dependencies = [
@@ -32,9 +32,6 @@ dev = [
     "pytest>=7.4.3",
     "ruff>=0.15.9",
 ]
-
-[lint]
-ignore = []
 
 [tool.hatch.build.targets.wheel]
 packages = ["tools", "scripts"]

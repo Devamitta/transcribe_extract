@@ -8,6 +8,7 @@ import time
 import unicodedata
 from pathlib import Path
 
+from tools.lang import LANG_TO_FOLDER
 from tools.printer import printer as pr
 from tools.provider import (
     build_cacheable_contents,
@@ -38,8 +39,6 @@ MIN_CHAPTER_GAP_MINS = 2.0
 MIN_CHAPTERS = 3
 MAX_LLM_ATTEMPTS = 3
 LLM_RETRY_DELAY_S = 3.0
-
-LANG_TO_FOLDER: dict[str, str] = {"ru": "russian", "en": "english"}
 
 
 SYSTEM_INSTRUCTIONS_PARAGRAPHS: dict[str, str] = {

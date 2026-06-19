@@ -93,7 +93,7 @@ The pipeline begins by scanning `input/` or `input/<folder>/`.
 uv run python scripts/yt_ingest_unified.py [--lang ru|en] [--folder <folder>] [--limit 5] [--cover]
 ```
 
-- **Video Files (`.mp4`, `.mkv`, `.mov`, `.mpeg`, `.mpg`)**: Converted to .mp4, audio extracted to output/audio/<folder>/, video saved to output/video/<folder>/.
+- **Video Files (`.mp4`, `.mkv`, `.mov`, `.mpeg`, `.mpg`)**: Converted to `.mp4` and saved to `output/video/<folder>/`. If no same-stem audio input exists, an MP3 is extracted from the video into `output/audio/<folder>/`. If a same-stem audio input is present in the same scanned `input/` folder (for example `test.wav` or `test.mp3` beside `test.mp4`), the video audio is not extracted; the separate audio file is moved or converted by the normal audio handling and becomes `output/audio/<folder>/test.mp3`.
 - **Images (.png, .jpg, .jpeg)**: Converted to JPG and moved to output/thumbnails/<folder>/. If --cover is set, also copied to output/covers/<folder>/.
 - **Non-MP3 Audio (`.wav`, `.m4a`, etc.)**: Converts to MP3 in `output/audio/<folder>/` and removes the original from `input/`.
 - **MP3 Files**: Moves them to `output/audio/<folder>/`.
