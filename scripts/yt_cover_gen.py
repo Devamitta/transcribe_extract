@@ -21,7 +21,7 @@ from tools.uploader_common import (
 )
 
 HISTORY_PATH = Path("output/youtube_history.json")
-_TITLE_SEGMENT_RE = re.compile(r"\s*(?:[|:;•·?!]+|[/\\]+|[–—]+)\s*|\s+-\s+|[,\.]\s+")
+_TITLE_SEGMENT_RE = re.compile(r"\s*(?:[|:;•·?!]+|[/\\]+|[–—]+)\s*|\s+-\s+|\.\s+")
 
 
 @dataclasses.dataclass

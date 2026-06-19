@@ -14,8 +14,7 @@ def test_split_title_segments_breaks_common_title_separators() -> None:
         "Practice",
         "Q&A",
         "Reflection",
-        "Review",
-        "Resolve",
+        "Review, Resolve",
         "End",
     ]
 

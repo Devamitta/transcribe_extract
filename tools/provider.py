@@ -36,9 +36,8 @@ GEMINI_WORK_MODELS = ["gemini-2.5-flash"]
 GEMINI_TEST_MODELS = ["gemini-3.1-flash-lite-preview"]
 
 GEMINI_CLI_WORK_MODELS = [
-    "gemini-3.1-pro-preview",
-    "gemini-2.5-pro",
     "gemini-3-flash-preview",
+    "gemini-2.5-pro",
 ]
 GEMINI_CLI_TEST_MODELS = ["gemini-3.1-flash-lite"]
 
