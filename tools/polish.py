@@ -14,7 +14,7 @@ WHAT TO DO:
 - Smooth out awkward phrasing for clarity.
 - Remove only non-content fillers: "um", "uh", "you know", "like" (when used as filler), and repetitive false starts (e.g. "I I I think" -> "I think").
 - Preserve the exact flow of the teacher's explanation.
-- Keep the structure (Headers, Q&A format, Topic tags).
+- Keep the structure (Headers, Topic tags).
 
 WHAT NOT TO DO:
 - NEVER summarize. If the teacher explains a point in three sentences, your output must have approximately three sentences.

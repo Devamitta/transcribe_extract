@@ -40,13 +40,18 @@ Keep the teaching value; remove or generalize identifiers:
 
 De-identify by:
 - Removing names of monks, teachers, students, laypeople
+- Removing nicknames and pet names for people, not just formal names and titles
 - Removing names of monasteries, centers, cities, countries, and specific locations
+- Removing organization, project, or community/group acronyms and names (e.g. "SBS")
+- Generalizing references to specific communication apps or platforms (e.g. "WhatsApp", "Telegram") to neutral wording
 - Replacing them with generic wording only as needed:
   - "a teacher"
   - "another monk"
   - "a monastery"
   - "another place"
   - "at that time"
+  - "a project"
+  - "by message"
 - Preserving the lesson, not the identity
 
 Examples:
@@ -59,7 +64,8 @@ Delete entirely:
 - Names of monks, teachers, students, or any named individual
 - Names of monasteries, centers, countries, cities, and specific locations
 - Travel logistics, visa, retreat booking, border paperwork
-- Monastery administration: repairs, construction, staffing decisions, event scheduling, logistics of ceremonies
+- Monastery administration: repairs, construction, staffing decisions, event scheduling, and pure logistics of arranging a ceremony (which date, who travels, catering)
+- Do NOT remove the Vinaya procedural content of a ceremony itself — e.g. how many monks are required for a saṅghādisesa purification, who is eligible to attend, what the ceremony requires. That is Vinaya teaching and belongs in KEEP AS-IS, even if it appears alongside admin chatter.
 - Scheduling and rotation of Dhamma talks (who gives which talk on which day) — keep only the teaching content of the talks themselves, not the planning discussion
 - Production work on monastery publications (editing, layout, formatting decisions for chanting books, etc.)
 - Pure biographical chat with no Dhamma-Vinaya teaching value
@@ -87,7 +93,7 @@ AMBIGUITY HANDLING:
 LONG EXCHANGES:
 - Preserve teaching-rich dialogues in full.
 - Do not compress teacher explanations to "key points."
-- When a topic has multiple Q&A turns (Q→A→Q→A), include all turns — do not stop after the first exchange and move on to the next topic.
+- When a topic involves several back-and-forth exchanges, include all of them — do not stop after the first exchange and move on to the next topic.
 - The elaboration, follow-up questions, and further explanation in a teaching dialogue are part of the teaching, not optional context. Include them.
 """
 
@@ -107,7 +113,8 @@ _EXTRACT_PROMPT_AFTER_OVERLAP: str = """OUTPUT FORMAT:
 - Do not wait for a dramatic topic shift before adding a tag.
 - A long extract should usually contain multiple tagged sections rather than one continuous block.
 - If a passage clearly belongs to an existing nearby topic, keep it under that tag instead of creating a new one.
-- Format: **Q:** / **A:** for clear Q&A; plain paragraphs otherwise.
+- Format as plain paragraphs. This source has no speaker labels, so do not invent a Q:/A: structure or otherwise attribute lines to a specific speaker — there is no reliable way to tell who is speaking, and a guessed attribution is worse than none.
+- Dropping the Q:/A: labels does not relax the preservation rules above: keep the teacher's explanations, examples, and follow-up exchanges close to verbatim. Flowing paragraph form is a formatting change only — it is not permission to paraphrase, condense, or summarize content that passes the KEEP criteria.
 - Preserve multi-paragraph explanations completely.
 
 Tag format: lowercase Pāli terms or concise descriptive phrases in square brackets. Create whichever tag best names the actual topic — do not limit yourself to a fixed list.
@@ -141,13 +148,20 @@ LENGTH CHECK:
 
 If a chunk contains only personal chat, scheduling, or non-teaching content, output only: NO_POINTS
 
+OUTPUT PURITY:
+- Output only the extracted Dhamma content under `## [tag]` sections — nothing else.
+- Never include commentary about your own process: no "Source analysis", "Summary of Work", notes about which rules you applied, confirmations that checks were completed, or any other meta-text about the extraction itself. If you find yourself describing what you did rather than reporting what the teacher said, delete that text.
+
 FINAL DE-IDENTIFICATION CHECK (required before completing output):
 - Read through every sentence in your output.
-- Replace any remaining monk names, monastery names, cities, countries, or proper nouns with generic alternatives:
+- Replace any remaining monk names, monastery names, cities, countries, organization names, nicknames, or proper nouns with generic alternatives:
   - Monk/teacher name → "a teacher", "a monk", "a senior monk", "one teacher"
   - Monastery/center name → "a monastery", "another monastery", "that place"
   - City/country → "another place", "there", "in another country"
-  - Layperson name → remove or replace with role ("a layperson", "a donor")
+  - Layperson name or nickname → remove or replace with role ("a layperson", "a donor", "a friend")
+  - Organization/project acronym or name → "a project", "a community"
+  - Communication app/platform name → "a message", "in touch"
+- A name or place that appears multiple times in the source must be replaced at every occurrence in your output, not only the first. Scan the full output for repeats — do not stop after fixing the first instance.
 - Do not skip this step even if you believe you have already de-identified the content.
 - Common leak pattern: sentences like "When I was at [MONASTERY]..." or "As [MONK NAME] explained..." appear as teaching content and get copied verbatim. These must be caught here."""
 

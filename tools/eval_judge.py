@@ -138,7 +138,7 @@ EXTRACT_CRITERIA = (
     Criterion(
         key="structure",
         label="Structure",
-        description="Uses `## [tag]` sections and preserves Q/A form when present.",
+        description="Uses `## [tag]` sections to organize topics; no invented speaker attribution.",
     ),
 )
 
@@ -156,7 +156,7 @@ POLISH_CRITERIA = (
     Criterion(
         key="structure_preservation",
         label="Structure preservation",
-        description="Headers, topic tags, and Q/A structure are preserved.",
+        description="Headers and topic tags are preserved.",
     ),
 )
 
