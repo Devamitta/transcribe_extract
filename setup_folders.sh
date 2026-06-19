@@ -39,11 +39,11 @@ echo "Done. Folders created."
 # Create .env template if it doesn't exist
 if [ ! -f .env ]; then
     cat > .env << 'EOF'
-# LLM provider: google | gemini-cli | antigravity-cli | agy | openrouter | deepseek
-PROVIDER=
-IMAGE_PROVIDER=
+# LLM provider/model routing is configured in tools/ai_models.json (cross-provider
+# default_models fallback). To pin one provider for a single run, set PROVIDER=<name>
+# on the command line, e.g. `PROVIDER=agy uv run ...`. A PROVIDER value in .env is ignored.
 
-# API keys — fill in the one matching your PROVIDER
+# API keys
 OPENROUTER_API_KEY=
 GEMINI_API_KEY=
 OPENAI_API_KEY=

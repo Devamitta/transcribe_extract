@@ -8,11 +8,17 @@ from pathlib import Path
 
 from dotenv import load_dotenv  # type: ignore[import-untyped]
 
+# Provider-routing policy comes ONLY from the real process environment (e.g.
+# `PROVIDER=agy uv run ...` on the command line), never from a persistent pin in .env.
+# Capture the real-env value before loading .env so a stale `PROVIDER=` line in .env
+# cannot disable the cross-provider default_models chain.
+_real_provider = os.environ.get("PROVIDER")
+
 load_dotenv()
 
-# Unset PROVIDER → cross-provider fallback chain (default_models in ai_models.json).
-# Set PROVIDER to a known provider to restrict routing to that single provider.
-PROVIDER = os.getenv("PROVIDER", "").lower()
+# Unset (or .env-only) PROVIDER → cross-provider fallback chain (default_models in
+# ai_models.json). A real-env PROVIDER restricts routing to that single provider.
+PROVIDER = (_real_provider or "").lower()
 TEST_MODE = "--test" in sys.argv or "-t" in sys.argv
 CLI_TEST_MODE = TEST_MODE or "--dry-run" in sys.argv
 
