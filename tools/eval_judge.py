@@ -25,7 +25,6 @@ PALI_HASH_DATA_FILES = (
     DATA_DIR / "pali_examples.json",
 )
 REGRESSION_THRESHOLD = 0.5
-JUDGE_MODEL = "Gemini 3.1 Pro (Low)"
 
 
 @dataclass(frozen=True)

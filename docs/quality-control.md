@@ -1,15 +1,46 @@
 # Quality Control
 
-Quality control now has two active recurring loops:
+Quality control is orchestrated via slash-command skills. These skills replace the former ongoing Kamma loops:
 
-| Loop | Stage | Thread |
-|------|-------|--------|
-| Semantic Evaluation | Corrected transcript data fixes | `kamma/threads/ongoing_loops/ongoing_semantic_evaluation_loop/` |
-| Prompt Quality | Pali, extract, and polish prompt/data tuning | `kamma/threads/ongoing_loops/ongoing_prompt_quality/` |
+| Skill | Purpose | State Location |
+|-------|---------|----------------|
+| `/semantic-fix` | Corrected transcript data fixes | `.claude/semantic-fix-state.md` |
+| `/prompt-quality` | Pali, extract, and polish prompt/data tuning | `.claude/prompt-quality-state.md` |
 
-The old manual loops for transcription, Pali correction, extract, and polish were
-archived under `kamma/archive/ongoing_loops/`. Prompt quality is now evaluated
-with the golden-set harness below.
+The original thread folders are archived under `kamma/archive/ongoing_loops/`.
+
+---
+
+## Quality Skills
+
+### `/semantic-fix` (Semantic Evaluation)
+
+Semantic evaluation detects remaining Whisper hallucinations and contextually wrong passages after Pali correction. This skill fixes data in `output/corrected_pali/`; it does not tune prompts.
+
+**Trigger:** `/semantic-fix`
+
+**Procedure:**
+1. **Run Detection:** The skill runs `scripts/evaluate_semantic.py` to generate reports under `reports/semantic/`. Provider routing follows `tools/ai_models.json`.
+2. **Queue Selection:** Selects up to 10 unreviewed reports by mtime vs `.claude/semantic-ledger.json`.
+3. **Classification:** Findings are classified as True Positive (Fix), True Positive (Defer), or False Positive.
+4. **Approval Gate:** Human approval is required before applying fixes.
+5. **Apply:** Fixes are applied to transcripts via a generated `temp/apply_semantic_fixes.py` script.
+6. **Verification:** Re-evaluates modified files and updates state/ledger.
+
+Deferred Dhamma-Vinaya terms requiring manual review are logged in `.claude/semantic-manual-corrections.md`.
+
+### `/prompt-quality` (Prompt Quality)
+
+Improves the Pali, extract, and polish stage prompts using the golden-set harness results.
+
+**Trigger:** `/prompt-quality`
+
+**Procedure:**
+1. **Establish Evidence:** Run `scripts/evaluate_stages.py` (Antigravity-only) to identify low-scoring criteria.
+2. **Identify Change:** Pick ONE targeted change for `tools/pali.py`, `tools/extract.py`, `tools/polish.py`, `tools/data/pali_overrides.json`, or `tools/data/pali_examples.json`.
+3. **Approval Gate:** Human approval is required before applying prompt changes.
+4. **Verification:** Re-runs the harness and records before/after means.
+5. **Validation:** Runs the full Python validation suite (ruff, pyright, pyrefly, pytest) on any changed code.
 
 ---
 
@@ -103,64 +134,6 @@ exit code `2`; one- or two-excerpt smokes are too noisy to use as baselines.
 Run this harness after any approved change to `tools/pali.py`, `tools/extract.py`,
 `tools/polish.py`, `tools/data/pali_overrides.json`, or
 `tools/data/pali_examples.json`.
-
-### Prompt Quality Loop
-
-Use `kamma/threads/ongoing_loops/ongoing_prompt_quality/` for prompt or Pali-data
-tuning sessions. The workflow is:
-
-1. Run or read the latest `reports/eval/` scorecard for the affected stage.
-2. Diagnose the smallest prompt/data change from concrete evidence.
-3. Get explicit user approval before editing.
-4. Apply the approved change.
-5. Rerun `scripts/evaluate_stages.py --stage <stage>` and compare means.
-
-Known carried-forward risks:
-
-- Extract "headline extraction": dense topic-shifting input can become many thin
-  sections instead of complete teaching exchanges.
-- Pali meaning flips: review `vagina|winner|linear|epidemic` carefully when
-  changing Pali correction behavior.
-
----
-
-## Semantic Evaluation Loop
-
-Semantic evaluation detects remaining Whisper hallucinations and contextually
-wrong passages after Pali correction. This loop fixes data in
-`output/corrected_pali/`; it does not tune prompts.
-
-**Thread:** `kamma/threads/ongoing_loops/ongoing_semantic_evaluation_loop/`
-
-### Prerequisite
-
-Before starting a session, run batch semantic evaluation:
-
-```bash
-uv run python scripts/batch.py --stage semantic --folder interview --limit 10
-```
-
-### Direct Mode
-
-```bash
-uv run python scripts/evaluate_semantic.py interview
-uv run python scripts/evaluate_semantic.py -t interview
-uv run python scripts/evaluate_semantic.py output/corrected_pali/interview/Talk.md
-```
-
-Reports are written to `reports/semantic/<subfolder>/<filename>.md`.
-
-### Session Flow
-
-1. Read only fresh semantic reports newer than the last reviewed mtime in
-   `handoff.md`.
-2. Classify findings, plan fixes, and get user approval.
-3. Apply approved fixes to `output/corrected_pali/`.
-4. Re-evaluate to confirm clean.
-5. Log the session in `handoff.md`.
-
-Deferred Dhamma-Vinaya terms requiring manual review are logged in
-`manual_corrections.md`.
 
 ---
 
