@@ -1,6 +1,9 @@
 """Regression tests for the Pāli correction runner integration."""
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -9,6 +12,19 @@ from scripts import batch, correct_pali
 from tools.chunk_runner import EXIT_OK
 from tools.pali import apply_overrides, get_pali_system_instruction
 from tools.provider import CACHE_PREFIX
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _blank_provider_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(PROJECT_ROOT)
+    env["PROVIDER"] = "google"
+    env["GEMINI_API_KEY"] = ""
+    env["GEMINI_API_KEY_1"] = ""
+    env["OPENROUTER_API_KEY"] = ""
+    env["DEEPSEEK_API_KEY"] = ""
+    return env
 
 
 def test_pairs_applied_with_word_boundaries_and_logged(
@@ -66,6 +82,25 @@ def test_malformed_json_falls_back_to_original_without_failing(
     assert output_file.read_text(encoding="utf-8") == "unchanged text"
     assert json.loads(report_file.read_text(encoding="utf-8")) == []
     assert not list(tmp_path.rglob(".status"))
+
+
+def test_no_work_exits_without_provider_backend_import(tmp_path: Path) -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from scripts import correct_pali; raise SystemExit(correct_pali.main([]))",
+        ],
+        cwd=tmp_path,
+        env=_blank_provider_env(),
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    output = result.stdout + result.stderr
+
+    assert result.returncode == 0, output
+    assert "No GEMINI_API_KEY" not in output
 
 
 def test_apply_overrides_corrects_unconditional_pairs_but_not_cook() -> None:

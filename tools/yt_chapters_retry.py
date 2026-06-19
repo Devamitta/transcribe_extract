@@ -9,6 +9,7 @@ from collections.abc import Callable
 from tools.printer import printer as pr
 
 LLMRequest = Callable[[int], str | None]
+LLMResponseValidator = Callable[[str], str | None]
 
 
 class LLMRetryError(RuntimeError):
@@ -20,10 +21,11 @@ def retry_llm_request(
     *,
     file_name: str,
     action: str,
+    validate_response: LLMResponseValidator | None = None,
     max_attempts: int = 3,
     retry_delay_s: float = 3.0,
 ) -> str:
-    """Run an LLM request until it returns text or exhausts retry attempts."""
+    """Run an LLM request until it returns valid text or exhausts retry attempts."""
     if max_attempts < 1:
         raise ValueError("max_attempts must be at least 1")
 
@@ -40,10 +42,21 @@ def retry_llm_request(
                 f"    LLM {action} attempt {attempt}/{max_attempts} failed: {last_error}"
             )
         else:
-            if response:
-                return response
-            last_error = "empty response"
-            pr.amber(f"    Empty response from LLM on attempt {attempt}/{max_attempts}")
+            if response and response.strip():
+                if validate_response is None:
+                    return response
+                validation_error = validate_response(response)
+                if validation_error is None:
+                    return response
+                last_error = validation_error
+                pr.amber(
+                    f"    Invalid LLM {action} response on attempt {attempt}/{max_attempts}: {validation_error}"
+                )
+            else:
+                last_error = "empty response"
+                pr.amber(
+                    f"    Empty response from LLM on attempt {attempt}/{max_attempts}"
+                )
 
         if attempt < max_attempts:
             pr.amber(f"    Retrying {file_name}...")

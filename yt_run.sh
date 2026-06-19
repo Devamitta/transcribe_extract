@@ -216,10 +216,6 @@ if [ "$FROM_EXPORT" -eq 0 ]; then
   rm -f "$TRANSCRIBE_LOG"
 
   # 4. Metadata
-  if [ "$DRY_RUN" -eq 0 ]; then
-    echo "→ Starting: check_keys.py --text"
-    uv run python scripts/check_keys.py --text
-  fi
   echo "→ Starting: yt_metadata.py"
   METADATA_LOG=$(mktemp)
   uv run python scripts/yt_metadata.py --lang "$LANG" \
@@ -368,10 +364,6 @@ rm -f "$METADATA_LOG"
 if [ "$VIDEO_MODE" -eq 0 ] || [ "$COVER" -eq 1 ]; then
   while true; do
     THUMB_LOG=$(mktemp)
-    if [ "$DRY_RUN" -eq 0 ]; then
-      echo "→ Starting: check_keys.py --image"
-      uv run python scripts/check_keys.py --image
-    fi
     echo "→ Starting: yt_image_gen.py"
     IMAGE_SOURCE_LOG_FLAG=""
     [ "$DRY_RUN" -eq 1 ] && IMAGE_SOURCE_LOG_FLAG="--source-log $EXPORT_LOG"

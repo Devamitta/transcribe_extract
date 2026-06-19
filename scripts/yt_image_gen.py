@@ -16,6 +16,7 @@ from tools.uploader_common import (
     is_uploaded_in_history,
     load_nested_history,
 )
+from tools.yt_chapters_retry import LLMRetryError, retry_llm_request
 
 
 SYSTEM_INSTRUCTIONS: dict[str, str] = {
@@ -46,6 +47,8 @@ Output: one paragraph only, no preamble, no labels, no quotes.
 }
 
 HISTORY_PATH = Path("output/youtube_history.json")
+MAX_LLM_ATTEMPTS = 3
+LLM_RETRY_DELAY_S = 3.0
 
 
 def sanitize_filename(name: str) -> str:
@@ -114,27 +117,37 @@ def build_prompt(title: str, description: str, lang: str) -> str:
     pr.amber(f"    Building prompt for: {title}")
 
     contents = f"Title: {title}\nDescription: {description}"
+    prompt = generate_content(contents, SYSTEM_INSTRUCTIONS[lang]).strip()
+    return re.sub(r'^["\']|["\']$', "", prompt)
 
+
+def generate_image_with_retry(prompt: str, out_path: Path, source_name: str) -> None:
+    """Generate one required thumbnail image, retrying provider failures."""
+    retry_llm_request(
+        lambda _attempt: _generate_image_response(prompt, out_path),
+        file_name=source_name,
+        action="image generation",
+        max_attempts=MAX_LLM_ATTEMPTS,
+        retry_delay_s=LLM_RETRY_DELAY_S,
+    )
+
+
+def _generate_image_response(prompt: str, out_path: Path) -> str:
     try:
-        prompt = generate_content(contents, SYSTEM_INSTRUCTIONS[lang]).strip()
-        prompt = re.sub(r'^["\']|["\']$', "", prompt)
-    except Exception as e:
-        pr.amber(f"    Prompt generation failed: {e}. Using fallback.")
-        prompt = (
-            "A serene Theravada forest monastery at dawn, ancient stone architecture, "
-            "tropical trees, morning mist, soft golden light. "
-            "No people, no text, photorealistic, cinematic."
-        )
-
-    return prompt
+        generate_image(prompt, out_path)
+    except Exception:
+        if out_path.exists():
+            out_path.unlink()
+        raise
+    return "created"
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser(description="Generate AI thumbnail images.")
     parser.add_argument(
         "--lang",
         type=str,
-        required=True,
+        default="en",
         choices=["ru", "en"],
         help="Language of the talk (ru|en).",
     )
@@ -195,7 +208,7 @@ def main() -> None:
 
     if not folder_names:
         pr.no("No subfolders found in 'output/transcribed/'.")
-        return
+        return 0
 
     # Pass 1: collect all approved talks from all folders
     all_talks: list[tuple[str, Path, dict]] = []
@@ -224,7 +237,7 @@ def main() -> None:
 
     if not all_talks:
         pr.no("No approved talks found to process.")
-        return
+        return 0
 
     history = load_nested_history(HISTORY_PATH, args.lang)
     if not args.force:
@@ -236,7 +249,7 @@ def main() -> None:
 
     if not all_talks:
         pr.green("All approved talks are already uploaded.")
-        return
+        return 0
 
     pending_talks: list[tuple[str, Path, dict]] = []
     existing = 0
@@ -251,7 +264,7 @@ def main() -> None:
 
     if not pending_talks:
         pr.green("Nothing to do.")
-        return
+        return 0
 
     # Pass 2: process
     new_count = len(pending_talks)
@@ -284,29 +297,51 @@ def main() -> None:
             continue
 
         if args.show_prompts:
-            prompt = build_prompt(title, description, args.lang)
-            pr.cyan(f"\n--- {title} ---")
-            pr.white(prompt)
+            try:
+                prompt = retry_llm_request(
+                    lambda _attempt: build_prompt(title, description, args.lang),
+                    file_name=source,
+                    action="thumbnail prompt generation",
+                    max_attempts=MAX_LLM_ATTEMPTS,
+                    retry_delay_s=LLM_RETRY_DELAY_S,
+                )
+                pr.cyan(f"\n--- {title} ---")
+                pr.white(prompt)
+            except LLMRetryError as e:
+                pr.no(f"    Failed: {title}")
+                pr.amber(f"    {e}")
+                errors += 1
             continue
 
         pr.green(f"  [{folder_name}] {title}")
-        prompt = build_prompt(title, description, args.lang)
-        pr.green(f"    → {prompt[:100]}...")
 
         try:
-            generate_image(prompt, out_path)
+            prompt = retry_llm_request(
+                lambda _attempt: build_prompt(title, description, args.lang),
+                file_name=source,
+                action="thumbnail prompt generation",
+                max_attempts=MAX_LLM_ATTEMPTS,
+                retry_delay_s=LLM_RETRY_DELAY_S,
+            )
+            pr.green(f"    → {prompt[:100]}...")
+            generate_image_with_retry(prompt, out_path, source)
             if args.created_log:
-                with open(args.created_log, "a") as log_f:
+                with open(args.created_log, "a", encoding="utf-8") as log_f:
                     log_f.write(str(out_path) + "\n")
             pr.yes(f"    Created: {out_path.name}")
             created += 1
+        except LLMRetryError as e:
+            pr.no(f"    Failed: {title}")
+            pr.amber(f"    {e}")
+            errors += 1
         except Exception as e:
             pr.no(f"    Failed: {title}")
             pr.amber(f"    {e}")
             errors += 1
 
     pr.yes(f"Done: {created} created, {skipped} skipped, {errors} errors")
+    return 1 if errors else 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

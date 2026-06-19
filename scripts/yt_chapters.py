@@ -188,6 +188,75 @@ def validate_chapters(
     return True
 
 
+def finalize_chapters(
+    chapters: list[tuple[float, str]],
+    min_gap: float,
+    duration_mins: float,
+    *,
+    too_few_prefix: str,
+) -> list[tuple[float, str]]:
+    """Apply final YouTube chapter checks and return chapters ready to write."""
+    finalized = list(chapters)
+    if len(finalized) < MIN_CHAPTERS:
+        raise ValueError(f"{too_few_prefix} {len(finalized)} valid chapters")
+
+    if duration_mins > 0 and (duration_mins - finalized[-1][0] < (10.0 / 60.0)):
+        pr.amber(f"    Dropping last chapter '{finalized[-1][1]}' — too close to end")
+        finalized.pop()
+
+    if not validate_chapters(finalized, min_gap, duration_mins):
+        raise ValueError("chapter validation failed")
+
+    return finalized
+
+
+def validate_chapter_response(
+    response: str,
+    available: list[float],
+    min_gap: float,
+    duration_mins: float,
+    *,
+    tolerance: float,
+    too_few_prefix: str,
+) -> str | None:
+    """Validate raw chapter response against available timestamp anchors."""
+    try:
+        chapters = parse_lm_response(response, available, tolerance=tolerance)
+        finalize_chapters(
+            chapters,
+            min_gap,
+            duration_mins,
+            too_few_prefix=too_few_prefix,
+        )
+    except ValueError as exc:
+        return str(exc)
+    return None
+
+
+def validate_generated_chapter_response(
+    response: str,
+    available: list[float],
+    transcript: str,
+    min_gap: float,
+    duration_mins: float,
+    *,
+    tolerance: float,
+) -> str | None:
+    """Validate generated chapter response after merge logic."""
+    try:
+        chapters = parse_lm_response(response, available, tolerance=tolerance)
+        chapters = merge_close_chapters(chapters, transcript, available, min_gap)
+        finalize_chapters(
+            chapters,
+            min_gap,
+            duration_mins,
+            too_few_prefix="only",
+        )
+    except ValueError as exc:
+        return str(exc)
+    return None
+
+
 def snap_to_nearest(
     ts: float, available: list[float], tolerance: float = SNAP_TOLERANCE_MINS
 ) -> float | None:
@@ -453,7 +522,7 @@ def main() -> None:
     parser.add_argument(
         "--lang",
         type=str,
-        required=True,
+        default="en",
         choices=["ru", "en"],
         help="Language of the talk (ru|en).",
     )
@@ -674,6 +743,14 @@ def main() -> None:
                     ),
                     file_name=file_path.name,
                     action="chapter timestamping",
+                    validate_response=lambda candidate: validate_chapter_response(
+                        candidate,
+                        available,
+                        active_min_gap,
+                        duration_mins,
+                        tolerance=args.snap_tolerance,
+                        too_few_prefix="only",
+                    ),
                     max_attempts=MAX_LLM_ATTEMPTS,
                     retry_delay_s=LLM_RETRY_DELAY_S,
                 )
@@ -683,24 +760,12 @@ def main() -> None:
                     response, available, tolerance=args.snap_tolerance
                 )
                 dbg(f"parsed chapters: {[(ts, n) for ts, n in chapters]}")
-
-                if len(chapters) < MIN_CHAPTERS:
-                    pr.no(f"    Only {len(chapters)} valid chapters — skipping")
-                    continue
-
-                if duration_mins > 0 and (
-                    duration_mins - chapters[-1][0] < (10.0 / 60.0)
-                ):
-                    pr.amber(
-                        f"    Dropping last chapter '{chapters[-1][1]}' — too close to end"
-                    )
-                    chapters.pop()
-
-                if not validate_chapters(chapters, active_min_gap, duration_mins):
-                    pr.no(
-                        f"    Chapter validation failed for {file_path.name} — skipping write"
-                    )
-                    continue
+                chapters = finalize_chapters(
+                    chapters,
+                    active_min_gap,
+                    duration_mins,
+                    too_few_prefix="only",
+                )
 
                 ok = replace_untimed_chapters_block(review_path, nfc_name, chapters)
                 if ok:
@@ -828,6 +893,14 @@ def main() -> None:
                 generate_chapters_attempt,
                 file_name=file_path.name,
                 action="chapter generation",
+                validate_response=lambda candidate: validate_generated_chapter_response(
+                    candidate,
+                    active_silence_times if active_silence_times else available,
+                    transcript,
+                    active_min_gap,
+                    duration_mins,
+                    tolerance=args.snap_tolerance,
+                ),
                 max_attempts=MAX_LLM_ATTEMPTS,
                 retry_delay_s=LLM_RETRY_DELAY_S,
             )
@@ -841,23 +914,12 @@ def main() -> None:
                 chapters, transcript, snap_anchors, active_min_gap
             )
             dbg(f"after merge: {[(ts, n) for ts, n in chapters]}")
-
-            if len(chapters) < MIN_CHAPTERS:
-                pr.no(f"    Only {len(chapters)} valid chapters generated — skipping")
-                continue
-
-            # Final safety: if last chapter is too close to end, drop it
-            if duration_mins > 0 and (duration_mins - chapters[-1][0] < (10.0 / 60.0)):
-                pr.amber(
-                    f"    Dropping last chapter '{chapters[-1][1]}' — too close to end"
-                )
-                chapters.pop()
-
-            if not validate_chapters(chapters, active_min_gap, duration_mins):
-                pr.no(
-                    f"    Chapter validation failed for {file_path.name} — skipping write"
-                )
-                continue
+            chapters = finalize_chapters(
+                chapters,
+                active_min_gap,
+                duration_mins,
+                too_few_prefix="only",
+            )
 
             ok = insert_chapters_block(review_path, nfc_name, chapters)
             if ok:

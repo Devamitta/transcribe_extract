@@ -110,6 +110,15 @@ class ProviderSpec:
     key_check_style: Literal["no_args", "single_model", "loop_models"]
 
 
+@dataclass(frozen=True)
+class LoadedProvider:
+    """Loaded provider functions with configured fallback behavior."""
+
+    spec: ProviderSpec
+    generate_content: Callable[..., str]
+    get_working_key: Callable[[], bool]
+
+
 PROVIDER_REGISTRY: dict[str, ProviderSpec] = {
     "deepseek": ProviderSpec(
         label="DeepSeek",
@@ -159,6 +168,16 @@ PROVIDER_REGISTRY: dict[str, ProviderSpec] = {
     ),
 }
 PROVIDER_REGISTRY["agy"] = PROVIDER_REGISTRY["antigravity-cli"]
+_loaded_provider: LoadedProvider | None = None
+
+
+def _provider_spec() -> ProviderSpec:
+    spec = PROVIDER_REGISTRY.get(PROVIDER)
+    if spec is None:
+        print(f"[ERROR] Unknown provider: {PROVIDER}")
+        print(PROVIDER_ERROR_MSG)
+        raise SystemExit(1)
+    return spec
 
 
 def _active_models(spec: ProviderSpec) -> list[str]:
@@ -218,15 +237,40 @@ def _make_get_working_key(spec: ProviderSpec, key_fn: KeyCheckFn) -> Callable[[]
     return _get_working_key
 
 
-_spec = PROVIDER_REGISTRY.get(PROVIDER)
-if _spec is None:
-    print(f"[ERROR] Unknown provider: {PROVIDER}")
-    print(PROVIDER_ERROR_MSG)
-    exit(1)
+def _load_provider() -> LoadedProvider:
+    global _loaded_provider
 
-_provider_generate, _provider_key_check = _spec.loader()
-generate_content = _make_generate_content(_spec, _provider_generate)
-get_working_key = _make_get_working_key(_spec, _provider_key_check)
+    if _loaded_provider is not None:
+        return _loaded_provider
+
+    spec = _provider_spec()
+    provider_generate, provider_key_check = spec.loader()
+    _loaded_provider = LoadedProvider(
+        spec=spec,
+        generate_content=_make_generate_content(spec, provider_generate),
+        get_working_key=_make_get_working_key(spec, provider_key_check),
+    )
+    return _loaded_provider
+
+
+def generate_content(
+    contents: str,
+    system_instruction: str,
+    max_output_tokens: int = 32768,
+    temperature: float = 0.1,
+) -> str:
+    """Generate content with the configured provider."""
+    return _load_provider().generate_content(
+        contents=contents,
+        system_instruction=system_instruction,
+        max_output_tokens=max_output_tokens,
+        temperature=temperature,
+    )
+
+
+def get_working_key() -> bool:
+    """Check whether the configured provider is available."""
+    return _load_provider().get_working_key()
 
 
 def generate_with_timeout(

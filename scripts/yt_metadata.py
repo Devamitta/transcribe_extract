@@ -1,11 +1,11 @@
 """Generates YouTube metadata (title and description) for Dhamma talks using Gemini API."""
 
 import argparse
-import concurrent.futures
 import os
 import re
 import time
 import unicodedata
+from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -20,6 +20,7 @@ from tools.provider import (
 )
 from tools.uploader_common import get_google_client, list_channel_playlists
 from tools.uploader_common import is_uploaded_in_history, load_nested_history
+from tools.yt_chapters_retry import LLMRetryError, retry_llm_request
 
 
 DEFAULT_SPEAKER: dict[str, str] = {
@@ -107,6 +108,15 @@ TOKEN_PATHS: dict[str, Path] = {
 }
 YOUTUBE_SCOPES: list[str] = ["https://www.googleapis.com/auth/youtube"]
 HISTORY_PATH = Path("output/youtube_history.json")
+MAX_LLM_ATTEMPTS = 3
+LLM_RETRY_DELAY_S = 3.0
+
+
+@dataclass(frozen=True)
+class MetadataFields:
+    title: str
+    description: str
+    tags: str
 
 
 def get_playlist_overview(lang: str, dry_run: bool) -> str:
@@ -289,6 +299,43 @@ def generate_metadata(
     )
 
 
+def parse_metadata_response(metadata: str) -> MetadataFields:
+    """Parse and validate the required metadata response fields."""
+    title = ""
+    description = ""
+    tags = ""
+    for line in metadata.strip().split("\n"):
+        if line.upper().startswith("TITLE:"):
+            title = line[len("TITLE:") :].strip()
+        elif line.upper().startswith("DESCRIPTION:"):
+            description = line[len("DESCRIPTION:") :].strip()
+        elif line.upper().startswith("TAGS:"):
+            tags = line[len("TAGS:") :].strip()
+
+    missing = [
+        label
+        for label, value in (
+            ("TITLE", title),
+            ("DESCRIPTION", description),
+            ("TAGS", tags),
+        )
+        if not value
+    ]
+    if missing:
+        raise ValueError(f"metadata response missing {', '.join(missing)}")
+
+    return MetadataFields(title=title, description=description, tags=tags)
+
+
+def validate_metadata_response(metadata: str) -> str | None:
+    """Return an error message when metadata response structure is invalid."""
+    try:
+        parse_metadata_response(metadata)
+    except ValueError as exc:
+        return str(exc)
+    return None
+
+
 def _write_dry_run_entry(
     output_file: Path,
     file_path: Path,
@@ -358,7 +405,7 @@ def process_files(
     playlist_overview: str | None = None,
     simple_english_description: bool = False,
     created_log: Path | None = None,
-) -> None:
+) -> int:
     """Processes a list of markdown files and appends results to the review file."""
     output_file = Path(output_file_path)
 
@@ -384,7 +431,7 @@ def process_files(
 
     if not pending:
         pr.green(f"[{folder_name}] All files already processed.")
-        return
+        return 0
 
     if playlist_overview is None:
         playlist_overview = get_playlist_overview(lang, dry_run)
@@ -407,7 +454,7 @@ def process_files(
                     playlist_overview=playlist_overview,
                 )
                 append_created_log(created_log, f)
-        return
+        return 0
 
     # Write header only for a fresh file
     output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -421,6 +468,7 @@ def process_files(
 
     pr.green(f"[{folder_name}] Processing {len(pending)} files → '{output_file}'.")
     total = len(pending)
+    failures = 0
 
     speaker_suffix = _speaker_title_suffix(
         speaker_name,
@@ -431,29 +479,25 @@ def process_files(
         pr.green(f"  {i}/{total} '{file_path.name}'...")
         try:
             text = file_path.read_text(encoding="utf-8")
-            try:
-                metadata = generate_metadata(
+            metadata = retry_llm_request(
+                lambda _attempt: generate_metadata(
                     text,
                     lang,
                     speaker_name,
                     simple_english_description=simple_english_description,
-                )
-            except concurrent.futures.TimeoutError:
-                pr.amber(f"    Timeout on '{file_path.name}' — skipping.")
-                continue
+                ),
+                file_name=file_path.name,
+                action="metadata generation",
+                validate_response=validate_metadata_response,
+                max_attempts=MAX_LLM_ATTEMPTS,
+                retry_delay_s=LLM_RETRY_DELAY_S,
+            )
+            fields = parse_metadata_response(metadata)
 
-            title = ""
-            description = ""
-            tags = ""
-            for line in metadata.strip().split("\n"):
-                if line.upper().startswith("TITLE:"):
-                    raw_title = line[len("TITLE:") :].strip()
-                    title = _remove_inferred_part_one(raw_title, file_path.stem)
-                    title += speaker_suffix
-                elif line.upper().startswith("DESCRIPTION:"):
-                    description = line[len("DESCRIPTION:") :].strip()
-                elif line.upper().startswith("TAGS:"):
-                    tags = line[len("TAGS:") :].strip()
+            title = _remove_inferred_part_one(fields.title, file_path.stem)
+            title += speaker_suffix
+            description = fields.description
+            tags = fields.tags
 
             tags = enrich_tags(tags, lang)
             if speaker_name and "ariyadhammika" in speaker_name.lower():
@@ -481,17 +525,22 @@ def process_files(
                 fh.write(section)
             append_created_log(created_log, file_path)
 
+        except LLMRetryError as e:
+            pr.no(f"    Failed on '{file_path.name}': {e}")
+            failures += 1
         except Exception as e:
             pr.no(f"    Failed on '{file_path.name}': {e}")
+            failures += 1
 
         if total > 1 and i < total:
             pr.white("    Waiting 5s...")
             time.sleep(5)
 
     pr.green(f"[{folder_name}] Done. Review file: '{output_file}'.")
+    return failures
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser(
         description="Generate YouTube metadata suggestions for Dhamma talks."
     )
@@ -578,7 +627,7 @@ def main() -> None:
     transcribed_base = Path("output/transcribed")
     if not transcribed_base.exists():
         pr.no(f"Base directory not found: {transcribed_base}")
-        return
+        return 0
 
     # Handle single file mode
     if args.file:
@@ -587,12 +636,12 @@ def main() -> None:
             file_path = transcribed_base / args.folder / args.file
         if not file_path.exists():
             pr.no(f"File not found: {args.file}")
-            return
+            return 0
 
         folder_name = args.folder or file_path.parent.name
         lang_folder = LANG_TO_FOLDER.get(processing_lang, "english")
         out_file_path = args.output_file or f"reviews/{lang_folder}_review.md"
-        process_files(
+        failures = process_files(
             [file_path],
             processing_lang,
             out_file_path,
@@ -606,7 +655,7 @@ def main() -> None:
             simple_english_description=simple_english_description,
             created_log=args.created_log,
         )
-        return
+        return 1 if failures else 0
 
     # Determine folders to process
     if args.folder is not None:
@@ -616,7 +665,7 @@ def main() -> None:
 
     if not folders:
         pr.no("No subfolders found to process.")
-        return
+        return 0
 
     # Phase 1: Collect all pending files across all folders
     all_pending_groups: list[tuple[list[Path], str, str]] = []
@@ -660,11 +709,12 @@ def main() -> None:
 
     if not all_pending_groups:
         pr.green("Nothing to do.")
-        return
+        return 0
 
     # Phase 3: Process
+    failures = 0
     for pending, folder_name, out_file_path in all_pending_groups:
-        process_files(
+        failures += process_files(
             pending,
             processing_lang,
             out_file_path,
@@ -678,7 +728,8 @@ def main() -> None:
             simple_english_description=simple_english_description,
             created_log=args.created_log,
         )
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

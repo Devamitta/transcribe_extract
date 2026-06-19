@@ -25,7 +25,13 @@ Start from a later stage when earlier outputs already exist:
 ./extract_run.sh --from consolidate
 ```
 
-`--from consolidate` runs the privacy report first, then consolidation. The wrapper runs `scripts/check_keys.py --text` before the first requested LLM stage. Logs are written to `log/extract_run_<timestamp>.log`.
+`--from consolidate` runs the privacy report first, then consolidation. The wrapper does not run a separate provider probe before LLM stages; each LLM stage uses its first real request as the availability check and exits non-zero if required output cannot be produced after retries. Logs are written to `log/extract_run_<timestamp>.log`.
+
+For manual provider/auth troubleshooting, run:
+
+```bash
+uv run python scripts/check_keys.py --text
+```
 
 Stage script exit codes are:
 

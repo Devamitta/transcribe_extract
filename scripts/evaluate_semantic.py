@@ -18,6 +18,13 @@ from tools.provider import (
 
 pr = _p.printer
 
+INTER_CHUNK_SLEEP_SECONDS = 2.0
+INTER_FILE_SLEEP_SECONDS = 5.0
+
+
+class SemanticEvaluationError(RuntimeError):
+    """Raised when a semantic evaluation chunk cannot be evaluated safely."""
+
 
 def evaluate_chunk(chunk: str) -> list[dict[str, str]]:
     instruction = get_semantic_eval_instruction()
@@ -26,9 +33,8 @@ def evaluate_chunk(chunk: str) -> list[dict[str, str]]:
             contents=build_cacheable_contents(chunk),
             system_instruction=instruction,
         )
-        if not result:
-            pr.amber("Empty response from LLM.")
-            return []
+        if not result or not result.strip():
+            raise SemanticEvaluationError("empty response from LLM")
 
         json_str = result.strip()
         if json_str.startswith("```json"):
@@ -37,15 +43,24 @@ def evaluate_chunk(chunk: str) -> list[dict[str, str]]:
             json_str = json_str[:-3].strip()
 
         items = json.loads(json_str)
-        if isinstance(items, list):
-            return items
-        return []
-    except concurrent.futures.TimeoutError:
-        pr.amber("Timeout on chunk — skipping.")
-        return []
-    except Exception as e:
-        pr.amber(f"Parse failed: {e}")
-        return []
+    except SemanticEvaluationError:
+        raise
+    except concurrent.futures.TimeoutError as exc:
+        raise SemanticEvaluationError("timeout") from exc
+    except json.JSONDecodeError as exc:
+        raise SemanticEvaluationError(f"invalid JSON: {exc}") from exc
+    except Exception as exc:
+        raise SemanticEvaluationError(f"request failed: {exc}") from exc
+
+    if not isinstance(items, list):
+        raise SemanticEvaluationError("semantic response JSON was not a list")
+
+    findings: list[dict[str, str]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            raise SemanticEvaluationError("semantic response item was not an object")
+        findings.append({str(key): str(value) for key, value in item.items()})
+    return findings
 
 
 def get_report_paths(file_path: Path, input_dir: Path) -> tuple[Path, Path, str]:
@@ -75,8 +90,9 @@ def report_is_current(
     return False
 
 
-def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("-")]
+def main(argv: list[str] | None = None) -> int:
+    raw_args = sys.argv[1:] if argv is None else argv
+    args = [a for a in raw_args if not a.startswith("-")]
     specific = args[0] if args else None
     input_dir = Path("output/corrected_pali")
 
@@ -87,7 +103,7 @@ def main():
 
         if not path.exists():
             pr.no(f"Not found: {path}")
-            return
+            return 1
 
         md_files = sorted(path.rglob("*.md")) if path.is_dir() else [path]
     else:
@@ -95,7 +111,7 @@ def main():
 
     if not md_files:
         pr.no("No files found.")
-        return
+        return 0
 
     pr.green(f"Found {len(md_files)} file(s)")
 
@@ -116,8 +132,9 @@ def main():
 
     if not queue:
         pr.yes("All files already evaluated. Nothing to do.")
-        return
+        return 0
 
+    failed_files = 0
     for file_path in queue:
         pr.green(f"Processing {file_path.name}...")
         text = file_path.read_text(encoding="utf-8")
@@ -133,14 +150,25 @@ def main():
         if 0 < start < len(chunks):
             pr.green(f"  Resuming from chunk {start + 1}/{len(chunks)}...")
 
+        file_failed = False
         for i, chunk in enumerate(chunks):
             if i < start:
                 continue
             pr.green(f"  Chunk {i + 1}/{len(chunks)}...")
-            results = evaluate_chunk(chunk)
+            try:
+                results = evaluate_chunk(chunk)
+            except SemanticEvaluationError as exc:
+                pr.no(f"  Chunk {i + 1} failed: {exc}")
+                file_failed = True
+                break
             chunk_results.append(results)
             save_temp(temp_path, chunk_results)
-            time.sleep(2)
+            time.sleep(INTER_CHUNK_SLEEP_SECONDS)
+
+        if file_failed:
+            failed_files += 1
+            pr.no(f"{file_path.name} — failed; semantic report not written")
+            continue
 
         file_findings = [item for sublist in chunk_results for item in sublist]
 
@@ -162,8 +190,10 @@ def main():
         out_path.write_text(report_text, encoding="utf-8")
         finalize_temp(temp_path)
 
-        time.sleep(5)
+        time.sleep(INTER_FILE_SLEEP_SECONDS)
+
+    return 1 if failed_files else 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -1,11 +1,27 @@
 """Tests YouTube metadata prompt rules and dry metadata flow."""
 
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from scripts import yt_metadata
 from scripts.yt_metadata import get_system_instruction, process_files
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _blank_provider_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(PROJECT_ROOT)
+    env["PROVIDER"] = "google"
+    env["GEMINI_API_KEY"] = ""
+    env["GEMINI_API_KEY_1"] = ""
+    env["OPENROUTER_API_KEY"] = ""
+    env["DEEPSEEK_API_KEY"] = ""
+    return env
 
 
 def test_default_prompt_requires_five_to_seven_sentences_and_no_bullets() -> None:
@@ -14,6 +30,28 @@ def test_default_prompt_requires_five_to_seven_sentences_and_no_bullets() -> Non
     assert "5-7 sentences" in instruction
     assert "no bullet" in instruction.lower()
     assert "bullet list" not in instruction.lower()
+
+
+def test_no_work_exits_without_provider_backend_import(tmp_path: Path) -> None:
+    (tmp_path / "output" / "transcribed" / "english").mkdir(parents=True)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from scripts import yt_metadata; yt_metadata.main()",
+        ],
+        cwd=tmp_path,
+        env=_blank_provider_env(),
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    output = result.stdout + result.stderr
+
+    assert result.returncode == 0, output
+    assert "Nothing to do." in output
+    assert "No GEMINI_API_KEY" not in output
 
 
 def test_simple_english_rule_only_applies_when_requested_for_english() -> None:
@@ -74,6 +112,41 @@ def test_main_enables_simple_english_only_for_explicit_english_without_name(
     yt_metadata.main()
 
     assert seen_simple_english == [expected]
+
+
+def test_pending_metadata_failure_returns_nonzero_and_writes_no_entry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transcript_dir = tmp_path / "output" / "transcribed" / "english"
+    transcript_dir.mkdir(parents=True)
+    (transcript_dir / "talk.md").write_text("Transcript body.", encoding="utf-8")
+    calls = 0
+
+    def fail_generate_metadata(
+        text: str,
+        lang: str,
+        speaker_name: str | None = None,
+        *,
+        simple_english_description: bool = False,
+    ) -> str:
+        nonlocal calls
+        calls += 1
+        raise RuntimeError("provider failed")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["yt_metadata.py", "--lang", "en"])
+    monkeypatch.setattr(yt_metadata, "LLM_RETRY_DELAY_S", 0.0)
+    monkeypatch.setattr(yt_metadata, "get_playlist_overview", lambda lang, dry_run: "")
+    monkeypatch.setattr(yt_metadata, "load_nested_history", lambda path, lang: {})
+    monkeypatch.setattr(yt_metadata, "generate_metadata", fail_generate_metadata)
+
+    result = yt_metadata.main()
+
+    review = tmp_path / "reviews" / "english_review.md"
+    assert result == 1
+    assert calls == 3
+    assert "## Source: talk.md" not in review.read_text(encoding="utf-8")
 
 
 def test_ariyadhammika_prompt_allows_up_to_fifteen_sentences_and_no_bullets() -> None:

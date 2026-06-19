@@ -70,11 +70,11 @@ if [ ! -f ".env" ]; then
 fi
 
 PARTIAL=0
-TEXT_PREFLIGHT_DONE=0
 
 run_stage() {
   local label="$1"
-  shift
+  local allow_partial="$2"
+  shift 2
 
   echo ""
   echo ">>> $label <<<"
@@ -86,7 +86,7 @@ run_stage() {
   if [ "$status" -eq 0 ]; then
     return 0
   fi
-  if [ "$status" -eq 2 ]; then
+  if [ "$status" -eq 2 ] && [ "$allow_partial" -eq 1 ]; then
     echo "WARNING: $label completed with partial failures; continuing."
     PARTIAL=1
     return 0
@@ -96,40 +96,30 @@ run_stage() {
   exit "$status"
 }
 
-ensure_text_preflight() {
-  if [ "$TEXT_PREFLIGHT_DONE" -eq 0 ]; then
-    run_stage "Text model preflight" uv run python scripts/check_keys.py --text
-    TEXT_PREFLIGHT_DONE=1
-  fi
-}
-
 if [ "$START_INDEX" -le 1 ]; then
-  run_stage "STEP 1: Audio Transcription (MLX Whisper)" \
+  run_stage "STEP 1: Audio Transcription (MLX Whisper)" 0 \
     caffeinate -i uv run python scripts/transcribe.py
 fi
 
 if [ "$START_INDEX" -le 2 ]; then
-  ensure_text_preflight
-  run_stage "STEP 2: Pāli Phonetic Correction" \
+  run_stage "STEP 2: Pāli Phonetic Correction" 0 \
     uv run python scripts/correct_pali.py
 fi
 
 if [ "$START_INDEX" -le 3 ]; then
-  ensure_text_preflight
-  run_stage "STEP 3: Dhamma Point Extraction" \
+  run_stage "STEP 3: Dhamma Point Extraction" 0 \
     uv run python scripts/extract_dhamma.py
 fi
 
 if [ "$START_INDEX" -le 4 ]; then
-  ensure_text_preflight
-  run_stage "STEP 4: Prose Polishing" \
+  run_stage "STEP 4: Prose Polishing" 0 \
     uv run python scripts/polish_extract.py
 fi
 
 if [ "$START_INDEX" -le 5 ]; then
-  run_stage "STEP 5: Privacy Report" \
+  run_stage "STEP 5: Privacy Report" 1 \
     uv run python scripts/check_privacy.py
-  run_stage "STEP 6: Database Consolidation" \
+  run_stage "STEP 6: Database Consolidation" 0 \
     uv run python scripts/consolidate.py
 fi
 
