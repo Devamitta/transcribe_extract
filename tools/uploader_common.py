@@ -289,9 +289,10 @@ def parse_review(review_path: Path) -> dict[str, dict[str, Any]]:
 
         approved = approved_m.group(1).lower() == "yes" if approved_m else False
 
-        if source_m and title_m and desc_m and approved:
+        if source_m and title_m and desc_m:
             stem = unicodedata.normalize("NFC", Path(source_m.group(1).strip()).stem)
             result[stem] = {
+                "approved": approved,
                 "title": title_m.group(1).strip(),
                 "recording_date": date_m.group(1).strip() if date_m else "",
                 "publish_date": publish_m.group(1).strip() if publish_m else "",
@@ -649,7 +650,7 @@ def make_history_key(mp4_path: Path, album: str | None) -> str:
 
 def match_mp4_to_review(
     mp4_path: Path,
-    review: dict[str, dict[str, str]],
-) -> dict[str, str] | None:
+    review: dict[str, dict[str, Any]],
+) -> dict[str, Any] | None:
     stem = unicodedata.normalize("NFC", mp4_path.stem)
     return review.get(stem)

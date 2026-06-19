@@ -255,6 +255,9 @@ def main() -> None:
                 continue
             meta = match_mp4_to_review(path, review)
             if meta:
+                if not meta.get("approved"):
+                    continue
+
                 drive_subfolder = resolve_drive_subfolder(meta, path.name)
                 key = make_history_key(path, drive_subfolder)
                 if not args.force and is_uploaded_key_in_history(video_history, key):

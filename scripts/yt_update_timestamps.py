@@ -134,7 +134,7 @@ def main():
 
     review = parse_review(review_path)
     if not review:
-        pr.no(f"No approved talks found in '{review_path.name}'.")
+        pr.no(f"No talks found in review file '{review_path.name}'.")
         return
 
     to_update: list[tuple[str, str, dict]] = []  # (stem, video_id, meta)

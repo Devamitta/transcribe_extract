@@ -266,7 +266,8 @@ def main() -> None:
 
             meta = match_mp4_to_review(path, review)
             if meta:
-                all_to_upload.append((path, meta, folder_name))
+                if meta.get("approved"):
+                    all_to_upload.append((path, meta, folder_name))
             else:
                 # Only warn if folder was explicitly specified
                 if args.folder:
