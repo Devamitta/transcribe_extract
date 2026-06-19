@@ -70,5 +70,5 @@ Full reference: [docs/pipeline-youtube.md](docs/pipeline-youtube.md)
 | :--- | :--- |
 | Dhamma extraction | [docs/pipeline-dhamma-extraction.md](docs/pipeline-dhamma-extraction.md) |
 | Google Drive upload | [docs/upload-gdrive.md](docs/upload-gdrive.md) |
-| Quality control | [docs/quality-control.md](docs/quality-control.md) |
+| Enhance control | [docs/enhance-control.md](docs/enhance-control.md) |
 | OpenAI Batch pipeline | [docs/batch-pipeline.md](docs/batch-pipeline.md) |

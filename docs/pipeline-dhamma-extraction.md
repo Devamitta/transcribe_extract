@@ -107,9 +107,9 @@ uv run python scripts/consolidate.py --polished-dir output/polished --extracted-
 
 Consolidation prefers `output/polished/<relative-path>` and falls back to `output/extracted/<relative-path>`. It recursively scans nested folders, parses `## [topic-tag]` headers, and writes `master_dhamma_database.md` grouped by tag with source attribution for every section. Untagged content is grouped under `## Untagged Sources`.
 
-## Quality Control
+## Enhance Control
 
-Production quality control is managed via the unified `/quality` command, which orchestrates batch processing, automated LLM-judged evaluation, and human verification.
+Production enhance control is managed via the unified `/enhance` command, which orchestrates batch processing, automated LLM-judged evaluation, and human verification.
 
 For the interview pipeline, the primary goal is to produce a **full, de-identified, grammar-polished text of each teacher interview** (with personal/admin logistics removed and all teachings kept).
 
@@ -118,4 +118,4 @@ Key targets:
 - **Flag Floor:** Any output below **60%** of input word count is flagged for review to prevent silent content loss.
 - **Completeness:** Evaluated by the automated LLM judge to distinguish legitimately short talks from over-compression.
 
-Run `/quality` to run batch QC and ensure outputs meet these standards before scaling.
+Run `/enhance` to run batch QC and ensure outputs meet these standards before scaling.

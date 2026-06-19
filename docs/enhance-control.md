@@ -1,17 +1,17 @@
-# Quality Control
+# Enhance Control
 
-Quality control in the interview pipeline is driven by a unified front door `/quality` command, which orchestrates batch execution, automated LLM-judged evaluation, and improvement routing.
+Enhance control in the interview pipeline is driven by a unified front door `/enhance` command, which orchestrates batch execution, automated LLM-judged evaluation, and improvement routing.
 
-## The Quality Control Ecosystem
+## The Enhance Control Ecosystem
 
-The quality control workflow is powered by the following components:
+The enhance control workflow is powered by the following components:
 
 | Command / Script | Purpose | Type | State / Output Location |
 |------------------|---------|------|------------------------|
-| `/quality` | **Single Front Door:** Detects state, runs batches, triggers QC, surfaces flags. | Orchestrator Skill | `.claude/quality-state.md` |
-| `/quality-semantic-fix` | Reviews and applies corrections to Whisper transcription hallucinations. | Engine Skill | `.claude/semantic-fix-state.md` |
-| `/quality-prompt` | Targets regressions and improves stage prompts using the golden excerpt harness. | Engine Skill | `.claude/prompt-quality-state.md` |
-| `/quality-improve` | Clusters quality backlog notes and applies prompt/skill improvements. | Engine Skill | `.claude/quality-improvements.md` |
+| `/enhance` | **Single Front Door:** Detects state, runs batches, triggers QC, surfaces flags. | Orchestrator Skill | `.claude/enhance-state.md` |
+| `/enhance-semantic-fix` | Reviews and applies corrections to Whisper transcription hallucinations. | Engine Skill | `.claude/semantic-fix-state.md` |
+| `/enhance-prompt` | Targets regressions and improves stage prompts using the golden excerpt harness. | Engine Skill | `.claude/prompt-enhance-state.md` |
+| `/enhance-improve` | Clusters enhance backlog notes and applies prompt/skill improvements. | Engine Skill | `.claude/enhance-improvements.md` |
 | `scripts/evaluate_batch.py` | Production QC engine assessing file pairs for completeness and size ratios. | Python Script | `reports/batch/` |
 
 ---
@@ -20,31 +20,31 @@ The quality control workflow is powered by the following components:
 
 ### 1. Gradual Loop Usage ("Process-QC-Improve")
 Rather than running large batches blindly, the pipeline is designed for incremental scalability:
-1. **Process a Few:** Run `/quality` to run a small batch (default: 5 files) through the extraction and polishing stages.
-2. **Quality Control:** `/quality` runs `scripts/evaluate_batch.py` to compare source and candidate texts, checking for over-compression (flag floor 60%, target 75%) and completeness.
+1. **Process a Few:** Run `/enhance` to run a small batch (default: 5 files) through the extraction and polishing stages.
+2. **Enhance Control:** `/enhance` runs `scripts/evaluate_batch.py` to compare source and candidate texts, checking for over-compression (flag floor 60%, target 75%) and completeness.
 3. **Surface Flags:** Any failed files are presented at a human approval gate.
-4. **Improve:** If systemic errors appear, issues are added to the backlog and addressed via `/quality-improve`.
+4. **Improve:** If systemic errors appear, issues are added to the backlog and addressed via `/enhance-improve`.
 5. **Reprocess & Scale:** Once prompts/rules are tuned, re-run evaluation and scale up to the next batch.
 
 ### 2. Context-Light Design
 To maintain Sonnet/Opus session efficiency and avoid token bloat (target ≤120k tokens/session):
-- The orchestrator `/quality` **never** reads full transcriptions or raw outputs.
+- The orchestrator `/enhance` **never** reads full transcriptions or raw outputs.
 - All heavy text extraction, parsing, and LLM judging occur within Python subprocesses.
 - The agent only reads summary counts, the flagged-only report (`reports/batch/...`), and specific short excerpts for flagged files.
 
 ### 3. Backlog, Warning, and History Mechanism
-- When `/quality` detects a quality defect that cannot be solved with a trivial local fix, it appends a one-line description to `.claude/quality-improvements.md`.
-- If `.claude/quality-improvements.md` accumulates **5 or more** unprocessed issues, the agent warns the user to run `/quality-improve` to address them.
-- `/quality-improve` groups active backlog items, proposes a cohesive redesign, and upon approval, applies it and archives the processed issues to `.claude/quality-improvements-history.md` under a dated heading.
+- When `/enhance` detects a enhance defect that cannot be solved with a trivial local fix, it appends a one-line description to `.claude/enhance-improvements.md`.
+- If `.claude/enhance-improvements.md` accumulates **5 or more** unprocessed issues, the agent warns the user to run `/enhance-improve` to address them.
+- `/enhance-improve` groups active backlog items, proposes a cohesive redesign, and upon approval, applies it and archives the processed issues to `.claude/enhance-improvements-history.md` under a dated heading.
 
 ---
 
-## Quality Skills
+## Enhance Skills
 
-### `/quality-semantic-fix` (Semantic Evaluation)
+### `/enhance-semantic-fix` (Semantic Evaluation)
 Semantic evaluation detects remaining Whisper hallucinations and contextually wrong passages after Pāli correction. This skill fixes data in `output/corrected_pali/`; it does not tune prompts.
 
-**Trigger:** `/quality-semantic-fix`
+**Trigger:** `/enhance-semantic-fix`
 
 **Procedure:**
 1. **Run Detection:** The skill runs `scripts/evaluate_semantic.py` to generate reports under `reports/semantic/`. Provider routing follows `tools/ai_models.json`.
@@ -56,10 +56,10 @@ Semantic evaluation detects remaining Whisper hallucinations and contextually wr
 
 Deferred Dhamma-Vinaya terms requiring manual review are logged in `.claude/semantic-manual-corrections.md`.
 
-### `/quality-prompt` (Prompt Quality)
+### `/enhance-prompt` (Prompt Enhance)
 Improves the Pāli, extract, and polish stage prompts using the golden-set harness results.
 
-**Trigger:** `/quality-prompt`
+**Trigger:** `/enhance-prompt`
 
 **Procedure:**
 1. **Establish Evidence:** Run `scripts/evaluate_stages.py` (Antigravity-only) to identify low-scoring criteria.
@@ -70,7 +70,7 @@ Improves the Pāli, extract, and polish stage prompts using the golden-set harne
 
 ---
 
-## Stage Quality Eval Harness
+## Stage Enhance Eval Harness
 
 `scripts/evaluate_stages.py` runs fixed golden excerpts through the current LLM
 stage prompts and asks an Antigravity Pro judge to score the output.
@@ -166,7 +166,7 @@ Run this harness after any approved change to `tools/pali.py`, `tools/extract.py
 ## Transcription Checks
 
 There is no LLM-judge transcription eval because there are no ground-truth
-transcripts. Use deterministic tools for raw transcript quality:
+transcripts. Use deterministic tools for raw transcript enhance:
 
 ```bash
 uv run python scripts/extract_errors.py --input-dir output/transcribed/sangha/

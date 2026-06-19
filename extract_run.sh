@@ -14,7 +14,7 @@ Stages:
   polish       polish extracted files, then privacy, consolidate
   consolidate  privacy scan, then consolidation
 
-For quality control and batch evaluation, use the slash command /quality.
+For quality control and batch evaluation, use the slash command /enhance.
 EOF
 }
 
