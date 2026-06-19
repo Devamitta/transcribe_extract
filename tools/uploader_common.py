@@ -308,6 +308,22 @@ def parse_review(review_path: Path) -> dict[str, dict[str, Any]]:
     return result
 
 
+def _extract_core_urls(text: str) -> list[str]:
+    """Extract normalized URLs for deduplication."""
+    urls = []
+    for word in text.split():
+        # strip punctuation
+        word = word.strip("()[]{},;:\"'")
+        if ("." in word and "/" in word) or word.startswith("http"):
+            # normalize by stripping http://, https://, www., and trailing punctuation
+            word = re.sub(r"^https?://", "", word)
+            word = re.sub(r"^www\.", "", word)
+            word = word.rstrip("/.,!?;:")
+            if word:
+                urls.append(word)
+    return urls
+
+
 def build_description(
     recording_date: str,
     description: str,
@@ -320,7 +336,10 @@ def build_description(
     )
     parts: list[str] = [date_and_desc]
     if bio_link and bio_link not in description:
-        parts.append(bio_link)
+        # Avoid duplication if any core URL in the bio link is already present
+        urls_in_bio = _extract_core_urls(bio_link)
+        if not urls_in_bio or not any(u in description for u in urls_in_bio):
+            parts.append(bio_link)
     if chapters:
         parsed = parse_chapters_str(chapters)
         if parsed:
