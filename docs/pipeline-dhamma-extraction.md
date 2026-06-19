@@ -14,13 +14,17 @@ Covers the three post-transcription stages: Pāli spelling correction, Dhamma po
 
 Refines Pāli term spelling in transcripts using a consolidated glossary of ~155 terms.
 
+`extract_run.sh` runs the model preflight after local transcription and immediately before this stage.
+
 **Process all transcripts:**
 ```bash
+uv run python scripts/check_keys.py --text
 uv run python scripts/correct_pali.py
 ```
 
 **Process a specific file or folder:**
 ```bash
+uv run python scripts/check_keys.py --text
 uv run python scripts/correct_pali.py <filename_or_path>
 ```
 

@@ -17,7 +17,6 @@ from tools.printer import printer as pr
 from tools.provider import (
     build_cacheable_contents,
     generate_with_timeout,
-    get_working_key,
 )
 from tools.uploader_common import get_google_client, list_channel_playlists
 from tools.uploader_common import is_uploaded_in_history, load_nested_history
@@ -385,10 +384,6 @@ def process_files(
 
     if not pending:
         pr.green(f"[{folder_name}] All files already processed.")
-        return
-
-    if not dry_run and not get_working_key():
-        pr.no("All API keys failed. Exiting.")
         return
 
     if playlist_overview is None:

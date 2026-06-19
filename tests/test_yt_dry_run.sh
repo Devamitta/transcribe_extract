@@ -181,6 +181,7 @@ assert_contains "root transcript path" "$OUTPUT" "output/audio/dummy.mp3 → out
 assert_contains "root upload queues one video" "$OUTPUT" "1 video(s) queued for YouTube upload."
 assert_contains "root upload title includes default speaker" "$OUTPUT" "Title:          [DRY_RUN] dummy | Bhikkhu Devamitta"
 assert_contains "root cleanup runs" "$OUTPUT" "→ [DRY RUN] Cleaning up stubs..."
+assert_not_contains "root dry-run skips model preflight" "$OUTPUT" "check_keys.py"
 assert_file_absent "root input stub cleaned" input/dummy.mp3
 assert_not_contains "root dry-run review entry cleaned" "$(cat reviews/english_review.md 2>/dev/null || true)" "[DRY_RUN]"
 
@@ -221,6 +222,7 @@ run_test "video mode with cover"
 run_pipeline --lang en --video-mode --cover --dry-run dummy.mp4
 assert_contains "video cover mode runs thumbnail generation" "$OUTPUT" "→ Starting: yt_image_gen.py"
 assert_contains "video cover mode runs cover generation" "$OUTPUT" "→ Starting: yt_cover_gen.py"
+assert_not_contains "video cover dry-run skips model preflight" "$OUTPUT" "check_keys.py"
 assert_contains "video cover output dir" "$OUTPUT" "output/covers/english/2000-01-01 - [DRY_RUN]"
 assert_contains "video cover output name" "$OUTPUT" "dummy - Bhikkhu Devamitta.jpg"
 assert_not_contains "video cover mode still skips audio video generation" "$OUTPUT" "→ Starting: yt_video.py"

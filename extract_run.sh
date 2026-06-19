@@ -27,6 +27,11 @@ fi
 # 3. Correction Phase (Gemini API Pass 1)
 echo ""
 echo ">>> STEP 2: Pāli Phonetic Correction <<<"
+uv run python scripts/check_keys.py --text
+if [ $? -ne 0 ]; then
+    echo "Error during model preflight. Pipeline aborted."
+    exit 1
+fi
 uv run python scripts/correct_pali.py
 if [ $? -ne 0 ]; then
     echo "Error during Pāli correction. Pipeline aborted."

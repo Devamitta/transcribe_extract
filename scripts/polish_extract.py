@@ -16,7 +16,6 @@ from tools.polish import (
 from tools.provider import (
     build_cacheable_contents,
     generate_with_timeout,
-    get_working_key,
 )
 from tools.incremental import finalize_temp, get_temp_path, load_temp, save_temp
 
@@ -128,10 +127,6 @@ def main() -> None:
             pr.green(f"{fp} -> {out_path}")
         pr.summary("skipped", skipped)
         pr.summary("queued", len(queue))
-        return
-
-    if not get_working_key():
-        pr.red("No working API key found.")
         return
 
     pr.green(f"Processing {len(queue)} file(s)")

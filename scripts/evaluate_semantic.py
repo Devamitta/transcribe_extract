@@ -14,7 +14,6 @@ from tools.provider import (
     TEST_MODE,
     build_cacheable_contents,
     generate_with_timeout,
-    get_working_key,
 )
 
 pr = _p.printer
@@ -167,7 +166,4 @@ def main():
 
 
 if __name__ == "__main__":
-    if not get_working_key():
-        pr.no("No API key.")
-        exit(1)
     main()

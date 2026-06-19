@@ -13,7 +13,6 @@ from tools.printer import printer as pr
 from tools.provider import (
     build_cacheable_contents,
     generate_with_timeout,
-    get_working_key,
 )
 from tools.source_scope import read_source_filter, source_matches_filter
 from tools.uploader_common import find_path_by_normalized_name, minutes_to_hms
@@ -545,18 +544,6 @@ def main() -> None:
         log_path.write_text("\n".join(buf), encoding="utf-8")
         buf.clear()
 
-    model_checked = False
-
-    def ensure_model_available() -> bool:
-        nonlocal model_checked
-        if model_checked:
-            return True
-        if not get_working_key():
-            pr.no("All API keys failed. Exiting.")
-            return False
-        model_checked = True
-        return True
-
     transcribed_base = Path("output/transcribed")
     audio_base = Path("output/audio")
 
@@ -678,8 +665,6 @@ def main() -> None:
                 instruction = build_timestamp_finding_instruction(
                     chapter_names, args.lang
                 )
-                if not ensure_model_available():
-                    return
                 pr.bip()
                 response = retry_llm_request(
                     lambda _attempt: generate_with_timeout(
@@ -814,9 +799,6 @@ def main() -> None:
                 if args.debug_log and debug_buffer:
                     _flush_debug_log(file_path, debug_buffer)
                 continue
-
-            if not ensure_model_available():
-                return
 
             active_silence_times: list[float] | None = None
 

@@ -9,7 +9,7 @@ from tools.dry_run import create_stub, is_pipeline_dry_run
 from tools.image_gen import generate_image
 from tools.lang import LANG_TO_FOLDER
 from tools.printer import printer as pr
-from tools.provider import generate_content, get_working_key
+from tools.provider import generate_content
 from tools.source_scope import read_source_filter, source_matches_filter
 from tools.uploader_common import (
     find_path_by_normalized_name,
@@ -251,10 +251,6 @@ def main() -> None:
 
     if not pending_talks:
         pr.green("Nothing to do.")
-        return
-
-    if not args.dry_run and not get_working_key():
-        pr.no("All API keys failed. Exiting.")
         return
 
     # Pass 2: process

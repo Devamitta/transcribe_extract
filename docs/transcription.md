@@ -25,7 +25,14 @@ Converts raw MP3 audio into Markdown transcripts using MLX Whisper with context-
 ./scripts/cl/transcribe-sangha
 ```
 
-Runs `transcribe.sh --context sangha` then `scripts/correct_pali.py sangha` (Pali post-correction).
+Runs `transcribe.sh --context sangha`, `scripts/check_keys.py --text`, then `scripts/correct_pali.py sangha` (Pali post-correction).
+
+For manual Pali post-correction after transcription, preflight the configured text model first:
+
+```bash
+uv run python scripts/check_keys.py --text
+uv run python scripts/correct_pali.py sangha
+```
 
 ---
 

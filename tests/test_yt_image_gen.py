@@ -35,14 +35,14 @@ def test_image_generation_does_not_probe_model_when_thumbnails_already_exist(
         encoding="utf-8",
     )
 
-    def fail_key_probe() -> bool:
-        raise AssertionError("model key probe should not run")
+    def fail_generation(*args: object, **kwargs: object) -> str:
+        raise AssertionError("LLM generation should not run")
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         sys, "argv", ["yt_image_gen.py", "--lang", "en", "--folder", "english"]
     )
-    monkeypatch.setattr(yt_image_gen, "get_working_key", fail_key_probe)
+    monkeypatch.setattr(yt_image_gen, "generate_content", fail_generation)
     monkeypatch.setattr(yt_image_gen, "load_nested_history", lambda path, lang: {})
 
     yt_image_gen.main()
@@ -79,14 +79,14 @@ def test_image_generation_treats_decomposed_thumbnail_as_existing(
         encoding="utf-8",
     )
 
-    def fail_key_probe() -> bool:
-        raise AssertionError("model key probe should not run")
+    def fail_generation(*args: object, **kwargs: object) -> str:
+        raise AssertionError("LLM generation should not run")
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         sys, "argv", ["yt_image_gen.py", "--lang", "ru", "--folder", "russian"]
     )
-    monkeypatch.setattr(yt_image_gen, "get_working_key", fail_key_probe)
+    monkeypatch.setattr(yt_image_gen, "generate_content", fail_generation)
     monkeypatch.setattr(yt_image_gen, "load_nested_history", lambda path, lang: {})
 
     yt_image_gen.main()

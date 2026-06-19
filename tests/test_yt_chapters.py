@@ -36,14 +36,14 @@ def test_chapters_does_not_probe_model_when_nothing_is_pending(
         encoding="utf-8",
     )
 
-    def fail_key_probe() -> bool:
-        raise AssertionError("model key probe should not run")
+    def fail_generation(*args: object, **kwargs: object) -> str:
+        raise AssertionError("LLM generation should not run")
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         sys, "argv", ["yt_chapters.py", "--lang", "en", "--folder", "english"]
     )
-    monkeypatch.setattr(yt_chapters, "get_working_key", fail_key_probe)
+    monkeypatch.setattr(yt_chapters, "generate_with_timeout", fail_generation)
 
     yt_chapters.main()
 
@@ -75,14 +75,14 @@ def test_chapters_does_not_probe_model_for_locally_skipped_transcript(
         encoding="utf-8",
     )
 
-    def fail_key_probe() -> bool:
-        raise AssertionError("model key probe should not run")
+    def fail_generation(*args: object, **kwargs: object) -> str:
+        raise AssertionError("LLM generation should not run")
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         sys, "argv", ["yt_chapters.py", "--lang", "en", "--folder", "english"]
     )
-    monkeypatch.setattr(yt_chapters, "get_working_key", fail_key_probe)
+    monkeypatch.setattr(yt_chapters, "generate_with_timeout", fail_generation)
 
     yt_chapters.main()
 
@@ -118,14 +118,14 @@ def test_chapters_matches_decomposed_review_source(
         encoding="utf-8",
     )
 
-    def fail_key_probe() -> bool:
-        raise AssertionError("model key probe should not run")
+    def fail_generation(*args: object, **kwargs: object) -> str:
+        raise AssertionError("LLM generation should not run")
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         sys, "argv", ["yt_chapters.py", "--lang", "ru", "--folder", "russian"]
     )
-    monkeypatch.setattr(yt_chapters, "get_working_key", fail_key_probe)
+    monkeypatch.setattr(yt_chapters, "generate_with_timeout", fail_generation)
 
     yt_chapters.main()
 

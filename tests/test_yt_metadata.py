@@ -67,7 +67,6 @@ def test_main_enables_simple_english_only_for_explicit_english_without_name(
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("sys.argv", ["yt_metadata.py", *cli_args])
-    monkeypatch.setattr(yt_metadata, "get_working_key", lambda: "key")
     monkeypatch.setattr(yt_metadata, "get_playlist_overview", lambda lang, dry_run: "")
     monkeypatch.setattr(yt_metadata, "load_nested_history", lambda path, lang: {})
     monkeypatch.setattr(yt_metadata, "generate_metadata", fake_generate_metadata)
@@ -96,11 +95,7 @@ def test_process_files_does_not_fetch_playlists_when_all_sources_done(
     def fail_playlist_fetch(lang: str, dry_run: bool) -> str:
         raise AssertionError("playlist overview should not be fetched")
 
-    def fail_key_probe() -> str | None:
-        raise AssertionError("LLM key probe should not run")
-
     monkeypatch.setattr(yt_metadata, "get_playlist_overview", fail_playlist_fetch)
-    monkeypatch.setattr(yt_metadata, "get_working_key", fail_key_probe)
 
     process_files([transcript], "en", str(review), "english")
 
@@ -120,7 +115,6 @@ def test_process_files_does_not_append_no_suffix_speaker_name_to_suggested_title
     transcript.write_text("Transcript body.", encoding="utf-8")
     review = tmp_path / "review.md"
 
-    monkeypatch.setattr(yt_metadata, "get_working_key", lambda: "key")
     monkeypatch.setattr(yt_metadata, "get_playlist_overview", lambda lang, dry_run: "")
     monkeypatch.setattr(yt_metadata, "load_nested_history", lambda path, lang: {})
     monkeypatch.setattr(
@@ -175,7 +169,6 @@ def test_main_appends_lang_default_speaker_to_suggested_title_when_name_omitted(
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("sys.argv", ["yt_metadata.py", "--lang", lang])
-    monkeypatch.setattr(yt_metadata, "get_working_key", lambda: "key")
     monkeypatch.setattr(yt_metadata, "get_playlist_overview", lambda lang, dry_run: "")
     monkeypatch.setattr(yt_metadata, "load_nested_history", lambda path, lang: {})
     monkeypatch.setattr(yt_metadata, "generate_metadata", fake_generate_metadata)
@@ -195,7 +188,6 @@ def test_process_files_appends_custom_speaker_name_to_suggested_title(
     transcript.write_text("Transcript body.", encoding="utf-8")
     review = tmp_path / "review.md"
 
-    monkeypatch.setattr(yt_metadata, "get_working_key", lambda: "key")
     monkeypatch.setattr(yt_metadata, "get_playlist_overview", lambda lang, dry_run: "")
     monkeypatch.setattr(yt_metadata, "load_nested_history", lambda path, lang: {})
     monkeypatch.setattr(
@@ -226,7 +218,6 @@ def test_process_files_writes_created_log_for_new_review_entries(
     review = tmp_path / "review.md"
     created_log = tmp_path / "created.log"
 
-    monkeypatch.setattr(yt_metadata, "get_working_key", lambda: "key")
     monkeypatch.setattr(yt_metadata, "get_playlist_overview", lambda lang, dry_run: "")
     monkeypatch.setattr(yt_metadata, "load_nested_history", lambda path, lang: {})
     monkeypatch.setattr(
@@ -273,7 +264,6 @@ def test_process_files_removes_inferred_part_one_when_source_name_lacks_part(
     transcript.write_text("Transcript body.", encoding="utf-8")
     review = tmp_path / "review.md"
 
-    monkeypatch.setattr(yt_metadata, "get_working_key", lambda: "key")
     monkeypatch.setattr(yt_metadata, "get_playlist_overview", lambda lang, dry_run: "")
     monkeypatch.setattr(yt_metadata, "load_nested_history", lambda path, lang: {})
     monkeypatch.setattr(
@@ -307,7 +297,6 @@ def test_process_files_keeps_part_one_when_source_name_mentions_part(
     transcript.write_text("Transcript body.", encoding="utf-8")
     review = tmp_path / "review.md"
 
-    monkeypatch.setattr(yt_metadata, "get_working_key", lambda: "key")
     monkeypatch.setattr(yt_metadata, "get_playlist_overview", lambda lang, dry_run: "")
     monkeypatch.setattr(yt_metadata, "load_nested_history", lambda path, lang: {})
     monkeypatch.setattr(

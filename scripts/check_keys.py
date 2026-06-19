@@ -1,138 +1,202 @@
-"""Lists and tests the API key(s) for the configured provider."""
+"""Preflight text and image provider availability for pipeline wrappers."""
 
+import argparse
 import os
+from collections.abc import Callable
+from typing import Any, Protocol
 
+import requests
 from dotenv import load_dotenv
+
+from tools.printer import printer as pr
 
 load_dotenv()
 
-PROVIDER = os.getenv("PROVIDER", "google").lower()
+TEXT_PROVIDER_NAMES = {
+    "google",
+    "gemini-cli",
+    "antigravity-cli",
+    "agy",
+    "deepseek",
+    "openrouter",
+}
+TEXT_PROVIDER_ERROR = (
+    "Set PROVIDER=google, PROVIDER=gemini-cli, "
+    "PROVIDER=antigravity-cli, PROVIDER=agy, PROVIDER=deepseek, "
+    "or PROVIDER=openrouter in .env"
+)
+
+IMAGE_PROVIDER_OPENROUTER = "openrouter"
+OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_IMAGE_PREFLIGHT_MODELS = [
+    "nvidia/nemotron-3-nano-30b-a3b:free",
+    "openai/gpt-oss-120b:free",
+    "arcee-ai/trinity-large-preview:free",
+    "minimax/minimax-m2.5:free",
+]
+OPENROUTER_IMAGE_PREFLIGHT_TIMEOUT = 15
+
+KeyCheckFn = Callable[[], bool]
 
 
-def _check_gemini() -> None:
-    from google import genai
+class OpenRouterPostFn(Protocol):
+    """Callable shape for the OpenRouter preflight HTTP request."""
 
-    def get_api_keys() -> list[tuple[str, str]]:
-        keys: list[tuple[str, str]] = []
-        for i in range(1, 100):
-            key = os.getenv(f"GEMINI_API_KEY_{i}")
-            if key:
-                keys.append((f"GEMINI_API_KEY_{i}", key))
-        if not keys:
-            key = os.getenv("GEMINI_API_KEY")
-            if key:
-                keys.append(("GEMINI_API_KEY", key))
-        return keys
+    def __call__(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str],
+        json: dict[str, Any],
+        timeout: int,
+    ) -> requests.Response: ...
 
-    def list_models_for_key(key_name: str, api_key: str) -> tuple[bool, list[str], str]:
 
-        client = genai.Client(api_key=api_key)
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Preflight configured AI provider availability."
+    )
+    parser.add_argument(
+        "--text",
+        action="store_true",
+        help="Check the configured text provider from PROVIDER.",
+    )
+    parser.add_argument(
+        "--image",
+        action="store_true",
+        help="Check OpenRouter availability for the image-generation path.",
+    )
+    return parser
+
+
+def _exit_code(exc: SystemExit) -> int:
+    return exc.code if isinstance(exc.code, int) else 1
+
+
+def _safe_error(exc: Exception) -> str:
+    return str(exc).splitlines()[0][:200]
+
+
+def run_text_preflight(check_working_key: KeyCheckFn | None = None) -> int:
+    """Check the configured text provider through tools.provider."""
+    provider_name = os.getenv("PROVIDER", "google").lower()
+    pr.green(f"Text provider: {provider_name}")
+
+    if provider_name not in TEXT_PROVIDER_NAMES:
+        pr.red(f"[ERROR] Unknown provider: {provider_name}")
+        pr.white(TEXT_PROVIDER_ERROR)
+        return 1
+
+    if check_working_key is None:
         try:
-            models = client.models.list()
-            model_names = [m.name for m in models if m.name is not None]
-            return True, model_names, ""
-        except Exception as e:
-            error_str = str(e)
-            if "RESOURCE_EXHAUSTED" in error_str or "429" in error_str:
-                return False, [], f"Rate limited: {error_str[:200]}"
-            return False, [], f"Error: {error_str[:200]}"
+            from tools.provider import get_working_key
+        except SystemExit as exc:
+            pr.red("Text preflight: FAILED")
+            return _exit_code(exc)
+        except Exception as exc:
+            pr.red(f"Text preflight load failed: {_safe_error(exc)}")
+            return 1
 
-    def test_model(key_name: str, api_key: str, model: str) -> tuple[bool, str]:
-        from google.genai import types
+        check_working_key = get_working_key
 
-        client = genai.Client(api_key=api_key)
-        try:
-            response = client.models.generate_content(
-                model=model,
-                contents="hi",
-                config=types.GenerateContentConfig(
-                    max_output_tokens=5, temperature=0.0
-                ),
-            )
-            if response.text:
-                return True, response.text
-            return False, "Empty response"
-        except Exception as e:
-            return False, str(e)[:100]
+    try:
+        if check_working_key():
+            pr.green("Text preflight: OK")
+            return 0
+    except Exception as exc:
+        pr.red(f"Text preflight failed: {_safe_error(exc)}")
+        return 1
 
-    keys = get_api_keys()
-    if not keys:
-        print("No GEMINI_API_KEY found in .env")
-        return
-
-    print(f"Found {len(keys)} Gemini API key(s)\n", flush=True)
-    working = 0
-    failed = 0
-
-    for key_name, api_key in keys:
-        print(f"=== {key_name} ===", flush=True)
-        ok, models, error = list_models_for_key(key_name, api_key)
-        if ok:
-            print(f"  Available models: {models}")
-            working += 1
-            if models:
-                test_ok, test_result = test_model(key_name, api_key, models[0])
-                if test_ok:
-                    print(f"  Test with {models[0]}: OK -> '{test_result}'")
-                else:
-                    print(f"  Test with {models[0]}: FAILED -> {test_result}")
-        else:
-            print(f"  FAILED: {error}")
-            failed += 1
-        print(flush=True)
-
-    print(f"Summary: {working} keys with models listed, {failed} failed")
+    pr.red("Text preflight: FAILED")
+    return 1
 
 
-def _check_deepseek() -> None:
-    from tools.deepseek import get_working_key
+def _post_openrouter_text_probe(
+    api_key: str,
+    model: str,
+    post_fn: OpenRouterPostFn,
+) -> requests.Response:
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://sasanarakkha.org",
+        "X-Title": "DPS Transcriber",
+    }
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": [
+            {
+                "role": "user",
+                "content": "Reply with OK.",
+            }
+        ],
+        "max_tokens": 2,
+        "temperature": 0,
+    }
+    return post_fn(
+        OPENROUTER_CHAT_COMPLETIONS_URL,
+        headers=headers,
+        json=payload,
+        timeout=OPENROUTER_IMAGE_PREFLIGHT_TIMEOUT,
+    )
 
-    key = os.getenv("DEEPSEEK_API_KEY")
-    if not key:
-        print("No DEEPSEEK_API_KEY found in .env")
-        return
-    print(f"DEEPSEEK_API_KEY: {'*' * 8}{key[-4:]}")
-    get_working_key()
 
+def run_image_preflight(
+    post_fn: OpenRouterPostFn = requests.post,
+) -> int:
+    """Check OpenRouter text availability before image generation."""
+    image_provider = os.getenv("IMAGE_PROVIDER", IMAGE_PROVIDER_OPENROUTER).lower()
+    pr.green(f"Image provider: {image_provider}")
 
-def _check_openrouter() -> None:
-    from tools.openrouter import get_working_key
+    if image_provider != IMAGE_PROVIDER_OPENROUTER:
+        pr.red(f"[ERROR] Unsupported image provider: {image_provider}")
+        pr.white("Set IMAGE_PROVIDER=openrouter in .env")
+        return 1
 
-    key = os.getenv("OPENROUTER_API_KEY")
-    if not key:
-        print("No OPENROUTER_API_KEY found in .env")
-        return
-    print(f"OPENROUTER_API_KEY: {'*' * 8}{key[-4:]}")
-    get_working_key()
+    api_key = os.getenv("OPENROUTER_API_KEY", "")
+    if not api_key:
+        pr.red("No OPENROUTER_API_KEY found in .env")
+        return 1
 
-
-def _check_local_cli_provider() -> None:
-    from tools.provider import get_working_key
-
-    if get_working_key():
-        print("Local CLI provider: OK")
-    else:
-        print("Local CLI provider: FAILED")
-
-
-def main() -> None:
-    print(f"Provider: {PROVIDER}\n", flush=True)
-    if PROVIDER == "google":
-        _check_gemini()
-    elif PROVIDER == "deepseek":
-        _check_deepseek()
-    elif PROVIDER == "openrouter":
-        _check_openrouter()
-    elif PROVIDER in {"gemini-cli", "antigravity-cli", "agy"}:
-        _check_local_cli_provider()
-    else:
-        print(f"[ERROR] Unknown provider: {PROVIDER}")
-        print(
-            "Set PROVIDER=google, PROVIDER=gemini-cli, "
-            "PROVIDER=antigravity-cli, PROVIDER=agy, PROVIDER=deepseek, "
-            "or PROVIDER=openrouter in .env"
+    last_failure = ""
+    for model in OPENROUTER_IMAGE_PREFLIGHT_MODELS:
+        pr.white(
+            "Checking OpenRouter image path with text model "
+            f"{model} (timeout={OPENROUTER_IMAGE_PREFLIGHT_TIMEOUT}s)"
         )
+        try:
+            response = _post_openrouter_text_probe(api_key, model, post_fn)
+        except requests.exceptions.RequestException as exc:
+            last_failure = f"{model}: {_safe_error(exc)}"
+            pr.amber(f"OpenRouter preflight request failed for {model}")
+            continue
+
+        if response.status_code == 200:
+            pr.green("Image preflight: OK")
+            return 0
+
+        last_failure = f"{model}: HTTP {response.status_code}"
+        pr.amber(
+            f"OpenRouter preflight failed for {model}: HTTP {response.status_code}"
+        )
+
+    pr.red(f"Image preflight: FAILED ({last_failure})")
+    return 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run selected provider preflights and return a process exit code."""
+    args = _build_parser().parse_args(argv)
+    run_text = args.text or not args.image
+    run_image = args.image
+
+    status = 0
+    if run_text:
+        status = max(status, run_text_preflight())
+    if run_image:
+        status = max(status, run_image_preflight())
+    return status
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

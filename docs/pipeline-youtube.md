@@ -30,7 +30,7 @@ Video Mode is enabled explicitly via the --video-mode flag. If video files are p
 
 ### Dry-run mode
 
-`--dry-run [stub_file]` runs the full pipeline without any real processing, API calls, or file mutations. Every stage prints its configured `input → output` paths for verification.
+`--dry-run [stub_file]` runs the full pipeline without any real processing, API calls, model preflights, or file mutations. Every stage prints its configured `input → output` paths for verification.
 
 ```bash
 ./yt_run.sh --lang ru --dry-run test.mp4   # traces Russian video-mode pipeline → stub at input/russian/test.mp4
@@ -134,7 +134,10 @@ Checks that the last Whisper timestamp in each transcript is within 120 s of the
 ### 2.1: Metadata Suggestions
 Generates titles and descriptions using the configured LLM provider.
 
+In `yt_run.sh`, real runs preflight the configured text provider immediately before metadata generation. A failed preflight exits non-zero and stops the pipeline before `yt_metadata.py`.
+
 ```bash
+uv run python scripts/check_keys.py --text
 uv run python scripts/yt_metadata.py [--lang ru|en] [--folder <folder>] [--name NAME] [--limit 5] [--video-mode] [--created-log <path>]
 ```
 
@@ -194,7 +197,10 @@ uv run python scripts/yt_export.py --lang ru|en [--folder <folder>] [--name NAME
 ### 3.2: Generate AI Thumbnails (Audio Mode; or Video Mode with `--cover`)
 Uses reviewed metadata to generate photorealistic base thumbnails via FLUX.
 
+In `yt_run.sh`, real runs preflight OpenRouter image-path availability immediately before thumbnail generation. This uses a free/cheap OpenRouter text model and does not generate a test image.
+
 ```bash
+uv run python scripts/check_keys.py --image
 uv run python scripts/yt_image_gen.py --lang ru|en [--folder <folder>] [--source-log <path>]
 ```
 

@@ -11,7 +11,6 @@ from tools.extract import EXTRACT_SYSTEM_INSTRUCTION as SYSTEM_INSTRUCTION, chun
 from tools.provider import (
     build_cacheable_contents,
     generate_with_timeout,
-    get_working_key,
 )
 from tools.incremental import finalize_temp, get_temp_path, load_temp, save_temp
 
@@ -41,10 +40,6 @@ def main() -> None:
     input_dir = Path("output/corrected_pali")
     output_dir = Path("output/extracted")
     output_dir.mkdir(exist_ok=True)
-
-    if not get_working_key():
-        pr.red("All API keys failed. Exiting.")
-        return
 
     if args.file:
         file_path = Path(args.file)

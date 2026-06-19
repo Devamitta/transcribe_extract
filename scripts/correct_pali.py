@@ -24,7 +24,6 @@ from tools.provider import (
     TEST_MODE,
     build_cacheable_contents,
     generate_with_timeout,
-    get_working_key,
 )
 
 
@@ -107,10 +106,6 @@ def main() -> None:
     input_dir = Path("output/transcribed")
     output_dir = Path("output/corrected_pali")
     output_dir.mkdir(exist_ok=True, parents=True)
-
-    if not get_working_key():
-        print("All API keys failed. Exiting.")
-        return
 
     # Parse args: optional file (--test flag handled by provider)
     args = [a for a in sys.argv[1:] if not a.startswith("-")]

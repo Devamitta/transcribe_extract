@@ -7,10 +7,13 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
+from tools.printer import printer as pr
+
 load_dotenv()
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_IMAGE_MODEL = "black-forest-labs/flux.2-pro"
+OPENROUTER_IMAGE_TIMEOUT = 180
 
 
 def _generate_image_openrouter(prompt: str, output_path: Path) -> None:
@@ -32,7 +35,16 @@ def _generate_image_openrouter(prompt: str, output_path: Path) -> None:
         "image_config": {"aspect_ratio": "16:9"},
     }
 
-    response = requests.post(url, headers=headers, json=payload)
+    pr.white(
+        "  -> openrouter image "
+        f"{OPENROUTER_IMAGE_MODEL} (timeout={OPENROUTER_IMAGE_TIMEOUT}s)..."
+    )
+    response = requests.post(
+        url,
+        headers=headers,
+        json=payload,
+        timeout=OPENROUTER_IMAGE_TIMEOUT,
+    )
     if response.status_code != 200:
         raise ValueError(
             f"OpenRouter image generation failed: {response.status_code} - {response.text}"
