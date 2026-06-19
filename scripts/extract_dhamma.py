@@ -23,6 +23,7 @@ from tools.provider import (
 pr = _p.printer
 
 INTER_CALL_PACING_SECONDS = 5.0
+LOW_OUTPUT_RATIO_FLOOR = 0.60
 
 
 def extract_dhamma_points(text: str, _file_path: Path | None = None) -> str:
@@ -67,7 +68,7 @@ def report_low_ratio_warnings(result: RunResult) -> int:
         if _is_low_output_ratio(file_result):
             warnings += 1
             pr.amber(
-                f"[WARN] {file_result.output_path} output below 50% of input word count"
+                f"[WARN] {file_result.output_path} output below {int(LOW_OUTPUT_RATIO_FLOOR * 100)}% of input word count"
             )
     pr.summary("low ratio warnings", warnings)
     return warnings
@@ -99,7 +100,9 @@ def main(argv: list[str] | None = None) -> int:
 def _is_low_output_ratio(file_result: FileRunResult) -> bool:
     original = file_result.input_path.read_text(encoding="utf-8")
     extracted = file_result.output_path.read_text(encoding="utf-8")
-    return not validate_word_count(original, extracted, min_ratio=0.5)
+    return not validate_word_count(
+        original, extracted, min_ratio=LOW_OUTPUT_RATIO_FLOOR
+    )
 
 
 if __name__ == "__main__":

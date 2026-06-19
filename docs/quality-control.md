@@ -1,23 +1,50 @@
 # Quality Control
 
-Quality control is orchestrated via slash-command skills. These skills replace the former ongoing Kamma loops:
+Quality control in the interview pipeline is driven by a unified front door `/quality` command, which orchestrates batch execution, automated LLM-judged evaluation, and improvement routing.
 
-| Skill | Purpose | State Location |
-|-------|---------|----------------|
-| `/semantic-fix` | Corrected transcript data fixes | `.claude/semantic-fix-state.md` |
-| `/prompt-quality` | Pali, extract, and polish prompt/data tuning | `.claude/prompt-quality-state.md` |
+## The Quality Control Ecosystem
 
-The original thread folders are archived under `kamma/archive/ongoing_loops/`.
+The quality control workflow is powered by the following components:
+
+| Command / Script | Purpose | Type | State / Output Location |
+|------------------|---------|------|------------------------|
+| `/quality` | **Single Front Door:** Detects state, runs batches, triggers QC, surfaces flags. | Orchestrator Skill | `.claude/quality-state.md` |
+| `/quality-semantic-fix` | Reviews and applies corrections to Whisper transcription hallucinations. | Engine Skill | `.claude/semantic-fix-state.md` |
+| `/quality-prompt` | Targets regressions and improves stage prompts using the golden excerpt harness. | Engine Skill | `.claude/prompt-quality-state.md` |
+| `/quality-improve` | Clusters quality backlog notes and applies prompt/skill improvements. | Engine Skill | `.claude/quality-improvements.md` |
+| `scripts/evaluate_batch.py` | Production QC engine assessing file pairs for completeness and size ratios. | Python Script | `reports/batch/` |
+
+---
+
+## Workflow Principles
+
+### 1. Gradual Loop Usage ("Process-QC-Improve")
+Rather than running large batches blindly, the pipeline is designed for incremental scalability:
+1. **Process a Few:** Run `/quality` to run a small batch (default: 5 files) through the extraction and polishing stages.
+2. **Quality Control:** `/quality` runs `scripts/evaluate_batch.py` to compare source and candidate texts, checking for over-compression (flag floor 60%, target 75%) and completeness.
+3. **Surface Flags:** Any failed files are presented at a human approval gate.
+4. **Improve:** If systemic errors appear, issues are added to the backlog and addressed via `/quality-improve`.
+5. **Reprocess & Scale:** Once prompts/rules are tuned, re-run evaluation and scale up to the next batch.
+
+### 2. Context-Light Design
+To maintain Sonnet/Opus session efficiency and avoid token bloat (target ≤120k tokens/session):
+- The orchestrator `/quality` **never** reads full transcriptions or raw outputs.
+- All heavy text extraction, parsing, and LLM judging occur within Python subprocesses.
+- The agent only reads summary counts, the flagged-only report (`reports/batch/...`), and specific short excerpts for flagged files.
+
+### 3. Backlog, Warning, and History Mechanism
+- When `/quality` detects a quality defect that cannot be solved with a trivial local fix, it appends a one-line description to `.claude/quality-improvements.md`.
+- If `.claude/quality-improvements.md` accumulates **5 or more** unprocessed issues, the agent warns the user to run `/quality-improve` to address them.
+- `/quality-improve` groups active backlog items, proposes a cohesive redesign, and upon approval, applies it and archives the processed issues to `.claude/quality-improvements-history.md` under a dated heading.
 
 ---
 
 ## Quality Skills
 
-### `/semantic-fix` (Semantic Evaluation)
+### `/quality-semantic-fix` (Semantic Evaluation)
+Semantic evaluation detects remaining Whisper hallucinations and contextually wrong passages after Pāli correction. This skill fixes data in `output/corrected_pali/`; it does not tune prompts.
 
-Semantic evaluation detects remaining Whisper hallucinations and contextually wrong passages after Pali correction. This skill fixes data in `output/corrected_pali/`; it does not tune prompts.
-
-**Trigger:** `/semantic-fix`
+**Trigger:** `/quality-semantic-fix`
 
 **Procedure:**
 1. **Run Detection:** The skill runs `scripts/evaluate_semantic.py` to generate reports under `reports/semantic/`. Provider routing follows `tools/ai_models.json`.
@@ -29,11 +56,10 @@ Semantic evaluation detects remaining Whisper hallucinations and contextually wr
 
 Deferred Dhamma-Vinaya terms requiring manual review are logged in `.claude/semantic-manual-corrections.md`.
 
-### `/prompt-quality` (Prompt Quality)
+### `/quality-prompt` (Prompt Quality)
+Improves the Pāli, extract, and polish stage prompts using the golden-set harness results.
 
-Improves the Pali, extract, and polish stage prompts using the golden-set harness results.
-
-**Trigger:** `/prompt-quality`
+**Trigger:** `/quality-prompt`
 
 **Procedure:**
 1. **Establish Evidence:** Run `scripts/evaluate_stages.py` (Antigravity-only) to identify low-scoring criteria.
