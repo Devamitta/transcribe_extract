@@ -1,6 +1,7 @@
 """Tests Antigravity CLI provider routing and model fallback behavior."""
 
 import importlib
+import json
 import sys
 from collections.abc import Callable, Generator
 from pathlib import Path
@@ -13,6 +14,17 @@ from tools.antigravity_cli_models import CommandResult
 
 
 ProviderModule = Any
+
+
+def _work_models(provider_name: str) -> list[str]:
+    """Read a provider's work model list from the single source of truth."""
+    data = json.loads(Path("tools/ai_models.json").read_text(encoding="utf-8"))
+    return data["provider_models"][provider_name]["work"]
+
+
+# Work models for antigravity-cli, sourced from ai_models.json so model tuning
+# in the JSON does not break these routing/rotation assertions.
+ANTIGRAVITY_WORK_MODELS = _work_models("antigravity-cli")
 
 
 @pytest.fixture()
@@ -102,18 +114,15 @@ def test_antigravity_cli_provider_uses_requested_work_model_order(
         "antigravity-cli",
         ["script.py"],
         {
-            "Gemini 3.5 Flash (High)": True,
-            "Gemini 3.1 Pro (Low)": False,
+            ANTIGRAVITY_WORK_MODELS[0]: True,
+            ANTIGRAVITY_WORK_MODELS[1]: False,
         },
         set(),
     )
 
-    assert provider.ANTIGRAVITY_CLI_WORK_MODELS == [
-        "Gemini 3.5 Flash (High)",
-        "Gemini 3.1 Pro (Low)",
-    ]
+    assert provider.ANTIGRAVITY_CLI_WORK_MODELS == ANTIGRAVITY_WORK_MODELS
     assert provider.get_working_key() is True
-    assert checked_models == ["Gemini 3.5 Flash (High)"]
+    assert checked_models == [ANTIGRAVITY_WORK_MODELS[0]]
 
 
 def test_antigravity_cli_dry_run_uses_low_flash(
@@ -145,15 +154,15 @@ def test_antigravity_cli_generation_rotates_to_next_model_on_failure(
         "antigravity-cli",
         ["script.py"],
         {},
-        {"Gemini 3.5 Flash (High)"},
+        {ANTIGRAVITY_WORK_MODELS[0]},
     )
 
     result = provider.generate_content("content", "system")
 
-    assert result.endswith(":Gemini 3.1 Pro (Low)")
+    assert result.endswith(f":{ANTIGRAVITY_WORK_MODELS[1]}")
     assert generated_models == [
-        "Gemini 3.5 Flash (High)",
-        "Gemini 3.1 Pro (Low)",
+        ANTIGRAVITY_WORK_MODELS[0],
+        ANTIGRAVITY_WORK_MODELS[1],
     ]
 
 

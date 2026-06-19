@@ -134,6 +134,8 @@ Checks that the last Whisper timestamp in each transcript is within 120 s of the
 ### 2.1: Metadata Suggestions
 Generates titles and descriptions using the configured LLM provider.
 
+Provider and model configuration lives in `tools/ai_models.json`. The default cross-provider fallback order is `antigravity-cli (Gemini 3.5 Flash) → deepseek (deepseek-v4-flash) → openrouter (deepseek/deepseek-v4-flash)`; this list is fully editable without touching Python. Set `PROVIDER=google|gemini-cli|agy|deepseek|openrouter` in `.env` to restrict routing to a single provider instead.
+
 Normal `yt_run.sh` runs do not make a separate provider probe before metadata generation. The first real metadata request is the availability check; if it fails after retries, the stage exits non-zero and `yt_run.sh` stops through `set -e`.
 
 For manual provider/auth troubleshooting, run:
@@ -203,6 +205,8 @@ uv run python scripts/yt_export.py --lang ru|en [--folder <folder>] [--name NAME
 
 ### 3.2: Generate AI Thumbnails (Audio Mode; or Video Mode with `--cover`)
 Uses reviewed metadata to generate photorealistic base thumbnails via FLUX.
+
+The image provider/model, timeout, and aspect ratio are configured in `tools/ai_models.json` under `image_models` (the same single source of truth as the text providers), so the thumbnail model can be changed without editing Python.
 
 Normal `yt_run.sh` runs do not make a separate image-provider probe before thumbnail generation. The first real prompt/image request is the availability check; if required output cannot be produced after retries, `yt_image_gen.py` exits non-zero and the wrapper stops.
 

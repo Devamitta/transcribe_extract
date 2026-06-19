@@ -15,6 +15,17 @@ import pytest
 ProviderModule = Any
 
 
+def _work_models(provider_name: str) -> list[str]:
+    """Read a provider's work model list from the single source of truth."""
+    data = json.loads(Path("tools/ai_models.json").read_text(encoding="utf-8"))
+    return data["provider_models"][provider_name]["work"]
+
+
+# Work models for gemini-cli, sourced from ai_models.json so model tuning in the
+# JSON does not break these routing/rotation assertions.
+GEMINI_CLI_WORK = _work_models("gemini-cli")
+
+
 @pytest.fixture()
 def load_provider(
     monkeypatch: pytest.MonkeyPatch,
@@ -128,21 +139,13 @@ def test_gemini_cli_provider_uses_requested_work_model_order(
     provider, checked_models, _ = load_provider(
         "gemini-cli",
         ["script.py"],
-        {
-            "gemini-3.1-pro-preview": False,
-            "gemini-2.5-pro": True,
-            "gemini-3-flash-preview": True,
-        },
+        {GEMINI_CLI_WORK[0]: False, GEMINI_CLI_WORK[1]: True},
         set(),
     )
 
-    assert provider.GEMINI_CLI_WORK_MODELS == [
-        "gemini-3.1-pro-preview",
-        "gemini-2.5-pro",
-        "gemini-3-flash-preview",
-    ]
+    assert provider.GEMINI_CLI_WORK_MODELS == GEMINI_CLI_WORK
     assert provider.get_working_key() is True
-    assert checked_models == ["gemini-3.1-pro-preview", "gemini-2.5-pro"]
+    assert checked_models == [GEMINI_CLI_WORK[0], GEMINI_CLI_WORK[1]]
 
 
 def test_gemini_cli_dry_run_uses_flash_lite(
@@ -174,13 +177,13 @@ def test_gemini_cli_generation_rotates_to_next_model_on_failure(
         "gemini-cli",
         ["script.py"],
         {},
-        {"gemini-3.1-pro-preview"},
+        {GEMINI_CLI_WORK[0]},
     )
 
     result = provider.generate_content("content", "system")
 
-    assert result.endswith(":gemini-2.5-pro")
-    assert generated_models == ["gemini-3.1-pro-preview", "gemini-2.5-pro"]
+    assert result.endswith(f":{GEMINI_CLI_WORK[1]}")
+    assert generated_models == [GEMINI_CLI_WORK[0], GEMINI_CLI_WORK[1]]
 
 
 def test_gemini_cli_generate_content_uses_headless_json_command(

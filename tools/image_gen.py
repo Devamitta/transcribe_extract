@@ -1,6 +1,7 @@
 """Image generation provider abstraction for OpenRouter FLUX."""
 
 import base64
+import json
 import os
 from pathlib import Path
 
@@ -12,8 +13,34 @@ from tools.printer import printer as pr
 load_dotenv()
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-OPENROUTER_IMAGE_MODEL = "black-forest-labs/flux.2-pro"
-OPENROUTER_IMAGE_TIMEOUT = 180
+
+# Image provider/model config is centralized in tools/ai_models.json, the single
+# source of truth for all AI model configuration in this repo.
+_AI_MODELS_PATH = Path("tools/ai_models.json")
+_DEFAULT_IMAGE_MODEL = "black-forest-labs/flux.2-pro"
+_DEFAULT_IMAGE_TIMEOUT = 180
+_DEFAULT_IMAGE_ASPECT_RATIO = "16:9"
+
+
+def _load_image_config(provider: str) -> tuple[str, int, str]:
+    """Load (model, timeout, aspect_ratio) for an image provider from ai_models.json."""
+    try:
+        data: dict[str, object] = json.loads(
+            _AI_MODELS_PATH.read_text(encoding="utf-8")
+        )
+        image_models: dict[str, dict[str, object]] = data.get("image_models", {})  # type: ignore[assignment]
+        cfg = image_models.get(provider, {})
+        model = str(cfg.get("model", _DEFAULT_IMAGE_MODEL))
+        timeout = int(cfg.get("timeout", _DEFAULT_IMAGE_TIMEOUT))  # type: ignore[arg-type]
+        aspect_ratio = str(cfg.get("aspect_ratio", _DEFAULT_IMAGE_ASPECT_RATIO))
+        return model, timeout, aspect_ratio
+    except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return _DEFAULT_IMAGE_MODEL, _DEFAULT_IMAGE_TIMEOUT, _DEFAULT_IMAGE_ASPECT_RATIO
+
+
+OPENROUTER_IMAGE_MODEL, OPENROUTER_IMAGE_TIMEOUT, OPENROUTER_IMAGE_ASPECT_RATIO = (
+    _load_image_config("openrouter")
+)
 
 
 def _generate_image_openrouter(prompt: str, output_path: Path) -> None:
@@ -32,7 +59,7 @@ def _generate_image_openrouter(prompt: str, output_path: Path) -> None:
         "model": OPENROUTER_IMAGE_MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "modalities": ["image"],
-        "image_config": {"aspect_ratio": "16:9"},
+        "image_config": {"aspect_ratio": OPENROUTER_IMAGE_ASPECT_RATIO},
     }
 
     pr.white(

@@ -2,6 +2,7 @@
 
 import importlib
 import os
+import types
 import unittest
 from unittest.mock import patch
 
@@ -9,7 +10,7 @@ from unittest.mock import patch
 class DeepSeekProviderRoutingTests(unittest.TestCase):
     """Tests for provider selection and model configuration."""
 
-    def _reload_provider(self) -> object:
+    def _reload_provider(self) -> types.ModuleType:
         import tools.provider
 
         return importlib.reload(tools.provider)
@@ -26,11 +27,14 @@ class DeepSeekProviderRoutingTests(unittest.TestCase):
             self.assertTrue(callable(provider.generate_content))
 
     def test_deepseek_models_configured(self) -> None:
-        """Verify DeepSeek model configuration matches spec."""
-        from tools.provider import DEEPSEEK_WORK_MODELS, DEEPSEEK_TEST_MODELS
+        """Verify DeepSeek model configuration is present in ai_models.json."""
+        import json
+        from pathlib import Path
 
-        self.assertEqual(DEEPSEEK_WORK_MODELS, ["deepseek-v4-flash"])
-        self.assertEqual(DEEPSEEK_TEST_MODELS, ["deepseek-v4-flash"])
+        data = json.loads(Path("tools/ai_models.json").read_text(encoding="utf-8"))
+        pm = data.get("provider_models", {}).get("deepseek", {})
+        self.assertIn("deepseek-v4-flash", pm.get("work", []))
+        self.assertIn("deepseek-v4-flash", pm.get("test", []))
 
     def test_provider_routing_accepts_deepseek(self) -> None:
         """Verify provider.py handles PROVIDER=deepseek without error."""
@@ -42,11 +46,11 @@ class DeepSeekProviderRoutingTests(unittest.TestCase):
             # Should not raise or exit
             self.assertEqual(provider.PROVIDER, "deepseek")
 
-    def test_error_message_lists_deepseek(self) -> None:
-        """Verify error message mentions deepseek as supported provider."""
-        from tools.provider import PROVIDER_ERROR_MSG
+    def test_deepseek_is_known_provider(self) -> None:
+        """Verify deepseek is listed as a known provider in the manager."""
+        from tools.ai_manager import _PROVIDER_MODULE_PATHS
 
-        self.assertIn("deepseek", PROVIDER_ERROR_MSG)
+        self.assertIn("deepseek", _PROVIDER_MODULE_PATHS)
 
 
 class DeepSeekClientTests(unittest.TestCase):
