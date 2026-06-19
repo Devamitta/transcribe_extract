@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
 
 from tools.printer import printer as pr
+
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
 
 
 def get_chapter_text(
@@ -25,14 +29,20 @@ def get_chapter_text(
     return " ".join(lines)
 
 
+_MODEL_CACHE: SentenceTransformer | None = None
+
+
 def compute_similarity(text_a: str, text_b: str) -> float:
     """Returns cosine similarity between two text segments using multilingual embeddings."""
     from sentence_transformers import SentenceTransformer  # lazy import
 
     import numpy as np
 
-    model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
-    embs = model.encode([text_a, text_b], convert_to_numpy=True)
+    global _MODEL_CACHE
+    if _MODEL_CACHE is None:
+        _MODEL_CACHE = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
+
+    embs = _MODEL_CACHE.encode([text_a, text_b], convert_to_numpy=True)
     a, b = embs[0], embs[1]
     denom = np.linalg.norm(a) * np.linalg.norm(b)
     return float(np.dot(a, b) / denom) if denom > 0 else 0.0
