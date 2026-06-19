@@ -1,6 +1,6 @@
 # Transcription Pipeline
 
-Converts raw MP3 audio into Markdown transcripts using MLX Whisper with context-specific Pali vocabulary prompts.
+Converts raw audio (MP3, WAV, M4A, QTA, MOV, etc.) into Markdown transcripts using MLX Whisper with context-specific Pali vocabulary prompts.
 
 > **Requires Apple Silicon (M1/M2/M3/M4).** MLX Whisper does not run on Intel Macs or Linux.
 
@@ -14,30 +14,36 @@ Converts raw MP3 audio into Markdown transcripts using MLX Whisper with context-
 ./transcribe.sh [--context sangha|interview|dhamma]
 ```
 
+- **Ingestion Phase:** Automatically converts non-MP3 files in `input/<context>/` to MP3 and moves them to `output/audio/<context>/`.
 - No `--context`: runs all three contexts in sequence.
-- Input: `input/<context>/` — Output: `output/transcribed/<context>/`
+- Input: `input/<context>/` (raw) → `output/audio/<context>/` (MP3)
+- Output: `output/transcribed/<context>/` (Markdown)
 - After transcription, runs `scripts/verify_duration.py` to check for truncated transcripts.
 - Wraps output in a timestamped log at `log/transcribe_<timestamp>.log`.
 
-### `scripts/cl/transcribe-sangha` — CLI shortcut (Saṅgha)
+### `scripts/cl/transcribe-correct` — Unified CLI
 
 ```bash
-./scripts/cl/transcribe-sangha
+./scripts/cl/transcribe-correct [folder_name]
 ```
 
-Runs `transcribe.sh --context sangha`, then `scripts/correct_pali.py sangha` (Pāli post-correction).
+The primary entry point for manual transcription. It orchestrates the entire pipeline for a specific input folder.
+- If run without `folder_name`, lists available folders in `input/` and shows usage instructions.
+- If run with `folder_name` (e.g. `sangha`, `my-special-talks`):
+    1. **Context Mapping:** If the folder name matches a valid context (`sangha`, `dhamma`, `vinaya`, `interview`, `russian`), it uses that context. Otherwise, it defaults to the `dhamma` context.
+    2. **Phase 1: Ingestion.** Runs `scripts/audio_ingest.py`. Converts non-MP3 files in `input/<folder>/` to MP3 and moves them to `output/audio/<folder>/`.
+    3. **Phase 2: Transcription.** Runs `scripts/transcribe.py` directly with the detected context.
+    4. **Phase 2.5: Verification.** Runs `scripts/verify_duration.py` to ensure transcripts aren't truncated.
+    5. **Phase 3: Pali Correction.** Runs `scripts/correct_pali.py` (Pāli post-correction).
 
-For manual provider/auth troubleshooting before Pāli post-correction, run:
+---
 
-```bash
-uv run python scripts/check_keys.py --text
-```
+## Ingestion phase
 
-Then run correction normally:
+`scripts/audio_ingest.py` ensures all media is in MP3 format before transcription begins.
 
-```bash
-uv run python scripts/correct_pali.py sangha
-```
+- **Supported Formats:** MP3, WAV, M4A, AIFF, FLAC, OGG, OPUS, WMA, QTA, M4P, MP4, MKV, MOV, MPEG, MPG, WEBM.
+- **Action:** Non-MP3 files are converted via `ffmpeg`, moved to `output/audio/<folder>/`, and the originals in `input/<folder>/` are removed. Existing MP3s are simply moved to `output/audio/<folder>/`.
 
 ---
 
@@ -53,7 +59,7 @@ uv run python scripts/transcribe.py [options]
 
 | Flag combination | Input dir | Output dir |
 |---|---|---|
-| `--input-dir <path>` | `<path>` | `output/transcribed/<relative>` (mirrors `input/` structure) or `--output-dir` |
+| `--input-dir <path>` | `<path>` | `output/transcribed/<relative>` (mirrors `input/` or `output/audio/` structure) or `--output-dir` |
 | `--lang ru\|en [--folder name]` | `output/audio/<folder>` | `output/transcribed/<folder>` |
 | Neither | `audio/` | `output/transcribed/` |
 

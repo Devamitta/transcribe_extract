@@ -27,11 +27,13 @@ uv sync
 
 ## Transcription
 
-Drop MP3s into `input/sangha/` and run:
+Drop audio files (MP3, WAV, M4A, QTA, etc.) into `input/sangha/` (or any other subfolder in `input/`) and run:
 
 ```bash
-./scripts/cl/transcribe-sangha
+./scripts/cl/transcribe-correct sangha
 ```
+
+If run without a folder name, it will list available folders and provide instructions.
 
 Output: `output/corrected_pali/sangha/`
 

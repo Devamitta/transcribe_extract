@@ -46,7 +46,6 @@ def configured_cli(
     monkeypatch.setattr(evaluate_stages, "HISTORY_PATH", report_dir / "history.json")
     monkeypatch.setattr(evaluate_stages, "INTER_CALL_PACING_SECONDS", 0)
     monkeypatch.setattr(evaluate_stages.time, "sleep", lambda _seconds: None)
-    monkeypatch.setenv("PROVIDER", "agy")
     monkeypatch.setattr(evaluate_stages, "probe_judge_model", lambda: True)
     monkeypatch.setattr(
         evaluate_stages,
@@ -288,16 +287,23 @@ def test_failed_stage_writes_report_but_not_history(
     ).exists()
 
 
-def test_non_agy_provider_returns_exit_one(
+def test_provider_env_is_ignored(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PROVIDER", "google")
 
-    def fail_probe() -> bool:
-        raise AssertionError("probe should not run for non-agy provider")
+    probed = False
 
-    monkeypatch.setattr(evaluate_stages, "probe_judge_model", fail_probe)
+    def mock_probe() -> bool:
+        nonlocal probed
+        probed = True
+        return False  # Stop execution after probe
 
+    monkeypatch.setattr(evaluate_stages, "probe_judge_model", mock_probe)
+
+    # If it ignores PROVIDER=google, it will call mock_probe and return 1 (from our False)
+    # If it was gated, it would exit 1 BEFORE calling mock_probe.
     assert evaluate_stages.main(["--stage", "extract", "--test"]) == 1
+    assert probed is True

@@ -93,6 +93,10 @@ def main():
             output_dir = Path(args.output_dir)
         elif audio_dir.is_relative_to("input"):
             output_dir = Path("output/transcribed") / audio_dir.relative_to("input")
+        elif audio_dir.is_relative_to("output/audio"):
+            output_dir = Path("output/transcribed") / audio_dir.relative_to(
+                "output/audio"
+            )
         else:
             output_dir = Path("output/transcribed")
     elif args.lang:

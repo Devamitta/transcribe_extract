@@ -26,12 +26,21 @@ run_context() {
   local ctx="$1"
   local transcribe_log
   transcribe_log=$(mktemp)
+
+  echo ""
+  echo ">>> Ingesting Audio (${ctx} context) <<<"
+  local ingest_args=(--folder "$ctx")
+  if _has_arg "--dry-run" "${EXTRA_ARGS[@]}"; then
+    ingest_args+=(--dry-run)
+  fi
+  uv run python scripts/audio_ingest.py "${ingest_args[@]}"
+
   echo ""
   echo ">>> Audio Transcription (${ctx} context) <<<"
 
   local dir_arg=()
   if ! _has_arg "--input-dir" "${EXTRA_ARGS[@]}" && ! _has_arg "--lang" "${EXTRA_ARGS[@]}"; then
-    dir_arg=(--input-dir "input/${ctx}")
+    dir_arg=(--input-dir "output/audio/${ctx}")
   fi
 
   if ! caffeinate -i uv run python scripts/transcribe.py \
@@ -46,7 +55,7 @@ run_context() {
   echo ""
   echo ">>> Verifying Transcription Completeness <<<"
   if ! uv run python scripts/verify_duration.py \
-    --audio-dir "input/${ctx}" \
+    --audio-dir "output/audio/${ctx}" \
     --created-log "$transcribe_log"; then
     echo "Warning: Some transcripts may be truncated. Check the report above."
   fi
@@ -65,6 +74,15 @@ if _has_arg "--lang" "${EXTRA_ARGS[@]}"; then
 fi
 
 VALID_CONTEXTS=(sangha interview dhamma)
+
+if ! _has_arg "--dry-run" "${EXTRA_ARGS[@]}"; then
+  printf "⚠ Files in input/ (for all selected contexts) will be converted to MP3, moved to output/audio/, and the originals removed. Copy anything you want to keep first. Press Enter to continue, or n to abort. "
+  read -r _mm
+  if [ "$_mm" = "n" ] || [ "$_mm" = "N" ]; then
+    echo "Aborted."
+    exit 1
+  fi
+fi
 
 if [ -n "$CONTEXT" ]; then
   valid=0

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-import os
+import json
 import time
 import unicodedata
 from dataclasses import dataclass
@@ -12,11 +12,10 @@ from pathlib import Path
 from typing import cast
 
 from tools import printer as _p
-from tools import antigravity_cli
+from tools import provider
 from tools.eval_judge import (
     DEFAULT_GOLDEN_ROOT,
     DEFAULT_HISTORY_PATH,
-    JUDGE_MODEL,
     STAGE_CONFIGS,
     CriterionScore,
     DeterministicCheck,
@@ -34,6 +33,11 @@ from tools.eval_judge import (
     run_deterministic_checks,
 )
 from tools.incremental import finalize_temp, get_temp_path, load_temp, save_temp
+from tools.provider import (
+    build_cacheable_contents,
+    generate_with_timeout,
+    get_working_key,
+)
 
 pr = _p.printer
 
@@ -42,7 +46,6 @@ HISTORY_PATH = DEFAULT_HISTORY_PATH
 REPORT_DIR = Path("reports/eval")
 INTER_CALL_PACING_SECONDS = 2.0
 STAGE_ORDER: tuple[StageName, ...] = ("pali", "extract", "polish")
-ALLOWED_PROVIDERS = {"agy", "antigravity-cli"}
 
 
 @dataclass(frozen=True)
@@ -92,12 +95,6 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    provider = os.getenv("PROVIDER", "google").lower()
-    if provider not in ALLOWED_PROVIDERS:
-        pr.bip()
-        pr.no("PROVIDER must be agy or antigravity-cli")
-        return 1
-
     if not probe_judge_model():
         return 1
 
@@ -143,7 +140,9 @@ def main(argv: list[str] | None = None) -> int:
             "stage": stage,
             "prompt_hash": prompt_hash(stage),
             "generation_models": generation_models,
-            "judge_model": JUDGE_MODEL,
+            "judge_model": generation_models[0]
+            if generation_models
+            else "default_models",
             "criterion_means": means,
             "overall_mean": overall_mean(means),
             "excerpt_count": len(stage_results),
@@ -221,21 +220,23 @@ def comparable_full_run_history(
 
 
 def probe_judge_model() -> bool:
-    pr.green(f"Checking judge model: {JUDGE_MODEL}")
+    pr.green("Checking provider availability")
     pr.bip()
-    if antigravity_cli.get_working_key(JUDGE_MODEL):
-        pr.yes("judge ready")
+
+    if get_working_key():
+        pr.yes("provider ready")
         return True
-    pr.no("judge unavailable")
+    pr.no("no provider available")
     return False
 
 
 def active_generation_models() -> list[str]:
-    from tools import provider
-
-    if provider.CLI_TEST_MODE:
-        return list(provider.ANTIGRAVITY_CLI_TEST_MODELS)
-    return list(provider.ANTIGRAVITY_CLI_WORK_MODELS)
+    try:
+        data = json.loads(Path("tools/ai_models.json").read_text(encoding="utf-8"))
+        key = "test_models" if provider.TEST_MODE else "default_models"
+        return [f"{m['provider']}/{m['model']}" for m in data.get(key, [])]
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        return []
 
 
 def discover_golden_excerpts(
@@ -351,8 +352,6 @@ def generate_candidate(
     source_path: Path,
     prepared_source: str,
 ) -> str:
-    from tools.provider import build_cacheable_contents, generate_with_timeout
-
     return generate_with_timeout(
         contents=build_cacheable_contents(prepared_source),
         system_instruction=config.build_system_instruction(source_path),
@@ -364,10 +363,9 @@ def judge_candidate(
     source_text: str,
     candidate_output: str,
 ) -> str:
-    return antigravity_cli.generate_content(
+    return generate_with_timeout(
         contents=build_judge_prompt(config, source_text, candidate_output),
         system_instruction="Return strict JSON only.",
-        model=JUDGE_MODEL,
         max_output_tokens=8192,
         temperature=0.0,
     )

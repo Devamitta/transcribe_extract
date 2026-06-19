@@ -84,6 +84,10 @@ def main():
         transcript_dir = Path(args.transcript_dir)
     elif audio_dir.is_relative_to("input"):
         transcript_dir = Path("output/transcribed") / audio_dir.relative_to("input")
+    elif audio_dir.is_relative_to("output/audio"):
+        transcript_dir = Path("output/transcribed") / audio_dir.relative_to(
+            "output/audio"
+        )
     else:
         transcript_dir = Path("output/transcribed")
 

@@ -184,6 +184,15 @@ if [ "$FROM_EXPORT" -eq 0 ]; then
     fi
   fi
 
+  if [ "$DRY_RUN" -eq 0 ]; then
+    printf "⚠ Source files in input/ will be converted (→ MP4/MP3/JPG), processed, and removed from the input folder. Press Enter to continue, or n to abort. "
+    read -r _mm
+    if [ "$_mm" = "n" ] || [ "$_mm" = "N" ]; then
+      echo "Aborted."
+      exit 1
+    fi
+  fi
+
   # 2. Unified ingest
   echo "→ Starting: yt_ingest_unified.py"
   INGEST_ARGS=""
