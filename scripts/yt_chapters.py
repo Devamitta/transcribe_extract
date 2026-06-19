@@ -702,11 +702,27 @@ def main() -> None:
             paragraphs = extract_paragraphs(transcript)
             is_dense, median_gap = check_transcript_density(paragraphs)
             if not is_dense:
-                pr.no(
-                    f"    Transcript too sparse (median gap {median_gap:.2f} min = {median_gap * 60:.0f}s, "
-                    "threshold 36s)"
+                try:
+                    answer = (
+                        input(
+                            f"    Transcript too sparse (median gap {median_gap:.2f} min = "
+                            f"{median_gap * 60:.0f}s, threshold 36s). Guided meditation with "
+                            "intentional silence? [y/N]: "
+                        )
+                        .strip()
+                        .lower()
+                    )
+                except EOFError:
+                    answer = ""
+                if answer != "y":
+                    pr.no(
+                        f"    Transcript too sparse (median gap {median_gap:.2f} min = {median_gap * 60:.0f}s, "
+                        "threshold 36s)"
+                    )
+                    continue
+                pr.amber(
+                    "    Guided meditation confirmed — proceeding despite sparse gaps"
                 )
-                continue
 
             duration_mins = max(available) if available else 0.0
 
