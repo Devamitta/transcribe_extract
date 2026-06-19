@@ -1,73 +1,135 @@
 # Quality Control
 
-Five ongoing feedback loops, each targeting a different stage of the pipeline:
+Quality control now has two active recurring loops:
 
 | Loop | Stage | Thread |
 |------|-------|--------|
-| Transcription Quality | Raw Whisper output | `ongoing_transcription_feedback` |
-| Pali Correction | LLM Pali correction | `ongoing_pali_correction_feedback` |
-| Semantic Evaluation | Corrected transcripts | `ongoing_semantic_evaluation_loop` |
-| Extract Quality | Dhamma extraction | `ongoing_extract_quality` |
-| Polish Quality | Post-extraction polish | `ongoing_polish_quality` |
+| Semantic Evaluation | Corrected transcript data fixes | `kamma/threads/ongoing_loops/ongoing_semantic_evaluation_loop/` |
+| Prompt Quality | Pali, extract, and polish prompt/data tuning | `kamma/threads/ongoing_loops/ongoing_prompt_quality/` |
 
-All loop state, logs, and handoffs live in `kamma/threads/ongoing_loops/`.
+The old manual loops for transcription, Pali correction, extract, and polish were
+archived under `kamma/archive/ongoing_loops/`. Prompt quality is now evaluated
+with the golden-set harness below.
 
 ---
 
-## 1. Transcription Quality Loop
+## Stage Quality Eval Harness
 
-Iterative feedback loop to identify and filter Whisper hallucinations (phrase loops, silence artifacts, anomalies) at the raw transcript level.
-
-**Scope:** `scripts/transcribe.py`, `output/transcribed/`
-**Thread:** `kamma/threads/ongoing_loops/ongoing_transcription_feedback/`
-
-### Steps
+`scripts/evaluate_stages.py` runs fixed golden excerpts through the current LLM
+stage prompts and asks an Antigravity Pro judge to score the output.
 
 ```bash
-# 1. Extract anomalies from a transcription batch
-uv run python scripts/extract_errors.py --input-dir output/transcribed/sangha/
-
-# 2. Compare with a previous report after filter changes
-uv run python scripts/diff_reports.py log/old_report.md log/new_report.md
-
-# 3. Extract audio snippets to verify real hallucination vs. natural stutter
-uv run python scripts/extract_snippets.py log/report_20260411.md
+PROVIDER=agy uv run python scripts/evaluate_stages.py
+PROVIDER=agy uv run python scripts/evaluate_stages.py --stage extract
+PROVIDER=agy uv run python scripts/evaluate_stages.py --stage polish --limit 3
+PROVIDER=agy uv run python scripts/evaluate_stages.py --stage pali --test
 ```
 
-Based on findings, update hallucination filters in `scripts/transcribe.py` (punctuation-agnostic checks, tiered repetition detection). A pro model is required for error analysis — stop and switch before that phase.
+Flags:
+
+- `--stage pali|extract|polish`: evaluate one stage; default is all stages.
+- `--limit N`: evaluate the first N golden excerpts per selected stage.
+- `--test`: evaluate the first 2 excerpts per selected stage. Provider test
+  models apply as usual.
+
+The harness is intentionally Antigravity-only. Startup exits `1` unless
+`PROVIDER` is `agy` or `antigravity-cli`, then probes the judge model
+`Gemini 3.1 Pro (Low)`.
+
+### Golden Set
+
+Golden excerpts live in `eval/golden/{pali,extract,polish}/` with provenance in
+`eval/golden/manifest.md`. The whole `eval/` tree is gitignored because excerpts
+may contain raw, un-de-identified transcript text.
+
+Rules:
+
+- Keep excerpts frozen once curated. Do not edit existing excerpt text because
+  history comparisons depend on stable input.
+- Add new numbered excerpts instead of changing old ones.
+- Record source path, approximate location, and reason in the manifest.
+- Keep each excerpt near production chunk size, roughly 3,000-5,000 characters.
+
+### Scoring
+
+For every excerpt the harness makes two LLM calls:
+
+1. Generate candidate output using the normal provider path
+   (`tools.provider.generate_with_timeout`) and the same prompt assembly used by
+   the pipeline.
+2. Judge with `tools.antigravity_cli.generate_content`, model
+   `Gemini 3.1 Pro (Low)`, temperature `0.0`, strict JSON response.
+
+Rubrics:
+
+- `pali`: Pali restoration correctness; no meaning-flips or over-correction;
+  non-Pali text preserved.
+- `extract`: completeness; fidelity; de-identification; `## [tag]` and Q/A
+  structure.
+- `polish`: content fidelity; readability improvement; structure preservation.
+
+Deterministic checks also run:
+
+- Extract output must be at least 50% of source word count.
+- Polish output must stay within `POLISH_WORD_TOLERANCE` (`+/-15%`) of input word
+  count.
+
+### Reports And History
+
+Each run writes:
+
+- `reports/eval/eval_<YYYYMMDD_HHMMSS>.md`: per-excerpt scores, judge reasons,
+  deterministic check results, and stage means.
+- `reports/eval/history.json`: append-only per-stage history with timestamp,
+  prompt hash, generation model list, judge model, criterion means, and overall
+  mean.
+
+Prompt hashes include the assembled stage system instruction. For Pali they also
+include raw bytes from `tools/data/pali_overrides.json` and
+`tools/data/pali_examples.json`.
+
+Exit codes:
+
+- `0`: clean run.
+- `1`: hard failure, such as provider failure, judge parse failure, or failed
+  deterministic check.
+- `2`: regression on a full-stage run. A stage overall mean dropped by at least
+  `0.5` compared with the previous full-stage history entry for the same stage.
+
+Runs using `--test` or `--limit` are marked as sampled in `history.json`. They
+still write scorecards and history entries, but they do not trigger regression
+exit code `2`; one- or two-excerpt smokes are too noisy to use as baselines.
+
+Run this harness after any approved change to `tools/pali.py`, `tools/extract.py`,
+`tools/polish.py`, `tools/data/pali_overrides.json`, or
+`tools/data/pali_examples.json`.
+
+### Prompt Quality Loop
+
+Use `kamma/threads/ongoing_loops/ongoing_prompt_quality/` for prompt or Pali-data
+tuning sessions. The workflow is:
+
+1. Run or read the latest `reports/eval/` scorecard for the affected stage.
+2. Diagnose the smallest prompt/data change from concrete evidence.
+3. Get explicit user approval before editing.
+4. Apply the approved change.
+5. Rerun `scripts/evaluate_stages.py --stage <stage>` and compare means.
+
+Known carried-forward risks:
+
+- Extract "headline extraction": dense topic-shifting input can become many thin
+  sections instead of complete teaching exchanges.
+- Pali meaning flips: review `vagina|winner|linear|epidemic` carefully when
+  changing Pali correction behavior.
 
 ---
 
-## 2. Pali Correction Feedback Loop
+## Semantic Evaluation Loop
 
-Continuous loop for refining the Pali correction prompt. Catches structural errors with automated tools and semantic meaning-flip hallucinations (e.g., `winner` → `Vinaya`) via manual grep.
+Semantic evaluation detects remaining Whisper hallucinations and contextually
+wrong passages after Pali correction. This loop fixes data in
+`output/corrected_pali/`; it does not tune prompts.
 
-**Scope:** `tools/pali.py` (`PALI_SYSTEM_INSTRUCTION`), `scripts/evaluate_pali.py`, `tools/glossary.py`
-**Thread:** `kamma/threads/ongoing_loops/ongoing_pali_correction_feedback/`
-
-**Critical limitation:** `evaluate_pali.py` cannot detect semantic flips. Always run a manual grep sweep:
-
-```bash
-grep -riE "vagina|winner|linear|epidemic" output/corrected_pali/
-```
-
-### Steps
-
-1. Run `evaluate_pali.py` and perform grep sweep
-2. **Stop — switch to pro model** for analysis
-3. **Stop — wait for user approval** of improvement proposal
-4. Apply approved refinements to `tools/pali.py`
-5. Re-run `scripts/correct_pali.py` and verify with both tools
-
-Note: The prompt is significantly hardened. Monitor for regression rather than expanding scope.
-
----
-
-## 3. Semantic Evaluation Loop
-
-Detects remaining Whisper hallucinations and contextually wrong passages after Pali correction — catches English-word substitutions and garbled Pali terms that the correction step missed.
-
-**Scope:** `output/corrected_pali/` (corrections applied here only — never `output/transcribed/`)
 **Thread:** `kamma/threads/ongoing_loops/ongoing_semantic_evaluation_loop/`
 
 ### Prerequisite
@@ -78,65 +140,37 @@ Before starting a session, run batch semantic evaluation:
 uv run python scripts/batch.py --stage semantic --folder interview --limit 10
 ```
 
-### Direct Mode (Real-Time)
+### Direct Mode
 
 ```bash
 uv run python scripts/evaluate_semantic.py interview
-# Test mode (first 2 chunks only)
 uv run python scripts/evaluate_semantic.py -t interview
-# Specific file
 uv run python scripts/evaluate_semantic.py output/corrected_pali/interview/Talk.md
 ```
 
-Reports written to `reports/semantic/<subfolder>/<filename>.md`.
+Reports are written to `reports/semantic/<subfolder>/<filename>.md`.
 
 ### Session Flow
 
-1. Read only fresh semantic reports (newer than last reviewed mtime in `handoff.md`)
-2. Pro model classifies findings, plans fixes, gets user approval
-3. Fast model applies approved fixes via `temp/apply_semantic_fixes.py`
-4. Re-evaluate to confirm clean
-5. Log session in `handoff.md`; delete `temp/apply_semantic_fixes.py`
+1. Read only fresh semantic reports newer than the last reviewed mtime in
+   `handoff.md`.
+2. Classify findings, plan fixes, and get user approval.
+3. Apply approved fixes to `output/corrected_pali/`.
+4. Re-evaluate to confirm clean.
+5. Log the session in `handoff.md`.
 
-Deferred Dhamma-Vinaya terms requiring manual review are logged in `manual_corrections.md`.
-
----
-
-## 4. Extract Quality Loop
-
-Recurring loop for reviewing and improving the Dhamma extraction pipeline. Compares source transcripts against extracted outputs, proposes prompt changes, and applies them after user approval.
-
-**Scope:** `tools/extract.py` (`EXTRACT_SYSTEM_INSTRUCTION`, chunk settings only)
-**Thread:** `kamma/threads/ongoing_loops/ongoing_extract_quality/`
-
-**Extraction goal:** Public-release output — extract Dhamma-Vinaya teaching content, de-identify personal stories, remove monk/monastery names while preserving teaching value.
-
-### Loop Structure
-
-1. **Phase 1 (fast model):** Read source and extracted files, collect evidence, prepare findings
-2. **Stop — switch to pro model**
-3. **Phase 2 (pro model):** Analyze findings, diagnose root cause, propose prompt diff
-4. **Stop — wait for user approval**
-5. **Phase 3 (fast model):** Apply approved changes, lint, print test command, log session
-
-This thread never runs extraction scripts — it prints the command and the user runs it.
+Deferred Dhamma-Vinaya terms requiring manual review are logged in
+`manual_corrections.md`.
 
 ---
 
-## 5. Polish Quality Loop
+## Transcription Checks
 
-Recurring loop for reviewing and improving the Dhamma polish pipeline. Compares extracted vs polished outputs, proposes prompt changes, and applies them after user approval.
+There is no LLM-judge transcription eval because there are no ground-truth
+transcripts. Use deterministic tools for raw transcript quality:
 
-**Scope:** `tools/polish.py` (`POLISH_SYSTEM_INSTRUCTION`, validation settings only)
-**Thread:** `kamma/threads/ongoing_loops/ongoing_polish_quality/`
-
-### Loop Structure
-
-1. **Phase 1 (fast model):** Read extracted and polished files, collect evidence, prepare findings
-2. **Stop — switch to pro model**
-3. **Phase 2 (pro model):** Analyze findings, diagnose root cause, propose prompt diff
-4. **Stop — wait for user approval**
-5. **Phase 3 (fast model):** Apply approved changes, lint, print test command, log session
-
-Common failure modes: over-compression, content loss, word count constraint violations.
-This thread never runs polish scripts — it prints the command and the user runs it.
+```bash
+uv run python scripts/extract_errors.py --input-dir output/transcribed/sangha/
+uv run python scripts/diff_reports.py log/old_report.md log/new_report.md
+uv run python scripts/extract_snippets.py log/report_20260411.md
+```

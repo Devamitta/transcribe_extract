@@ -20,6 +20,7 @@ audio_processed/
 .DS_Store
 
 $ local workflow
+eval/
 archive
 CLAUDE.md
 GEMINI.md
