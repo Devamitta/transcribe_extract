@@ -1,4 +1,4 @@
-exclude: ^(archive|scripts/bash|tools/writemdict)/
+exclude: ^(scripts/archive)/
 
 repos:
   - repo: local
