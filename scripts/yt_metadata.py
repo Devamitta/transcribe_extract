@@ -27,8 +27,7 @@ DEFAULT_SPEAKER: dict[str, str] = {
     "ru": "Бхиккху Дэвамитта",
 }
 TITLE_SUFFIX_EXEMPT_SPEAKERS: frozenset[str] = frozenset(
-    unicodedata.normalize("NFC", name).casefold()
-    for name in (*DEFAULT_SPEAKER.values(), "Ariyadhammika Bhikkhu")
+    unicodedata.normalize("NFC", name).casefold() for name in ("Ariyadhammika Bhikkhu",)
 )
 PART_ONE_TITLE_RE = re.compile(r"\s*\|\s*(?:Part|Часть)\s+0*1\s*$", re.IGNORECASE)
 PART_ONE_SOURCE_RE = re.compile(

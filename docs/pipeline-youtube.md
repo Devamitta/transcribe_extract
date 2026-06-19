@@ -16,7 +16,7 @@ e.g. `./yt_run.sh --lang ru --gdrive`
 |---|---|
 | `--lang ru\|en` | Optional. Sets language for review file selection. Defaults to `en`. |
 | `--folder` | Optional. Specific folder in `input/` to scan. If omitted, scans `input/` root or subfolders. |
-| `--name NAME` | Optional. Override the speaker/artist name used for metadata context and embedded artist metadata. Custom names are appended to generated titles, except configured no-suffix names such as Ariyadhammika Bhikkhu. Defaults to the lang-derived speaker name. |
+| `--name NAME` | Optional. Override the speaker/artist name used for metadata context and embedded artist metadata. The lang-derived default speaker is appended to generated titles when `--name` is omitted; custom names are also appended, except configured no-suffix names such as Ariyadhammika Bhikkhu. |
 | `--from-export` | Deprecated compatibility flag. Normal runs are resumable: rerun `yt_run.sh` and completed stages are skipped. |
 | `--video-mode` | Enables video mode. Must be set explicitly — the pipeline no longer auto-detects from .mp4 files in input/. A mismatch prompt appears if input and flag disagree. |
 | `--cover` | Generate AI thumbnails/covers via `yt_image_gen.py` + `yt_cover_gen.py`. In video mode, thumbnail generation is skipped by default and only runs with this flag. **Note:** input images (PNG/JPG in `input/`) are always copied to both `output/thumbnails/` and `output/covers/` regardless of this flag. |

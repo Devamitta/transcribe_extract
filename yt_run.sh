@@ -3,7 +3,7 @@
 # Usage: ./yt_run.sh [--lang ru|en] [--folder folder] [--name NAME] [--from-export] [--video-mode] [--cover] [--gdrive] [--dry-run] [--force] [--context CONTEXT] [--limit N]
 #   --lang: optional; ru or en (defaults to en for review file selection)
 #   --folder: optional; specific folder in input/ to scan
-#   --name: optional; override speaker/artist name in titles and embedded metadata
+#   --name: optional; override speaker/artist name; omitted defaults are language-derived
 #   --from-export: deprecated compatibility flag; reruns are resumable by default
 #   --video-mode: treat source/output files as raw video (skip audio thumbnail+video generation)
 #   --cover: generate AI thumbnails/covers in video mode (yt_image_gen + yt_cover_gen); input images always copied to thumbnails/ and covers/ regardless
@@ -218,9 +218,7 @@ if [ "$FROM_EXPORT" -eq 0 ]; then
   # 4. Metadata
   echo "→ Starting: yt_metadata.py"
   METADATA_LOG=$(mktemp)
-  METADATA_LANG_FLAG=""
-  [ -n "$USER_LANG" ] && METADATA_LANG_FLAG="--lang $USER_LANG"
-  uv run python scripts/yt_metadata.py $METADATA_LANG_FLAG \
+  uv run python scripts/yt_metadata.py --lang "$LANG" \
     --folder "$EFFECTIVE_FOLDER" \
     ${NAME:+--name "$NAME"} \
     --created-log "$METADATA_LOG" \

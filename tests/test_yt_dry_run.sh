@@ -179,7 +179,7 @@ assert_contains "root stub created" "$OUTPUT" "→ [DRY RUN] Stub created: input
 assert_contains "root audio ingest path" "$OUTPUT" "input/dummy.mp3 → output/audio/dummy.mp3"
 assert_contains "root transcript path" "$OUTPUT" "output/audio/dummy.mp3 → output/transcribed/dummy.md"
 assert_contains "root upload queues one video" "$OUTPUT" "1 video(s) queued for YouTube upload."
-assert_contains "root upload sees generated mp4" "$OUTPUT" "File:           output/video/2000-01-01 - [DRY_RUN] dummy.mp4"
+assert_contains "root upload title includes default speaker" "$OUTPUT" "Title:          [DRY_RUN] dummy | Bhikkhu Devamitta"
 assert_contains "root cleanup runs" "$OUTPUT" "→ [DRY RUN] Cleaning up stubs..."
 assert_file_absent "root input stub cleaned" input/dummy.mp3
 assert_not_contains "root dry-run review entry cleaned" "$(cat reviews/english_review.md 2>/dev/null || true)" "[DRY_RUN]"
@@ -190,9 +190,16 @@ assert_contains "folder stub created" "$OUTPUT" "→ [DRY RUN] Stub created: inp
 assert_contains "folder audio ingest path" "$OUTPUT" "input/english/dummy.mp3 → output/audio/english/dummy.mp3"
 assert_contains "folder transcript path" "$OUTPUT" "output/audio/english/dummy.mp3 → output/transcribed/english/dummy.md"
 assert_contains "folder upload sees generated mp4 dir" "$OUTPUT" "File:           output/video/english/2000-01-01 - [DRY_RUN]"
-assert_contains "folder upload sees generated mp4 name" "$OUTPUT" "dummy.mp4"
+assert_contains "folder upload title includes default speaker" "$OUTPUT" "Title:          [DRY_RUN] dummy | Bhikkhu Devamitta"
 assert_file_absent "folder input stub cleaned" input/english/dummy.mp3
 assert_not_contains "folder dry-run review entry cleaned" "$(cat reviews/english_review.md 2>/dev/null || true)" "[DRY_RUN]"
+
+run_test "russian default speaker"
+run_pipeline --lang ru --dry-run dummy.mp3
+assert_contains "russian folder stub created" "$OUTPUT" "→ [DRY RUN] Stub created: input/russian/dummy.mp3"
+assert_contains "russian upload title includes default speaker" "$OUTPUT" "Title:          [DRY_RUN] dummy | Бхиккху Дэвамитта"
+assert_file_absent "russian input stub cleaned" input/russian/dummy.mp3
+assert_not_contains "russian dry-run review entry cleaned" "$(cat reviews/russian_review.md 2>/dev/null || true)" "[DRY_RUN]"
 
 run_test "release privacy flag"
 run_pipeline --lang en --dry-run dummy.mp3
@@ -207,7 +214,7 @@ assert_contains "video ingest output path" "$OUTPUT" "→ video: output/video/en
 assert_not_contains "video mode skips audio video generation" "$OUTPUT" "→ Starting: yt_video.py"
 assert_not_contains "video mode skips thumbnail generation without cover" "$OUTPUT" "→ Starting: yt_image_gen.py"
 assert_contains "video upload sees source mp4 dir" "$OUTPUT" "File:           output/video/english/2000-01-01 - [DRY_RUN]"
-assert_contains "video upload sees source mp4 name" "$OUTPUT" "dummy.mp4"
+assert_contains "video upload sees source mp4 name" "$OUTPUT" "dummy - Bhikkhu Devamitta.mp4"
 assert_file_absent "video input stub cleaned" input/english/dummy.mp4
 
 run_test "video mode with cover"
@@ -215,7 +222,7 @@ run_pipeline --lang en --video-mode --cover --dry-run dummy.mp4
 assert_contains "video cover mode runs thumbnail generation" "$OUTPUT" "→ Starting: yt_image_gen.py"
 assert_contains "video cover mode runs cover generation" "$OUTPUT" "→ Starting: yt_cover_gen.py"
 assert_contains "video cover output dir" "$OUTPUT" "output/covers/english/2000-01-01 - [DRY_RUN]"
-assert_contains "video cover output name" "$OUTPUT" "dummy.jpg"
+assert_contains "video cover output name" "$OUTPUT" "dummy - Bhikkhu Devamitta.jpg"
 assert_not_contains "video cover mode still skips audio video generation" "$OUTPUT" "→ Starting: yt_video.py"
 
 run_test "image ingest cover dry-run"
@@ -230,21 +237,19 @@ assert_file_exists "image thumbnail stub exists" output/thumbnails/english/dummy
 assert_file_exists "image cover stub exists" output/covers/english/dummy.jpg
 rm -f temp/.dry_run_active temp/.dry_run_cleanup input/english/dummy.jpg
 
-run_test "from-export mode"
+run_test "from-export compatibility mode"
 mkdir -p output/audio/english output/transcribed/english
 > output/audio/english/dummy.mp3
 > output/transcribed/english/dummy.md
 create_review_fixture reviews/english_review.md dummy.md "[DRY_RUN] From Export Fixture" "02-01-2026"
 run_pipeline --lang en --from-export --dry-run
-assert_not_contains "from-export skips ingest" "$OUTPUT" "→ Starting: yt_ingest_unified.py"
-assert_not_contains "from-export skips transcribe" "$OUTPUT" "→ Starting: transcribe.py"
-assert_not_contains "from-export skips metadata" "$OUTPUT" "→ Starting: yt_metadata.py"
-assert_not_contains "from-export skips chapters" "$OUTPUT" "→ Starting: yt_chapters.py"
+assert_contains "from-export reports deprecation" "$OUTPUT" "→ --from-export is deprecated; running the resumable pipeline from the beginning."
+assert_contains "from-export runs ingest" "$OUTPUT" "→ Starting: yt_ingest_unified.py"
+assert_contains "from-export runs transcribe" "$OUTPUT" "→ Starting: transcribe.py"
+assert_contains "from-export runs metadata" "$OUTPUT" "→ Starting: yt_metadata.py"
+assert_contains "from-export runs chapters" "$OUTPUT" "→ Starting: yt_chapters.py"
 assert_contains "from-export runs export" "$OUTPUT" "→ Starting: yt_export.py"
 assert_contains "from-export runs upload" "$OUTPUT" "→ Starting: yt_upload.py"
-assert_contains "from-export upload filters generated mp4 dir" "$OUTPUT" "File:           output/video/english/2026-01-02 - [DRY_RUN]"
-assert_contains "from-export upload filters generated mp4 name" "$OUTPUT" "From Export Fixture.mp4"
-assert_contains "from-export reports selected playlists" "$OUTPUT" "Selected playlists: Meditation, Personal"
 assert_not_contains "from-export does not use folder as playlist" "$OUTPUT" "Playlist:       english"
 
 run_test "ariyadhammika video mode"

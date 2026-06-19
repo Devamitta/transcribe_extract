@@ -108,12 +108,10 @@ def test_process_files_does_not_fetch_playlists_when_all_sources_done(
 @pytest.mark.parametrize(
     "speaker_name",
     [
-        "Bhikkhu Devamitta",
-        "Бхиккху Дэвамитта",
         "Ariyadhammika Bhikkhu",
     ],
 )
-def test_process_files_does_not_append_no_suffix_speaker_names_to_suggested_title(
+def test_process_files_does_not_append_no_suffix_speaker_name_to_suggested_title(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     speaker_name: str,
@@ -144,6 +142,50 @@ def test_process_files_does_not_append_no_suffix_speaker_names_to_suggested_titl
     content = review.read_text(encoding="utf-8")
     assert "**Suggested Title:** Clear Seeing\n" in content
     assert f"Clear Seeing | {speaker_name}" not in content
+
+
+@pytest.mark.parametrize(
+    ("lang", "folder_name", "default_speaker"),
+    [
+        ("en", "english", "Bhikkhu Devamitta"),
+        ("ru", "russian", "Бхиккху Дэвамитта"),
+    ],
+)
+def test_main_appends_lang_default_speaker_to_suggested_title_when_name_omitted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    lang: str,
+    folder_name: str,
+    default_speaker: str,
+) -> None:
+    transcript_dir = tmp_path / "output" / "transcribed" / folder_name
+    transcript_dir.mkdir(parents=True)
+    (transcript_dir / "talk.md").write_text("Transcript body.", encoding="utf-8")
+    seen_speakers: list[str | None] = []
+
+    def fake_generate_metadata(
+        text: str,
+        lang: str,
+        speaker_name: str | None = None,
+        *,
+        simple_english_description: bool = False,
+    ) -> str:
+        seen_speakers.append(speaker_name)
+        return "TITLE: Clear Seeing\nDESCRIPTION: A clear description.\nTAGS: #dhamma"
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["yt_metadata.py", "--lang", lang])
+    monkeypatch.setattr(yt_metadata, "get_working_key", lambda: "key")
+    monkeypatch.setattr(yt_metadata, "get_playlist_overview", lambda lang, dry_run: "")
+    monkeypatch.setattr(yt_metadata, "load_nested_history", lambda path, lang: {})
+    monkeypatch.setattr(yt_metadata, "generate_metadata", fake_generate_metadata)
+
+    yt_metadata.main()
+
+    review = tmp_path / "reviews" / f"{folder_name}_review.md"
+    content = review.read_text(encoding="utf-8")
+    assert seen_speakers == [default_speaker]
+    assert f"**Suggested Title:** Clear Seeing | {default_speaker}\n" in content
 
 
 def test_process_files_appends_custom_speaker_name_to_suggested_title(
