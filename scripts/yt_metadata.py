@@ -64,6 +64,26 @@ def _speaker_title_suffix(
     return f" | {speaker_name}"
 
 
+ALWAYS_EXCLUDED_TAG_WORDS: frozenset[str] = frozenset(
+    {"bhikkhu", "bhikkhuni", "devamitta", "devamitto"}
+)
+
+
+def _strip_speaker_tags(tags: str, speaker_name: str | None) -> str:
+    """Remove tags matching the speaker's name or generic monastic titles."""
+    if not tags:
+        return tags
+    exclude = set(ALWAYS_EXCLUDED_TAG_WORDS)
+    if speaker_name:
+        exclude.update(word.lower() for word in speaker_name.split())
+    filtered = [
+        tag
+        for tag in tags.split()
+        if not any(word in tag.lstrip("#").lower() for word in exclude)
+    ]
+    return " ".join(filtered)
+
+
 def _date_from_stem(stem: str) -> str:
     """Extract DD-MM-YYYY from a stem starting with YYYY-MM-DD or DD-MM-YYYY."""
     m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", stem)
@@ -203,10 +223,12 @@ DESCRIPTION REQUIREMENTS:
 - СТРОГО ЗАПРЕЩЕНО: любые ссылки на учителя или говорящего в третьем лице («учитель сказал», «учитель объясняет», «говорящий отмечает», «он сказал», «монах объяснил» и подобное). Описание не должно упоминать, кто говорил.
 - СТРОГО ЗАПРЕЩЕНО: 1-е лицо («я», «мы», «мне», «моё»).
 - Пишите как описание содержания текста, а не как пересказ слов конкретного человека.
+- Используйте «собранность» вместо «концентрация» или «сосредоточение» в описании.
 {description_sentence_rules_text}
 - Do NOT use marketing language.
 - NEVER mention "личная история". Focus on the Dhamma point being illustrated.
 - NEVER reference the speaker directly. Keep descriptions impersonal and focused on the Dhamma.
+- Избегайте слова «контент» в названии или описании.
 - Do NOT include any hashtags in the description text. Tags go on the TAGS line only.
 - Output in Russian.
 
@@ -215,6 +237,7 @@ TAGS REQUIREMENTS:
 - Select 8–12 tags from the pool that best match THIS specific talk's content.
 - You may add up to 3 extra tags NOT in the pool ONLY if they name a very specific, unambiguous topic clearly present in this talk (e.g. a specific Pāli concept, a distinct practice method).
 - Output all tags on one line, space-separated, each starting with #.
+- НЕ используйте тег с именем говорящего (оно уже есть в названии).
 
 OUTPUT FORMAT:
 Respond with EXACTLY three lines. No extra text, no markdown, no explanations.
@@ -261,7 +284,9 @@ DESCRIPTION REQUIREMENTS:
 - AVOID self-important or formal openers such as: "This teaching explains...", "This lecture is dedicated to...", "This talk reveals...".
 - STRICTLY FORBIDDEN: any 3rd-person reference to the teacher or speaker ("the teacher said", "the teacher explains", "the speaker notes", "he said", "he explains", "the monk said", or any variant). The description must never say who spoke.
 - STRICTLY FORBIDDEN: 1st-person voice ("I", "we", "me", "my").
+- Avoid the word "content" in the title or description.
 - Write as if describing the content of a document, not narrating what a person said.
+- Prefer "composure" over "concentration" in descriptions.
 {description_sentence_rules_text}
 - Do NOT include any hashtags in the description text. Tags go on the TAGS line only.
 - Output in English.
@@ -271,6 +296,7 @@ TAGS REQUIREMENTS:
 - Select 8–12 tags from the pool that best match THIS specific talk's content.
 - You may add up to 3 extra tags NOT in the pool ONLY if they name a very specific, unambiguous topic clearly present in this talk (e.g. a specific Pāli concept, a distinct practice method).
 - Output all tags on one line, space-separated, each starting with #.
+- Do NOT include the speaker's name as a tag (it is already in the title).
 
 OUTPUT FORMAT:
 Respond with EXACTLY three lines. No extra text, no markdown, no explanations.
@@ -500,6 +526,7 @@ def process_files(
             tags = fields.tags
 
             tags = enrich_tags(tags, lang)
+            tags = _strip_speaker_tags(tags, speaker_name)
             if speaker_name and "ariyadhammika" in speaker_name.lower():
                 tag_set = {t.lstrip("#") for t in tags.split()}
                 for extra in ("SBS", "sasanarakkha"):

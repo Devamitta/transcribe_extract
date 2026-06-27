@@ -29,7 +29,6 @@ def test_text_output_models_are_normalized() -> None:
     \x1b[?25lFetching available models...
     • Gemini 3.5 Flash (Low) current
     • Gemini 3.1 Pro (Low)
-    • Claude Sonnet 4.6 (thinking)
     • GPT-OSS-120b (Medium)
     """
 
@@ -39,30 +38,28 @@ def test_text_output_models_are_normalized() -> None:
     assert [model.name for model in models] == [
         "Gemini 3.5 Flash (Low)",
         "Gemini 3.1 Pro (Low)",
-        "Claude Sonnet 4.6 (thinking)",
         "GPT-OSS-120b (Medium)",
     ]
     assert models[0].provider == "google"
     assert models[0].tier == "high"
     assert models[0].is_default is True
-    assert models[2].provider == "anthropic"
-    assert models[3].provider == "openai"
+    assert models[2].provider == "openai"
 
 
 def test_table_output_models_are_normalized() -> None:
     raw_output = """
     Name                          Provider     Status
     ----------------------------  --------     -------
-    * Gemini 3.1 Pro (High)       Google       default
-      Claude Opus 4.6 (thinking)  Anthropic    available
+    * Gemini 3.5 Flash (Low)       Google       default
+      GPT-OSS-120b (Medium)  openai    available
     """
 
     registry = normalize_registry(raw_output, _source())
 
     models = registry.display_models()
     assert [model.name for model in models] == [
-        "Gemini 3.1 Pro (High)",
-        "Claude Opus 4.6 (thinking)",
+        "Gemini 3.5 Flash (Low)",
+        "GPT-OSS-120b (Medium)",
     ]
     assert models[0].is_default is True
     assert models[1].tier == "thinking"
@@ -78,8 +75,7 @@ def test_json_output_models_are_normalized() -> None:
                     "provider": "google",
                     "tier": "high",
                     "isDefault": True,
-                },
-                "Claude Sonnet 4.6 (thinking)",
+                }
             ]
         }
     )
@@ -192,7 +188,7 @@ def test_probe_model_uses_print_command_with_model_and_timeout(
 
     result = probe_model(
         Path("/usr/local/bin/agy"),
-        "Gemini 3.1 Pro (High)",
+        "Gemini 3.5 Flash (Low)",
         timeout=60,
         log_file=Path("temp/agy-print.log"),
     )
@@ -204,7 +200,7 @@ def test_probe_model_uses_print_command_with_model_and_timeout(
         "--log-file",
         "temp/agy-print.log",
         "--model",
-        "Gemini 3.1 Pro (High)",
+        "Gemini 3.5 Flash (Low)",
         "--print-timeout",
         "60s",
         "--print",

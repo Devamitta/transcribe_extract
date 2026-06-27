@@ -46,7 +46,6 @@ SANGHA = [
 # 2. Dhamma, Sutta & Meditation
 DHAMMA = [
     "Dhamma",
-    "sutta",
     "nikāya",
     "āgama",
     "abhidhamma",
@@ -410,7 +409,6 @@ TAG_POOL_RU = [
     "#философия",
     "#психология",
     "#духовность",
-    "#монах",
     "#буддийскиймонах",
     "#монастырь",
     "#дляначинающих",
@@ -476,8 +474,6 @@ TAG_POOL_EN = [
     "#innerpeace",
     "#mindfulliving",
     "#calm",
-    "#bhikkhu",
-    "#devamitto",
 ]
 
 TAG_SYNC_GROUPS: list[dict[str, list[str]]] = [

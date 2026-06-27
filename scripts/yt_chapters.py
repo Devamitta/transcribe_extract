@@ -56,6 +56,7 @@ Rules:
 - Chapter names: Russian, 2–5 words, concise and descriptive of the actual content
 - Aim for 6–10 chapters for a 45–60 minute talk; fewer for shorter talks
 - Each chapter must span at least 2–3 minutes of content
+- Используйте «Собранность» вместо «Концентрация» или «Сосредоточение» в названиях глав
 
 Output format — one chapter per line, nothing else, no explanations, no markdown:
 [0.0] Название первой главы
@@ -76,6 +77,8 @@ Rules:
 - Chapter names: English, 2–5 words, concise and descriptive of the actual content
 - Aim for 6–10 chapters for a 45–60 minute talk; fewer for shorter talks
 - Each chapter must span at least 2–3 minutes of content
+- Prefer "Composure" over "Concentration" in chapter names
+- Use correct Pāli diacritics where possible (e.g. Satipatthana → Satipaṭṭhāna)
 
 Output format — one chapter per line, nothing else, no explanations, no markdown:
 [0.0] Name of the first chapter
