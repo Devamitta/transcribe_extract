@@ -83,6 +83,12 @@ def main():
         default=0,
         help="Limit to first N pending files (0 = no limit).",
     )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="mlx-community/whisper-large-v3-turbo",
+        help="MLX Whisper model repo to use for transcription (default: whisper-large-v3-turbo).",
+    )
     args = parser.parse_args()
 
     chunk_seconds = float(args.chunk_seconds)
@@ -178,7 +184,7 @@ def main():
         pr.bip()
         result: dict[str, Any] = mlx_whisper.transcribe(
             str(audio_path),
-            path_or_hf_repo="mlx-community/whisper-large-v3-turbo",
+            path_or_hf_repo=args.model,
             initial_prompt=prompt_context,
             condition_on_previous_text=False,
             compression_ratio_threshold=2.4,
