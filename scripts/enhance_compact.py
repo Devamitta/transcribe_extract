@@ -725,10 +725,14 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    hub_path = repo_root / ".claude" / "enhance-state.md"
-    archive_path = repo_root / ".claude" / "enhance-session-archive.md"
-    history_path = repo_root / ".claude" / "enhance-improvements-history.md"
-    cold_base_path = repo_root / ".claude" / "archive"
+    hub_path = repo_root / "kamma" / "enhance" / "enhance-state.md"
+    archive_path = (
+        repo_root / "kamma" / "enhance" / "data" / "enhance-session-archive.md"
+    )
+    history_path = (
+        repo_root / "kamma" / "enhance" / "data" / "enhance-improvements-history.md"
+    )
+    cold_base_path = repo_root / "kamma" / "enhance" / "archive"
 
     compact(
         hub_path,
