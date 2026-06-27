@@ -11,12 +11,6 @@
       "model": "deepseek-v4-flash",
       "delay": 0,
       "timeout": 60
-    },
-    {
-      "provider": "openrouter",
-      "model": "deepseek/deepseek-v4-flash",
-      "delay": 0,
-      "timeout": 30
     }
   ],
   "test_models": [
@@ -35,8 +29,8 @@
       "timeout": 150
     },
     {
-      "provider": "openrouter",
-      "model": "deepseek/deepseek-v4-pro",
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro",
       "delay": 0,
       "timeout": 60
     }
