@@ -1,7 +1,6 @@
 ---
 name: enhance
 description: Orchestrate execution, enhance control, and improvement prompting for the interview pipeline.
-trigger: /enhance
 ---
 
 # /enhance

@@ -1,7 +1,6 @@
 ---
 name: enhance-improve
 description: Cluster the active enhance backlog, design prompt/skill improvements, and archive processed notes.
-trigger: /enhance-improve
 ---
 
 # /enhance-improve

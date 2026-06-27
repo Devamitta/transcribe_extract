@@ -1,7 +1,6 @@
 ---
 name: enhance-semantic-fix
 description: Run semantic evaluation queue, classify findings, and apply Pali/Dhamma corrections.
-trigger: /enhance-semantic-fix
 ---
 
 # /enhance-semantic-fix

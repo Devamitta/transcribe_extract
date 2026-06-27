@@ -1,7 +1,6 @@
 ---
 name: enhance-prompt
 description: Improve pipeline prompts based on evaluation harness results.
-trigger: /enhance-prompt
 ---
 
 # /enhance-prompt
