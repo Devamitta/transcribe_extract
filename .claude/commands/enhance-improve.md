@@ -20,11 +20,11 @@ If the section is empty, report that there is no pending work and stop.
 ---
 
 ## 2. Cluster + Analyze
-1. **Cross-Skill Awareness (B2):** Before proposing changes, check `.claude/enhance-state.md`:
+1. **Cross-Skill Awareness:** Before proposing changes, check `.claude/enhance-state.md`:
    - Recent **Routing Handoffs** — has `/enhance-prompt` worked on these same 5 files recently?
    - Any unresolved entries in **Carried Patterns** that are still marked `(open, ...)`?
    - This prevents duplicate edits if `/enhance-prompt` is actively working on the same stage.
-2. **Clustering (opportunity for delegation, B10):** Cluster the backlog bullets into logical groups (e.g. over-compression, formatting issues, Pali terminology errors). This administrative grouping is a good candidate for delegation to a fast/simple sub-agent if the backlog is large — hand it the unprocessed bullets and ask it to cluster them by theme, returning a labeled list. **Use the Agent tool with `model: "haiku"` explicitly** (mechanical grouping does not need a strong model; omitting the override defaults to the strong model and is far more expensive). You then analyze and propose targeted changes for each cluster.
+2. **Clustering (delegation opportunity):** Cluster the backlog bullets into logical groups (e.g. over-compression, formatting issues, Pali terminology errors). This administrative grouping is a good candidate for delegation to a fast/simple sub-agent if the backlog is large — hand it the unprocessed bullets and ask it to cluster them by theme, returning a labeled list. **Use the Agent tool with `model: "haiku"` explicitly** (mechanical grouping does not need a strong model; omitting the override defaults to the strong model and is far more expensive). You then analyze and propose targeted changes for each cluster.
 3. For each cluster, propose a targeted, minimal change to the prompt or configuration data.
 4. **Allowed Files Only:** Your edits must be restricted to these 5 files:
    - `tools/pali.py`
@@ -68,7 +68,8 @@ Once approved, execute the changes:
    - [bullet 1]
    - [bullet 2]
    ```
-2. **Archiving (B9):** Remove the processed bullets from `.claude/enhance-state.md`'s **Active Backlog** section, replacing them with nothing (the section gets emptied). The durable record now lives in the history file.
+2. **Archiving:** Remove the processed bullets from `.claude/enhance-state.md`'s **Active Backlog** section, replacing them with nothing (the section gets emptied). The durable record now lives in the history file.
+3. **Maintenance Check:** Run `uv run python scripts/enhance_compact.py` (deterministic, idempotent, no LLM — enforces retention rules on history).
 
 ---
 

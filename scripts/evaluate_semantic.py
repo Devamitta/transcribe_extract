@@ -178,6 +178,8 @@ def main(argv: list[str] | None = None) -> int:
         if file_findings:
             for item in file_findings:
                 report_text += f"## Passage\n> {item.get('passage', '')}\n\n"
+                if item.get("context"):
+                    report_text += f"**Context:** {item.get('context', '')}\n\n"
                 report_text += f"**Issue:** {item.get('issue', '')}\n\n"
                 report_text += (
                     f"**Suggestion:** {item.get('suggestion', '')}\n\n---\n\n"

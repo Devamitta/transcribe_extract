@@ -18,7 +18,7 @@ uv run python scripts/evaluate_stages.py --stage {{stage}}
 
 ## 2. Identify Change
 Pick the lowest-scoring or regressed criterion from the latest `reports/eval/eval_*.md`.
-- **Cross-Skill Awareness (B2):** Before proposing a change, check `.claude/enhance-state.md` for:
+- **Cross-Skill Awareness:** Before proposing a change, check `.claude/enhance-state.md` for:
   - Recent entries in **Routing Handoffs** (has `/enhance-prompt` worked on this same stage recently?)
   - Unprocessed bullets in **Active Backlog** (are there related pending issues?)
   - This prevents duplicate or conflicting edits to the same 5 files if another skill is also editing them.
@@ -86,7 +86,7 @@ Update `.claude/enhance-state.md` with:
 - The session summary under **Session Ledger** → **### /enhance-prompt** (include: last_run timestamp, stage, criterion improved, whether any existing Carried Pattern was marked resolved).
 - Any new patterns or risks under **Carried Patterns** (with appropriate stage tags).
 - If this session fixed (and backfill in Step 6 confirmed) an existing Carried Pattern marked `(open, YYYY-MM-DD)`, change its marker to `(resolved, YYYY-MM-DD)` — this is what un-blocks `/enhance`'s batch processing for that stage. If the fix is still unverified or backfill found residual flagged files, leave it `(open, ...)`.
-- Run `wc -l .claude/enhance-state.md` and apply compaction if it exceeds 200 lines.
+- Run `uv run python scripts/enhance_compact.py` (deterministic, idempotent, no LLM — enforces retention rules).
 
 ## 8. Session Handoff
 `.claude/enhance-state.md` now reflects this session's outcome — patterns updated, Session Ledger written, backfill results recorded. Tell the user it's safe to start a **new session** before the next step — further `/enhance-prompt` work, or `/enhance` to resume batch processing.
