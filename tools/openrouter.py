@@ -1,7 +1,9 @@
 # OpenRouter API client for accessing various LLM models with rate limiting and retry logic.
 
+import base64
 import os
 import time
+from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
@@ -110,6 +112,85 @@ def generate_content(
         raise ValueError(f"OpenRouter API error: {resp.status_code} {resp.text}")
 
     return extract_content(resp.json(), "OpenRouter")
+
+
+def transcribe_audio_clip(
+    clip_path: Path,
+    garbled_text: str,
+    context_text: str,
+    glossary: str,
+    model: str = "google/gemini-2.5-flash",
+    fallback_model: str = "google/gemini-2.5-pro",
+) -> str:
+    """Re-transcribe just the garbled span within a short audio clip.
+
+    The clip is padded ±15s around the garbled span, so it contains surrounding
+    speech beyond the span itself. The model is told exactly which short
+    Whisper-garbled phrase to fix and must return only the corrected replacement
+    for that phrase, not a transcription of the whole clip. Falls back to
+    fallback_model once on error or an empty/low-confidence result from the
+    primary model.
+    """
+    audio_b64 = base64.b64encode(clip_path.read_bytes()).decode("utf-8")
+    system_instruction = (
+        "You are correcting a Whisper transcription error from a Buddhist Dhamma "
+        "talk or meditation interview. The attached audio clip is a ~30s window "
+        "padded around a short garbled phrase. Listen to the clip and find the "
+        "moment that produced the garbled phrase given below, then reply with "
+        "ONLY the corrected transcription of that short phrase (not the rest of "
+        "the clip, not commentary). Use the surrounding transcript and glossary "
+        "only to disambiguate Pali terms — do not invent words that are not "
+        "actually spoken. If you cannot confidently identify the corresponding "
+        "audio moment, reply with the original garbled phrase unchanged."
+    )
+    contents = [
+        {
+            "type": "text",
+            "text": (
+                f"Garbled phrase to fix: {garbled_text!r}\n\n"
+                f"Surrounding transcript context:\n{context_text}\n\n"
+                f"Pali glossary:\n{glossary}\n\n"
+                "Listen to the attached audio clip and return only the corrected "
+                "replacement for the garbled phrase."
+            ),
+        },
+        {
+            "type": "input_audio",
+            "input_audio": {"data": audio_b64, "format": "mp3"},
+        },
+    ]
+
+    def _call(use_model: str) -> str:
+        client.wait_for_rate_limit()
+        resp = post_chat_completion(
+            base_url=client.base_url,
+            api_key=client.api_key,
+            model=use_model,
+            system_instruction=system_instruction,
+            contents=contents,
+            max_output_tokens=1024,
+            temperature=0.1,
+            timeout=60,
+            extra_headers={
+                "HTTP-Referer": "https://localhost",
+                "X-Title": "Dhamma Extract",
+            },
+        )
+        if resp.status_code != 200:
+            raise ValueError(f"OpenRouter API error: {resp.status_code} {resp.text}")
+        return extract_content(resp.json(), "OpenRouter")
+
+    try:
+        result = _call(model)
+    except Exception as e:
+        print(f"  [{model}] failed ({e}), retrying with {fallback_model}", flush=True)
+        return _call(fallback_model)
+
+    if not result.strip():
+        print(f"  [{model}] empty result, retrying with {fallback_model}", flush=True)
+        return _call(fallback_model)
+
+    return result
 
 
 def list_models(free_only: bool = True) -> list[str]:

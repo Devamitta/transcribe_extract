@@ -28,7 +28,7 @@ def post_chat_completion(
     api_key: str,
     model: str,
     system_instruction: str,
-    contents: str,
+    contents: str | list[dict[str, Any]],
     max_output_tokens: int,
     temperature: float,
     timeout: int,
