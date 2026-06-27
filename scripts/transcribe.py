@@ -52,7 +52,7 @@ def main():
         "--context",
         type=str,
         choices=["sangha", "dhamma", "vinaya", "interview", "russian"],
-        default="interview",
+        default="dhamma",
         help="Select the Pali vocabulary context.",
     )
     parser.add_argument(

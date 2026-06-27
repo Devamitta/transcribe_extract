@@ -6,35 +6,30 @@ Converts raw audio (MP3, WAV, M4A, QTA, MOV, etc.) into Markdown transcripts usi
 
 ---
 
-## Shell Wrappers
+## Shell Wrapper
 
-### `transcribe.sh` — Dhamma/Saṅgha pipeline
-
-```bash
-./transcribe.sh [--context sangha|interview|dhamma]
-```
-
-- **Ingestion Phase:** Automatically converts non-MP3 files in `input/<context>/` to MP3 and moves them to `output/audio/<context>/`.
-- No `--context`: runs all three contexts in sequence.
-- Input: `input/<context>/` (raw) → `output/audio/<context>/` (MP3)
-- Output: `output/transcribed/<context>/` (Markdown)
-- After transcription, runs `scripts/verify_duration.py` to check for truncated transcripts.
-- Wraps output in a timestamped log at `log/transcribe_<timestamp>.log`.
-
-### `scripts/cl/transcribe-correct` — Unified CLI
+### `scripts/cl/transcribe` — Unified CLI
 
 ```bash
-./scripts/cl/transcribe-correct [folder_name]
+./scripts/cl/transcribe [folder_name|all] [--correct] [--context dhamma|sangha|interview|russian|vinaya]
+./scripts/cl/transcribe --help
 ```
 
-The primary entry point for manual transcription. It orchestrates the entire pipeline for a specific input folder.
-- If run without `folder_name`, lists available folders in `input/` and shows usage instructions.
+The single entry point for transcription. It orchestrates the pipeline for one input folder, all folders, loose files dropped directly in `input/`, or bypasses ingestion entirely for the YouTube pipeline.
+- If run without `folder_name`:
+    - If there are loose files directly in `input/` (not inside any subfolder), processes those: ingests to `output/audio/`, transcribes to `output/transcribed/` (context `dhamma`, unless overridden), and (with `--correct`) corrects to `output/corrected_pali/` — all at the root, not mirrored into a subfolder.
+    - Otherwise, lists available subfolders in `input/` and shows usage instructions.
+- `--help` prints a description and the available flags, then exits.
+- Every run is logged to a timestamped file at `log/transcribe_<timestamp>.log`.
 - If run with `folder_name` (e.g. `sangha`, `my-special-talks`):
-    1. **Context Mapping:** If the folder name matches a valid context (`sangha`, `dhamma`, `vinaya`, `interview`, `russian`), it uses that context. Otherwise, it defaults to the `dhamma` context.
+    1. **Context Mapping:** If the folder name matches a valid context (`sangha`, `dhamma`, `vinaya`, `interview`, `russian`), it uses that context. Otherwise, it defaults to the `dhamma` context. Pass `--context <ctx>` to override this regardless of folder name — e.g. `transcribe interview --context russian` ingests/transcribes `input/interview/` but passes `--context russian` to `scripts/transcribe.py`.
     2. **Phase 1: Ingestion.** Runs `scripts/audio_ingest.py`. Converts non-MP3 files in `input/<folder>/` to MP3 and moves them to `output/audio/<folder>/`.
-    3. **Phase 2: Transcription.** Runs `scripts/transcribe.py` directly with the detected context.
+    3. **Phase 2: Transcription.** Runs `scripts/transcribe.py` directly with the detected (or overridden) context. Prints the output directory and resulting filenames when done.
     4. **Phase 2.5: Verification.** Runs `scripts/verify_duration.py` to ensure transcripts aren't truncated.
-    5. **Phase 3: Pali Correction.** Runs `scripts/correct_pali.py` (Pāli post-correction).
+    5. **Phase 3: Pali Correction (opt-in).** Only runs if `--correct` is passed. Runs `scripts/correct_pali.py` (Pāli post-correction) and prints the output directory and resulting filenames when done. Without `--correct`, the script exits after Phase 2.5.
+- If run with `folder_name` set to `all`: runs the full pipeline above in sequence for every loose file directly in `input/` (if any) and every sub-folder currently present in `input/`, stopping on the first failure. `--context`, if passed, overrides the context for every folder in the batch.
+
+`--lang` is not a flag of this wrapper — it's only relevant to the YouTube pipeline (`yt_run.sh`), which calls `scripts/transcribe.py --lang ...` directly.
 
 ---
 
@@ -78,7 +73,7 @@ uv run python scripts/transcribe.py [options]
 | `--limit <n>` | `0` (no limit) | Cap processing to the first N pending files. |
 | `--test-run` | off | Transcribe only the first file found. |
 | `--dry-run` | off | Print what would be transcribed; create output stubs for pipeline propagation. |
-| `--created-log <path>` | — | File path where created transcript paths are appended (one per line). Used internally by `transcribe.sh`. |
+| `--created-log <path>` | — | File path where created transcript paths are appended (one per line). Used internally by `scripts/cl/transcribe`. |
 
 ### Pali vocabulary contexts
 
@@ -109,4 +104,4 @@ Between files, the script sleeps for `max(10s, min(180s, elapsed × 0.30))` to l
 
 ## Duration verification
 
-After each `transcribe.sh` run, `scripts/verify_duration.py` compares transcript length against the source audio to detect truncated outputs. Warnings are printed but do not abort the pipeline.
+After each `scripts/cl/transcribe` run, `scripts/verify_duration.py` compares transcript length against the source audio to detect truncated outputs. Warnings are printed but do not abort the pipeline.

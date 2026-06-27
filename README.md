@@ -30,12 +30,10 @@ uv sync
 Drop audio files (MP3, WAV, M4A, QTA, etc.) into `input/sangha/` (or any other subfolder in `input/`) and run:
 
 ```bash
-./scripts/cl/transcribe-correct sangha
+./scripts/cl/transcribe sangha
 ```
 
-If run without a folder name, it will list available folders and provide instructions.
-
-Output: `output/corrected_pali/sangha/`
+Output: `output/transcribed/sangha/`. Pass `--correct` to also run Pali correction, writing to `output/corrected_pali/sangha/`.
 
 Full reference: [docs/transcription.md](docs/transcription.md)
 

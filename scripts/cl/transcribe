@@ -1,0 +1,304 @@
+#!/usr/bin/env bash
+# Unified transcription entry point (Ingest -> Transcribe -> [optional] Pali Correct).
+# Usage: transcribe [folder_name|all] [--correct] [--context <ctx>] [extra_args...]
+
+print_help() {
+    cat <<'EOF'
+transcribe - Ingest, transcribe, and (optionally) Pali-correct audio in input/<folder>.
+
+Usage:
+  transcribe [folder_name|all] [flags...]
+
+Phases:
+  1. Ingest     - convert input/<folder> audio to MP3 in output/audio/<folder>
+  2. Transcribe - generate Markdown transcripts in output/transcribed/<folder>
+  3. Correct    - (only with --correct) Pali-correct transcripts into output/corrected_pali/<folder>
+
+Modes:
+  transcribe            With no arguments: if input/ has loose files directly in it (no
+                        subfolder), processes those. Otherwise lists available subfolders.
+  transcribe <folder>   Run phases 1-2 (and 3 with --correct) for input/<folder>.
+  transcribe all        Run phases 1-2 (and 3 with --correct) for every loose file and every
+                        sub-folder currently in input/, in sequence.
+
+Flags:
+  --correct    Also run Phase 3 (Pali correction) after transcribing.
+  --context <ctx>
+               Pali vocabulary context: dhamma|sangha|interview|russian|vinaya. Overrides the
+               context normally inferred from the folder name (default: dhamma).
+  --dry-run    Forwarded to ingest/transcribe; skips destructive file moves and API calls.
+  --help       Show this help and exit.
+
+Any other flags are forwarded as-is to scripts/audio_ingest.py, scripts/transcribe.py,
+and (with --correct) scripts/correct_pali.py.
+
+Every run is logged to log/transcribe_<timestamp>.log.
+EOF
+}
+
+for arg in "$@"; do
+    if [ "$arg" = "--help" ] || [ "$arg" = "-h" ]; then
+        print_help
+        exit 0
+    fi
+done
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$PROJECT_ROOT" || exit 1
+
+mkdir -p log
+LOG_FILE="log/transcribe_$(date +%Y%m%d_%H%M%S).log"
+exec > >(tee -a "$LOG_FILE") 2>&1
+
+FOLDER=""
+if [ "$#" -gt 0 ]; then
+    case "$1" in
+        -*) ;;
+        *) FOLDER="$1"; shift ;;
+    esac
+fi
+
+VALID_CONTEXTS=(sangha dhamma vinaya interview russian)
+
+DRY_RUN=0
+CORRECT=0
+CONTEXT_OVERRIDE=""
+ARGS=()
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --dry-run)
+            DRY_RUN=1
+            ARGS+=("$1")
+            ;;
+        --correct)
+            CORRECT=1
+            ;;
+        --context)
+            CONTEXT_OVERRIDE="$2"
+            shift
+            ;;
+        *)
+            ARGS+=("$1")
+            ;;
+    esac
+    shift
+done
+set -- "${ARGS[@]}"
+
+# If no folder is provided, prefer loose files dropped directly in input/ (no subfolder).
+# Otherwise list available subfolders and ask the user.
+ROOT_MODE=0
+if [ -z "$FOLDER" ]; then
+    ROOT_FILES=($(find input -maxdepth 1 -type f -not -name '.*'))
+    if [ ${#ROOT_FILES[@]} -gt 0 ]; then
+        ROOT_MODE=1
+    fi
+fi
+
+if [ -z "$FOLDER" ] && [ "$ROOT_MODE" -eq 0 ]; then
+    FOLDERS=($(find input -maxdepth 1 -type d -not -path 'input' -not -name '.*' -not -name 'temp' -exec basename {} \; | sort))
+
+    if [ ${#FOLDERS[@]} -eq 0 ]; then
+        echo "No files in 'input/' and no sub-folders found."
+        echo "Drop files directly in 'input/' or put them in one of the sub-folders (or create a new one)."
+        exit 1
+    fi
+
+    echo "No loose files in input/ and no folder specified. Available folders in input/:"
+    for i in "${!FOLDERS[@]}"; do
+        echo "  - ${FOLDERS[$i]}"
+    done
+
+    echo ""
+    echo "Please put input files in one of the sub-folders (or create a new one) in the 'input/' folder,"
+    echo "then run again with the folder name, e.g.:"
+    echo "  transcribe ${FOLDERS[0]}"
+    echo ""
+    echo "Or run 'transcribe all' to batch every loose file and sub-folder in input/."
+    exit 0
+fi
+
+run_folder() {
+    local folder="$1"
+    shift
+
+    local context_tag="dhamma"
+    for v in "${VALID_CONTEXTS[@]}"; do
+        if [ "$folder" = "$v" ]; then
+            context_tag="$v"
+            break
+        fi
+    done
+    if [ -n "$CONTEXT_OVERRIDE" ]; then
+        context_tag="$CONTEXT_OVERRIDE"
+    fi
+
+    echo ">>> Phase 1: Ingesting audio for '$folder' <<<"
+    uv run python scripts/audio_ingest.py --folder "$folder" "$@"
+    local exit_code=$?
+    if [ $exit_code -ne 0 ]; then
+        echo "Ingest failed with exit code $exit_code"
+        return $exit_code
+    fi
+
+    echo ""
+    echo ">>> Phase 2: Transcribing '$folder' (Context: $context_tag) <<<"
+    local transcribe_log
+    transcribe_log=$(mktemp)
+    if ! caffeinate -i uv run python scripts/transcribe.py \
+        --input-dir "output/audio/$folder" \
+        --output-dir "output/transcribed/$folder" \
+        --context "$context_tag" \
+        --created-log "$transcribe_log" \
+        "$@"; then
+        echo "Transcription failed."
+        rm -f "$transcribe_log"
+        return 1
+    fi
+
+    echo ""
+    echo ">>> Phase 2.5: Verifying Transcription Completeness <<<"
+    if ! uv run python scripts/verify_duration.py \
+        --audio-dir "output/audio/$folder" \
+        --created-log "$transcribe_log"; then
+        echo "Warning: Some transcripts may be truncated. Check the report above."
+    fi
+    rm -f "$transcribe_log"
+
+    echo ""
+    echo "Transcripts written to: output/transcribed/$folder"
+    ls -1 "output/transcribed/$folder" 2>/dev/null
+
+    if [ "$CORRECT" -eq 0 ]; then
+        echo ""
+        echo "Skipping Pali correction (pass --correct to run it)."
+        return 0
+    fi
+
+    echo ""
+    echo ">>> Phase 3: Correcting Pāli for '$folder' <<<"
+    uv run python scripts/correct_pali.py --folder "$folder" "$@"
+    exit_code=$?
+
+    echo ""
+    echo "Corrected transcripts written to: output/corrected_pali/$folder"
+    ls -1 "output/corrected_pali/$folder" 2>/dev/null
+
+    return $exit_code
+}
+
+run_root() {
+    local context_tag="dhamma"
+    if [ -n "$CONTEXT_OVERRIDE" ]; then
+        context_tag="$CONTEXT_OVERRIDE"
+    fi
+
+    echo ">>> Phase 1: Ingesting audio from 'input/' (root) <<<"
+    uv run python scripts/audio_ingest.py --folder "" "$@"
+    local exit_code=$?
+    if [ $exit_code -ne 0 ]; then
+        echo "Ingest failed with exit code $exit_code"
+        return $exit_code
+    fi
+
+    echo ""
+    echo ">>> Phase 2: Transcribing 'input/' (root, Context: $context_tag) <<<"
+    local transcribe_log
+    transcribe_log=$(mktemp)
+    if ! caffeinate -i uv run python scripts/transcribe.py \
+        --input-dir "output/audio" \
+        --output-dir "output/transcribed" \
+        --context "$context_tag" \
+        --created-log "$transcribe_log" \
+        "$@"; then
+        echo "Transcription failed."
+        rm -f "$transcribe_log"
+        return 1
+    fi
+
+    echo ""
+    echo ">>> Phase 2.5: Verifying Transcription Completeness <<<"
+    if ! uv run python scripts/verify_duration.py \
+        --audio-dir "output/audio" \
+        --created-log "$transcribe_log"; then
+        echo "Warning: Some transcripts may be truncated. Check the report above."
+    fi
+    rm -f "$transcribe_log"
+
+    echo ""
+    echo "Transcripts written to: output/transcribed/"
+    find output/transcribed -maxdepth 1 -type f -name '*.md' -exec basename {} \; 2>/dev/null | sort
+
+    if [ "$CORRECT" -eq 0 ]; then
+        echo ""
+        echo "Skipping Pali correction (pass --correct to run it)."
+        return 0
+    fi
+
+    echo ""
+    echo ">>> Phase 3: Correcting Pāli for 'input/' (root) <<<"
+    local f
+    local rc=0
+    for f in output/transcribed/*.md; do
+        [ -f "$f" ] || continue
+        uv run python scripts/correct_pali.py "$f" "$@" || rc=1
+    done
+
+    echo ""
+    echo "Corrected transcripts written to: output/corrected_pali/"
+    find output/corrected_pali -maxdepth 1 -type f -name '*.md' -exec basename {} \; 2>/dev/null | sort
+
+    return $rc
+}
+
+if [ "$FOLDER" = "all" ]; then
+    ALL_BATCH_FOLDERS=($(find input -maxdepth 1 -type d -not -path 'input' -not -name '.*' -not -name 'temp' -exec basename {} \; | sort))
+    ALL_BATCH_ROOT_FILES=($(find input -maxdepth 1 -type f -not -name '.*'))
+
+    if [ ${#ALL_BATCH_FOLDERS[@]} -eq 0 ] && [ ${#ALL_BATCH_ROOT_FILES[@]} -eq 0 ]; then
+        echo "Nothing to process: 'input/' has no loose files and no sub-folders."
+        exit 1
+    fi
+fi
+
+if [ "$DRY_RUN" -eq 0 ]; then
+    if [ "$ROOT_MODE" -eq 1 ]; then
+        printf "⚠ Files in input/ will be converted to MP3, moved to output/audio/, and the originals removed. Copy anything you want to keep first. Press Enter to continue, or n to abort. "
+    elif [ "$FOLDER" = "all" ]; then
+        printf "⚠ Files in input/ (%s) will be converted to MP3, moved to output/audio/, and the originals removed. Copy anything you want to keep first. Press Enter to continue, or n to abort. " \
+            "$( { [ ${#ALL_BATCH_ROOT_FILES[@]} -gt 0 ] && echo "loose root files"; printf '%s\n' "${ALL_BATCH_FOLDERS[@]}"; } | paste -sd ',' - )"
+    else
+        printf "⚠ Files in input/%s/ will be converted to MP3, moved to output/audio/, and the originals removed. Copy anything you want to keep first. Press Enter to continue, or n to abort. " "$FOLDER"
+    fi
+    read -r _mm
+    if [ "$_mm" = "n" ] || [ "$_mm" = "N" ]; then
+        echo "Aborted."
+        exit 1
+    fi
+fi
+
+if [ "$ROOT_MODE" -eq 1 ]; then
+    run_root "$@"
+    exit $?
+fi
+
+if [ "$FOLDER" = "all" ]; then
+    echo ">>> Starting Batch Transcription Pipeline <<<"
+    if [ ${#ALL_BATCH_ROOT_FILES[@]} -gt 0 ]; then
+        echo ""
+        run_root "$@" || { echo "Root-level transcription failed. Stopping batch."; exit 1; }
+    fi
+    for folder in "${ALL_BATCH_FOLDERS[@]}"; do
+        echo ""
+        run_folder "$folder" "$@" || { echo "${folder} transcription failed. Stopping batch."; exit 1; }
+    done
+    echo ""
+    echo "=========================================="
+    echo "  Batch Transcription Pipeline Complete.  "
+    echo "=========================================="
+    exit 0
+fi
+
+run_folder "$FOLDER" "$@"
+exit $?
