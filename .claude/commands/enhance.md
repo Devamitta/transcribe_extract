@@ -100,7 +100,7 @@ Locate the generated batch report: `reports/batch/batch_<stage>_<folder>_<ts>.md
    - Judge's reason
 4. Present an **Approve / Skip / Defer** gate for each flagged item to let the user decide whether to accept the output anyway, skip it, or defer it for correction.
 
-**Delegation Opportunity (B10):** Reading many flagged items' passages is mechanical work (line-range lookups, summarizing found passages). If the batch is large, you may delegate this read-only lookup work to a fast/simple sub-agent (via the Agent tool) — hand it the batch report and source folder path, ask it to fetch the specific line ranges for each flagged item and return the passages. You then present the findings to the user. This keeps the main session focused on judgment calls while delegating retrieval work, respecting the Context Discipline Rule (no raw transcripts in the main context, only focused excerpts).
+**Delegation Opportunity (B10):** Reading many flagged items' passages is mechanical work (line-range lookups, summarizing found passages). If the batch is large, you may delegate this read-only lookup work to a fast/simple sub-agent — hand it the batch report and source folder path, ask it to fetch the specific line ranges for each flagged item and return the passages. **Use the Agent tool with `model: "haiku"` explicitly** (line-range lookups do not need a strong model; omitting the override defaults to the strong model and is far more expensive). You then present the findings to the user. This keeps the main session focused on judgment calls while delegating retrieval work, respecting the Context Discipline Rule (no raw transcripts in the main context, only focused excerpts).
 
 ---
 
