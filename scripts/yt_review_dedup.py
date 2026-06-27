@@ -12,7 +12,7 @@ from tools.lang import LANG_TO_FOLDER
 from tools.printer import printer as pr
 
 YT_HISTORY_PATH = Path("output/youtube_history.json")
-TITLE_SIMILARITY_THRESHOLD = 0.95
+TITLE_SIMILARITY_THRESHOLD = 0.97
 
 
 def title_similarity(t1: str, t2: str) -> float:
