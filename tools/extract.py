@@ -14,9 +14,10 @@ GROUND RULES:
 
 WORKING METHOD FOR EVERY PASSAGE:
 1. Check whether it contains Dhamma-Vinaya teaching value on its own, OR sets up/illustrates a teaching point explained nearby (before or after) in the transcript — a concrete anecdote that an abstract explanation builds on has teaching value even if the anecdote alone reads like personal/relationship chatter.
-2. If yes, remove or generalize any identifying details inside it.
-3. Keep the remaining teaching content — including follow-up questions, elaborations, and the speaker's full explanation.
-4. If nothing meaningful remains after de-identification, remove the passage.
+2. When a teaching point is followed by several short anecdotes in a row that each illustrate it (e.g., multiple examples of how different people reacted to correction or feedback), keep all of them, not just the first — do not drop the rest as repetitive personal chatter.
+3. If yes, remove or generalize any identifying details inside it.
+4. Keep the remaining teaching content — including follow-up questions, elaborations, and the speaker's full explanation.
+5. If nothing meaningful remains after de-identification, remove the passage.
 
 CATEGORIES — DECIDE FOR EACH PIECE:
 
@@ -38,6 +39,7 @@ Keep the teaching value; remove or generalize identifiers:
 - Practice examples involving specific teachers, monasteries, students, or communities
 - Biographical context only when it is needed to make the teaching point understandable
 - A concrete anecdote that triggers or illustrates a teaching point explained nearby, even if the anecdote alone reads like trust/relationship/personnel chatter
+- An anecdote about how someone responded to correction, instruction, or feedback — whether they accepted it, resisted it, or pushed back — illustrates training/samaṇa-saññā even when the surface subject (a food preference, a gardening style, a daily routine) sounds mundane
 
 De-identify by:
 - Removing names of monks, teachers, students, laypeople

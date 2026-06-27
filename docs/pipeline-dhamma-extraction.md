@@ -7,7 +7,7 @@ This pipeline turns raw transcripts into a polished, tag-grouped Dhamma database
 3. Extract public-safe Dhamma teaching sections
 4. Polish extracted prose
 5. Write a privacy scan report
-6. Consolidate tagged sections into `master_dhamma_database.md`
+6. Consolidate tagged sections into `output/master_dhamma_database.md`
 
 ## Wrapper
 
@@ -102,10 +102,10 @@ The scan is report-only by default and exits `0` even when hits are found. `--fi
 
 ```bash
 uv run python scripts/consolidate.py
-uv run python scripts/consolidate.py --polished-dir output/polished --extracted-dir output/extracted --output master_dhamma_database.md
+uv run python scripts/consolidate.py --polished-dir output/polished --extracted-dir output/extracted --output output/master_dhamma_database.md
 ```
 
-Consolidation prefers `output/polished/<relative-path>` and falls back to `output/extracted/<relative-path>`. It recursively scans nested folders, parses `## [topic-tag]` headers, and writes `master_dhamma_database.md` grouped by tag with source attribution for every section. Untagged content is grouped under `## Untagged Sources`.
+Consolidation prefers `output/polished/<relative-path>` and falls back to `output/extracted/<relative-path>`. It recursively scans nested folders, parses `## [topic-tag]` headers, and writes `output/master_dhamma_database.md` grouped by tag with source attribution for every section. Untagged content is grouped under `## Untagged Sources`.
 
 ## Enhance Control
 

@@ -133,7 +133,7 @@ if [ "$PARTIAL" -eq 1 ]; then
 else
   echo "  Pipeline completed successfully.        "
 fi
-echo "  Review 'master_dhamma_database.md'      "
+echo "  Review 'output/master_dhamma_database.md'"
 echo "=========================================="
 }
 

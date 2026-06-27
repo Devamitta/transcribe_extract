@@ -13,6 +13,7 @@ from tools.pali import (
     apply_overrides,
     chunk_text_no_overlap,
     get_pali_system_instruction,
+    is_denied_correction,
 )
 from tools.provider import (
     TEST_MODE,
@@ -124,9 +125,15 @@ def parse_correction_pairs(response: str) -> list[CorrectionPair]:
             continue
         if "original" not in item or "corrected" not in item:
             continue
+        original = str(item["original"])
+        if is_denied_correction(original):
+            pr.amber(
+                f"  Skipped denied correction: '{original}' -> '{item['corrected']}'"
+            )
+            continue
         pairs.append(
             CorrectionPair(
-                original=str(item["original"]),
+                original=original,
                 corrected=str(item["corrected"]),
             )
         )

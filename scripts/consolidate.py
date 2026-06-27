@@ -61,7 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("master_dhamma_database.md"),
+        default=Path("output/master_dhamma_database.md"),
         help="Master database path to write",
     )
     return parser
@@ -85,7 +85,7 @@ def main(argv: list[str] | None = None) -> int:
 def consolidate(
     polished_dir: Path = Path("output/polished"),
     extracted_dir: Path = Path("output/extracted"),
-    output_path: Path = Path("master_dhamma_database.md"),
+    output_path: Path = Path("output/master_dhamma_database.md"),
 ) -> ConsolidationResult:
     sources = build_source_map(polished_dir=polished_dir, extracted_dir=extracted_dir)
     tagged_by_tag: dict[str, list[TaggedSection]] = {}
