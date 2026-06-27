@@ -9,9 +9,11 @@ from tools.eval_judge import (
     EXTRACT_CRITERIA,
     POLISH_CRITERIA,
     append_history,
+    build_judge_prompt,
     check_extract_word_ratio,
     check_polish_word_tolerance,
     detect_regression,
+    get_stage_config,
     load_history,
     parse_judge_response,
     prompt_hash,
@@ -140,3 +142,58 @@ def test_polish_criteria_match_expected_registry_shape() -> None:
         "readability",
         "structure_preservation",
     ]
+
+
+def test_build_judge_prompt_places_candidate_before_source() -> None:
+    """Regression test for the false 'empty candidate' bug.
+
+    Direct reproduction confirmed the antigravity-cli judge path silently
+    drops prompt content past roughly 65-78k characters. A large source with
+    a substantial real candidate was judged as having no candidate at all
+    when candidate followed source; reordering so candidate comes first fixed
+    it, since the candidate is normally much smaller than the source.
+    """
+
+    config = get_stage_config("extract")
+    large_source = "word " * 20000  # far larger than any real candidate
+    substantial_candidate = "## [topic]\nA real, non-trivial candidate body.\n"
+
+    prompt = build_judge_prompt(config, large_source, substantial_candidate)
+
+    assert prompt.index("CANDIDATE OUTPUT:") < prompt.index("SOURCE EXCERPT:")
+    assert substantial_candidate in prompt
+
+
+def test_parse_judge_response_tolerates_readability_typo() -> None:
+    """Regression test for the 'Missing criterion object: readability' bug.
+
+    Direct reproduction on the golden polish excerpts showed the judge model
+    intermittently misspells the key as 'readibility' while the rest of the
+    JSON shape (score/reason) stays intact. Parsing must tolerate this typo
+    rather than discard the whole response as malformed.
+    """
+
+    payload = {
+        "content_fidelity": {"score": 5, "reason": "preserved"},
+        "readibility": {"score": 4, "reason": "improved"},
+        "structure_preservation": {"score": 5, "reason": "preserved"},
+    }
+
+    result = parse_judge_response(json.dumps(payload), POLISH_CRITERIA)
+
+    assert result.ok
+    assert result.error is None
+    assert result.scores["readability"].score == 4
+    assert result.scores["readability"].reason == "improved"
+
+
+def test_parse_judge_response_still_fails_when_key_truly_absent() -> None:
+    payload = {
+        "content_fidelity": {"score": 5, "reason": "preserved"},
+        "structure_preservation": {"score": 5, "reason": "preserved"},
+    }
+
+    result = parse_judge_response(json.dumps(payload), POLISH_CRITERIA)
+
+    assert not result.ok
+    assert result.error == "Missing criterion object: readability"

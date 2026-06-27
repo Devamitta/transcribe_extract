@@ -93,3 +93,5 @@ uv run python temp/apply_semantic_fixes.py
 
 ## 7. Session Handoff
 `.claude/enhance-state.md` and `.claude/semantic-ledger.json` are updated. Tell the user it's safe to start a **new session** before resuming `/enhance` or running `/enhance-semantic-fix` again for the next batch.
+
+**Commit-after-session rule:** If this session produced a substantial improvement (a resolved pattern, a judge fix, a backfill, a cleared semantic batch, an applied prompt change), prepare and make a descriptive commit before handoff. Trivial/no-op sessions (gate-blocked, investigation-only, state-ledger-writes-only) do NOT commit. End commit messages with the standard `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>` line.

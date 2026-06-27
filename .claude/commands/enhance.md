@@ -28,9 +28,13 @@ echo "Polished files:"       && ls output/polished/interview/*.md 2>/dev/null | 
 echo "Latest batch reports:" && ls -t reports/batch/ 2>/dev/null | head -5
 ```
 
-Report the counts to the user in plain terms. Check if there are unreviewed reports in `reports/semantic/` by comparing mtime against `.claude/semantic-ledger.json`. If so, recommend routing to `/enhance-semantic-fix` first before proceeding.
+Report the counts to the user in plain terms.
 
-**Open systemic issue check (mandatory):** Read `.claude/enhance-state.md`'s Carried Patterns for any entry marked `(open, YYYY-MM-DD)`. If one exists for a stage (extract/polish), that stage's prompt is known-broken — do NOT run Action A/B/C batch processing for that stage; it would only produce more flagged output. Report the open pattern to the user and route directly to `/enhance-prompt` instead. Once `/enhance-prompt` resolves it, the pattern is marked resolved/removed there and this check clears on the next `/enhance` run.
+**Unreviewed semantic backlog check (first-class priority, mandatory):** Compute the unreviewed count = (number of report files on disk in `reports/semantic/interview/`) − (number of entries in `.claude/semantic-ledger.json`'s `processed_files`). Report this exact number to the user. If the count is **greater than 0**, recommend the user run `/enhance-semantic-fix` BEFORE any Action A/B/C batch work below — the semantic backlog takes priority over fresh batch processing.
+
+**Open systemic issue check (mandatory):** Read `.claude/enhance-state.md`'s Carried Patterns for any entry marked `(open, YYYY-MM-DD)`.
+- Entries tagged `[stage: extract|polish|pali]` mean that stage's generation prompt is known-broken — do NOT run Action A/B/C batch processing for that stage; it would only produce more flagged output. Report the open pattern to the user and route directly to `/enhance-prompt` instead. Once `/enhance-prompt` resolves it, the pattern is marked resolved/removed there and this check clears on the next `/enhance` run.
+- Entries tagged `[engineering, …]` (judge/harness reliability defects, e.g. bugs in `tools/eval_judge.py`) are NOT generation-prompt defects and must NOT block Action A/B/C batch processing for any stage. Report the open engineering pattern to the user and note that a dedicated engineering session (with `tools/eval_judge.py` in scope) is needed to resolve it — do not route this to `/enhance-prompt`, whose allowed-files scope cannot fix it.
 
 **Diagnostic-vs-Gate Distinction (B1):** When a user excludes "agent evaluation" from their request, don't drop diagnostic-only scripts like `evaluate_batch.py` — it can be run purely to read ratio/score numbers without routing to `/enhance-prompt` or `/enhance-semantic-fix` (judge-as-diagnostic, distinct from judge-as-gate). If the user says "no evaluation", clarify: are they skipping batch QC entirely, or skipping *only* the approval/routing gate (keeping diagnostic runs for numbers)?
 
@@ -121,3 +125,5 @@ Give a summary verdict of the batch:
 
 ## 6. Session Handoff
 All required state for this run is now on disk in `.claude/enhance-state.md` (Session Ledger, Carried Patterns, Active Backlog, and Routing Handoffs). Tell the user it is safe, and recommended, to start a **new session** before invoking the next skill (`/enhance-prompt`, `/enhance-semantic-fix`, `/enhance-improve`, or `/enhance` again). A fresh session carries no accumulated context overhead; the persisted state is sufficient to resume without it.
+
+**Commit-after-session rule:** If this session produced a substantial improvement (a resolved pattern, a judge fix, a backfill, a cleared semantic batch, an applied prompt change), prepare and make a descriptive commit before handoff. Trivial/no-op sessions (gate-blocked, investigation-only, state-ledger-writes-only) do NOT commit. End commit messages with the standard `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>` line.

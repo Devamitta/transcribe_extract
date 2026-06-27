@@ -24,6 +24,7 @@ Pick the lowest-scoring or regressed criterion from the latest `reports/eval/eva
   - This prevents duplicate or conflicting edits to the same 5 files if another skill is also editing them.
 - Read carried patterns from `.claude/enhance-state.md`'s **Carried Patterns** section, filtered by `[stage: extract|polish|pali]` tags (e.g., "Headline extraction risk").
 - Propose ONE targeted change to address the issue.
+- **Qualifier gate (hard precondition — do not propose an edit unless this is met):** a defect earns a prompt edit only if it EITHER appears in a production `reports/batch/…` report OR reproduces in ≥3 of 4 direct-generation trials (judge bypassed). A single golden-set finding or a single judge pass is explicitly insufficient — the ledger has re-learned this lesson at least 3 times (Sessions 11, 13, 15) from non-deterministic judge/model behavior that looked like a real defect but wasn't. If a finding doesn't meet either bar, do not propose a change; log it for further direct-repro testing or drop it as noise.
 
 ### Allowed Files Only
 Changes are restricted to these 5 files:
@@ -89,3 +90,5 @@ Update `.claude/enhance-state.md` with:
 
 ## 8. Session Handoff
 `.claude/enhance-state.md` now reflects this session's outcome — patterns updated, Session Ledger written, backfill results recorded. Tell the user it's safe to start a **new session** before the next step — further `/enhance-prompt` work, or `/enhance` to resume batch processing.
+
+**Commit-after-session rule:** If this session produced a substantial improvement (a resolved pattern, a judge fix, a backfill, a cleared semantic batch, an applied prompt change), prepare and make a descriptive commit before handoff. Trivial/no-op sessions (gate-blocked, investigation-only, state-ledger-writes-only) do NOT commit. End commit messages with the standard `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>` line.

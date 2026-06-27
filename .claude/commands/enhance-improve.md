@@ -74,3 +74,5 @@ Once approved, execute the changes:
 
 ## 6. Session Handoff
 The backlog is archived in `.claude/enhance-improvements-history.md` and emptied from `.claude/enhance-state.md`'s **Active Backlog**. Tell the user it's safe to start a **new session** before resuming `/enhance`.
+
+**Commit-after-session rule:** If this session produced a substantial improvement (a resolved pattern, a judge fix, a backfill, a cleared semantic batch, an applied prompt change), prepare and make a descriptive commit before handoff. Trivial/no-op sessions (gate-blocked, investigation-only, state-ledger-writes-only) do NOT commit. End commit messages with the standard `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>` line.

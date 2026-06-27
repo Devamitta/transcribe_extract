@@ -44,6 +44,15 @@ To maintain Sonnet/Opus session efficiency and avoid token bloat (target ≤120k
 - If the Active Backlog accumulates **5 or more** unprocessed issues, the agent warns the user to run `/enhance-improve` to address them.
 - `/enhance-improve` groups active backlog items, proposes a cohesive redesign, and upon approval, applies it and archives the processed issues to `.claude/enhance-improvements-history.md` under a dated heading (emptying the hub's Active Backlog).
 
+### 4. Open Pattern Gate (with Engineering Carve-out)
+- `/enhance` checks `.claude/enhance-state.md`'s Carried Patterns for entries marked `(open, YYYY-MM-DD)` before running any Action A/B/C batch.
+- Entries tagged `[stage: extract|polish|pali]` mean that stage's generation prompt is known-broken — they block Action A/B/C batch processing for that stage and route to `/enhance-prompt`.
+- Entries tagged `[engineering, …]` (judge/harness reliability defects, e.g. bugs in `tools/eval_judge.py`) are **not** generation-prompt defects and do **not** block batch processing for any stage — judge bugs cannot be fixed within `/enhance-prompt`'s allowed-files scope, so they route to a dedicated engineering session instead.
+
+### 5. Semantic Backlog Priority
+- `/enhance` computes the unreviewed semantic count (reports on disk in `reports/semantic/interview/` minus entries in `.claude/semantic-ledger.json`) on every run and reports it.
+- When the count is greater than 0, `/enhance` recommends running `/enhance-semantic-fix` before any Action A/B/C batch work — the semantic backlog takes priority over fresh batch processing.
+
 ---
 
 ## Enhance Skills

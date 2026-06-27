@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import hashlib
 import json
 from collections.abc import Callable, Sequence
@@ -247,7 +248,16 @@ def build_judge_prompt(
     source_text: str,
     candidate_output: str,
 ) -> str:
-    """Build the strict-JSON judge prompt for one excerpt."""
+    """Build the strict-JSON judge prompt for one excerpt.
+
+    CANDIDATE OUTPUT is placed before SOURCE EXCERPT (not after) because the
+    antigravity-cli path silently drops prompt content past roughly 65-78k
+    characters — confirmed by direct reproduction (full-length prompts with a
+    large source lost the candidate entirely; the same content reordered so
+    candidate comes first was read correctly). The candidate is normally far
+    smaller than the source, so putting it first keeps it inside the safe
+    window even when the source alone would overflow it.
+    """
 
     criteria_lines = "\n".join(
         f"- {criterion.key}: {criterion.label}. {criterion.description}"
@@ -268,10 +278,10 @@ def build_judge_prompt(
         "}\n"
         "Include every criterion key exactly once. Valid keys: "
         f"{keys}.\n\n"
-        "SOURCE EXCERPT:\n"
-        f"{source_text}\n\n"
         "CANDIDATE OUTPUT:\n"
-        f"{candidate_output}\n"
+        f"{candidate_output}\n\n"
+        "SOURCE EXCERPT:\n"
+        f"{source_text}\n"
     )
 
 
@@ -286,6 +296,35 @@ def strip_json_fence(response: str) -> str:
     if json_str.endswith("```"):
         json_str = json_str[:-3].strip()
     return json_str
+
+
+FUZZY_KEY_MATCH_CUTOFF = 0.8
+
+
+def _resolve_criterion_key(
+    criterion_key: str,
+    parsed: dict[str, object],
+    claimed_keys: set[str],
+) -> str | None:
+    """Find the JSON key for a criterion, tolerating judge-model misspellings.
+
+    The judge model is observed to occasionally typo a criterion key (e.g.
+    "readibility" for "readability") while keeping the rest of the JSON shape
+    intact. Exact match first; otherwise fall back to the closest unclaimed
+    key by string similarity, so a single-letter typo doesn't fail the whole
+    parse.
+    """
+
+    if criterion_key in parsed and criterion_key not in claimed_keys:
+        return criterion_key
+
+    candidates = [
+        key for key in parsed if key not in claimed_keys and key != criterion_key
+    ]
+    matches = difflib.get_close_matches(
+        criterion_key, candidates, n=1, cutoff=FUZZY_KEY_MATCH_CUTOFF
+    )
+    return matches[0] if matches else None
 
 
 def parse_judge_response(
@@ -305,8 +344,17 @@ def parse_judge_response(
         )
 
     scores: dict[str, CriterionScore] = {}
+    claimed_keys: set[str] = set()
     for criterion in criteria:
-        raw_score = parsed.get(criterion.key)
+        resolved_key = _resolve_criterion_key(criterion.key, parsed, claimed_keys)
+        if resolved_key is None:
+            return JudgeParseResult(
+                ok=False,
+                scores={},
+                error=f"Missing criterion object: {criterion.key}",
+            )
+        claimed_keys.add(resolved_key)
+        raw_score = parsed.get(resolved_key)
         if not isinstance(raw_score, dict):
             return JudgeParseResult(
                 ok=False,
