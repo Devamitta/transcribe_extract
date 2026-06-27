@@ -364,7 +364,7 @@ def get_semantic_eval_instruction() -> str:
         "  'very Sacca' → 'vīriya, sacca'\n\n"
         "If in doubt, return []. A missed error is far better than a false positive.\n"
         "OUTPUT: Return ONLY a valid JSON array. Each item must have exactly these keys:\n"
-        '  {"passage": "exact verbatim quote from the text", "context": "the 1-2 full sentences immediately before and after the passage, verbatim from the text", '
+        '  {"passage": "exact verbatim quote from the text", "context": "the complete spoken segment containing the passage — all text from the nearest preceding [N.N] Whisper timestamp marker to the next [N.N] marker (typically 5–15 sentences). Quote verbatim from the text.", '
         '"issue": "why this must be a Whisper error", "suggestion": "what was probably intended"}\n'
         "Return an empty array [] if nothing is clearly wrong. No other text outside the JSON."
     )

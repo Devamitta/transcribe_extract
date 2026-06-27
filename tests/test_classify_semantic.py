@@ -195,13 +195,13 @@ def test_is_multi_word_correction_proper_name() -> None:
 def test_enforce_single_word_rule_downgrade() -> None:
     findings: list[dict[str, str]] = [
         {
-            "passage": "x",
+            "passage": "zealous furry fox",
             "classification": "TP-fix",
             "reason": "ok",
             "suggestion": "'completion nation' -> 'complete cessation'",
         },
         {
-            "passage": "y",
+            "passage": "Bhatimokha",
             "classification": "TP-fix",
             "reason": "ok",
             "suggestion": "'Bhatimokha' -> 'Patimokkha'",
@@ -217,13 +217,13 @@ def test_enforce_single_word_rule_downgrade() -> None:
 def test_enforce_single_word_rule_no_op() -> None:
     findings: list[dict[str, str]] = [
         {
-            "passage": "x",
+            "passage": "a nature",
             "classification": "FP",
             "reason": "fp",
             "suggestion": "'a nature' -> 'anicca'",
         },
         {
-            "passage": "y",
+            "passage": "multi word passage",
             "classification": "TP-defer",
             "reason": "need review",
             "suggestion": "multi word",
@@ -271,7 +271,7 @@ def test_build_classification_instruction_includes_patterns() -> None:
     )
     assert "teams" in instruction
     assert "temples" in instruction
-    assert "SINGLE WORD" in instruction
+    assert "PHONETIC COVERAGE RULE" in instruction
 
 
 def test_build_classification_instruction_includes_reference() -> None:

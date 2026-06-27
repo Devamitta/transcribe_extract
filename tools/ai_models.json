@@ -27,6 +27,20 @@
       "timeout": 60
     }
   ],
+  "pro_models": [
+    {
+      "provider": "antigravity-cli",
+      "model": "Gemini 3.5 Flash (High)",
+      "delay": 0,
+      "timeout": 150
+    },
+    {
+      "provider": "openrouter",
+      "model": "deepseek/deepseek-v4-pro",
+      "delay": 0,
+      "timeout": 60
+    }
+  ],
   "provider_models": {
     "google": {
       "work": ["gemini-2.5-flash"],

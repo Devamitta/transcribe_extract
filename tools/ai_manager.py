@@ -58,9 +58,12 @@ class _ModelEntry(NamedTuple):
 
 
 def _load_models_from_json() -> tuple[
-    list[_ModelEntry], list[_ModelEntry], dict[str, dict[str, list[str]]]
+    list[_ModelEntry],
+    list[_ModelEntry],
+    list[_ModelEntry],
+    dict[str, dict[str, list[str]]],
 ]:
-    """Load default_models, test_models, and provider_models from ai_models.json."""
+    """Load default_models, test_models, pro_models, and provider_models from ai_models.json."""
     try:
         data: dict[str, object] = json.loads(AI_MODELS_PATH.read_text(encoding="utf-8"))
 
@@ -80,13 +83,17 @@ def _load_models_from_json() -> tuple[
             _to_entry(m)  # type: ignore[arg-type]
             for m in data.get("test_models", [])  # type: ignore[union-attr]
         ]
+        pro_models = [
+            _to_entry(m)  # type: ignore[arg-type]
+            for m in data.get("pro_models", [])  # type: ignore[union-attr]
+        ]
         provider_models: dict[str, dict[str, list[str]]] = data.get(  # type: ignore[assignment]
             "provider_models", {}
         )
-        return default_models, test_models, provider_models
+        return default_models, test_models, pro_models, provider_models
     except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
         pr.red(f"Failed to load {AI_MODELS_PATH}: {e}")
-        return [], [], {}
+        return [], [], [], {}
 
 
 def _has_gemini_key() -> bool:
@@ -105,9 +112,12 @@ class AIManager:
     _agy_probe_thread: threading.Thread | None = None
 
     def __init__(self) -> None:
-        self._default_models, self._test_models, self._provider_models = (
-            _load_models_from_json()
-        )
+        (
+            self._default_models,
+            self._test_models,
+            self._pro_models,
+            (self._provider_models),
+        ) = _load_models_from_json()
         self.model_last_request: dict[str, float] = {}
 
         # Providers registered for the cross-provider default path.
@@ -232,56 +242,20 @@ class AIManager:
             for e in self._active_default_models(test_mode)
         )
 
-    def request(
+    def _generate_with_models(
         self,
+        models: list[_ModelEntry],
         contents: str,
         system_instruction: str,
-        provider_preference: str | None = None,
-        model: str | None = None,
         max_output_tokens: int = 32768,
         temperature: float = 0.1,
-        test_mode: bool = False,
-        cli_test_mode: bool = False,
-        active_provider: str | None = None,
     ) -> AIResponse:
-        """Make a request, walking the model list and falling through on failure.
-
-        Priority: explicit (provider_preference, model) > PROVIDER single-override >
-        cross-provider default_models.
-        Never raises for provider failures; returns AIResponse(None, ...) on total failure.
-        """
+        """Walk a model list, falling through on failure. Returns AIResponse."""
         errors: list[str] = []
-        using_override = False
 
-        if provider_preference and model:
-            norm_pref = self._normalize(provider_preference)
-            if norm_pref == "antigravity-cli":
-                self._wait_for_agy()
-            timeout = self._provider_timeout(norm_pref)
-            models_to_try = [_ModelEntry(norm_pref, model, 0.0, timeout)]
-            using_override = True
-        elif (
-            active_provider
-            and self._normalize(active_provider) in _PROVIDER_MODULE_PATHS
-        ):
-            norm_prov = self._normalize(active_provider)
-            models_to_try = self._get_provider_models(
-                norm_prov, test_mode, cli_test_mode
-            )
-            using_override = True
-        else:
-            models_to_try = self._active_default_models(test_mode)
-
-        for entry in models_to_try:
+        for entry in models:
             provider = entry.provider
-
-            if using_override:
-                # Single-provider override: lazy-import on demand (respects sys.modules).
-                module = self._lazy_import(provider)
-            else:
-                # Cross-provider default path: use module registered at init.
-                module = self._providers.get(provider)
-
+            module = self._providers.get(provider) or self._lazy_import(provider)
             if module is None:
                 continue
 
@@ -319,3 +293,62 @@ class AIManager:
         )
         pr.red(final)
         return AIResponse(content=None, status_message=final)
+
+    def request(
+        self,
+        contents: str,
+        system_instruction: str,
+        provider_preference: str | None = None,
+        model: str | None = None,
+        max_output_tokens: int = 32768,
+        temperature: float = 0.1,
+        test_mode: bool = False,
+        cli_test_mode: bool = False,
+        active_provider: str | None = None,
+    ) -> AIResponse:
+        """Make a request, walking the model list and falling through on failure.
+
+        Priority: explicit (provider_preference, model) > PROVIDER single-override >
+        cross-provider default_models.
+        Never raises for provider failures; returns AIResponse(None, ...) on total failure.
+        """
+        if provider_preference and model:
+            norm_pref = self._normalize(provider_preference)
+            if norm_pref == "antigravity-cli":
+                self._wait_for_agy()
+            timeout = self._provider_timeout(norm_pref)
+            models_to_try = [_ModelEntry(norm_pref, model, 0.0, timeout)]
+        elif (
+            active_provider
+            and self._normalize(active_provider) in _PROVIDER_MODULE_PATHS
+        ):
+            norm_prov = self._normalize(active_provider)
+            models_to_try = self._get_provider_models(
+                norm_prov, test_mode, cli_test_mode
+            )
+        else:
+            models_to_try = self._active_default_models(test_mode)
+
+        return self._generate_with_models(
+            models_to_try,
+            contents,
+            system_instruction,
+            max_output_tokens,
+            temperature,
+        )
+
+    def generate_pro(
+        self,
+        contents: str,
+        system_instruction: str,
+        max_output_tokens: int = 32768,
+        temperature: float = 0.1,
+    ) -> AIResponse:
+        """Make a request using the pro model list. Never raises."""
+        return self._generate_with_models(
+            self._pro_models,
+            contents,
+            system_instruction,
+            max_output_tokens,
+            temperature,
+        )
