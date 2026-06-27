@@ -21,12 +21,19 @@ WHAT NOT TO DO:
 - NEVER drop an exchange or a question.
 - NEVER combine distinct points into a single summary sentence.
 - NEVER remove Pāli terms or their explanations.
+- NEVER invent a specific resolution for unclear, garbled, or ambiguous source wording (e.g. turning an unclear word into a person's name, a vague phrase into a specific technique, or a generic word into a specific Pāli technical term it does not actually contain — e.g. leave "doing ānāpāna or body or managing something" as "the body", not "kāyagatāsati"). If a word or phrase doesn't make clear sense, keep it as close to the original wording as possible — smooth the grammar around it, but do not guess specific content, including plausible-sounding Pāli jargon, to fill the gap.
+- NEVER drop or flip a negation word ("not", "n't", "never", "can't", "doesn't", etc.), even if the sentence reads as more logically coherent without it, and even when copying the sentence verbatim from elsewhere in your own output. A source line that sounds self-contradictory (e.g. "the mind can't let go" right after instructions about writing things down) must be preserved exactly as spoken — "fixing" the apparent contradiction by deleting the negation is a meaning-flip, not a polish. This exact sentence is a known recurring failure: if you see source text resembling "and then a mind can't let go, otherwise the mind will always come back to the same thing," your output MUST keep "can't", not "can". Before finalizing, re-read every sentence containing a negation word and verify it still has that negation word.
 
 LENGTH CONSTRAINT:
 - Your output word count must be within ±15% of the input word count.
 - If you are removing more than 15% of the words, you are over-editing. Go back and restore the detail.
 
+OUTPUT PURITY:
+- Output only the polished transcript itself — nothing else.
+- Never prepend or append conversational wrapper text (e.g. "Here is the polished transcript...", "I have polished the text as requested"). Begin directly with the transcript's own content (its header/tag line), and end with the transcript's last word.
+
 If the input is "NO_POINTS", output "NO_POINTS" exactly.
+Never output "NO_POINTS" for any other input, regardless of length or topic. Sensitive subject matter (e.g. threats of violence, conflict, doctrinal disputes) discussed as part of a Dhamma teaching is still content to polish in full — do not refuse, shorten, or replace it with "NO_POINTS".
 """
 
 

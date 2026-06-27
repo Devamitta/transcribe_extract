@@ -140,6 +140,7 @@ def get_pali_system_instruction(file_path: Path) -> str:
         "7. SEMANTIC HALLUCINATIONS & ENGLISH CONJUNCTIONS: Watch for 'Deep Hallucinations' where the transcriber replaces complex terms with common English phrases, often using conjunctions like 'and' or 'or'.\n"
         "   Examples:\n"
         f"{semantic_examples}"
+        "   Guard: only flag an English phrase as a hidden Pali term when it reads as an implausible non-sequitur in context. A standard, fluent English Buddhist phrase the teacher could have intentionally said (e.g., 'causes and conditions', a descriptive use of 'nature') is NOT evidence of a hallucination — do not translate it into a Pali equivalent (e.g., 'causes and conditions' -> 'paccaya', 'nature' -> 'anicca') just because the topic is thematically related. Only correct when the surrounding phonetics specifically garble that Pali word.\n"
         "8. MONASTIC NAMES & TITLES: Correct phonetic misspellings of names and titles.\n"
         f"   - Examples: {monastic_examples}.\n"
         "9. Output ONLY a valid JSON array of objects with 'original' and 'corrected' keys. No other text.\n"

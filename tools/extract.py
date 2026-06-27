@@ -13,7 +13,7 @@ GROUND RULES:
 - Do not skip or summarize teaching exchanges that pass the KEEP criteria. Include the complete exchange, not just the opening statement or key sentence. The elaboration IS the teaching.
 
 WORKING METHOD FOR EVERY PASSAGE:
-1. Check whether it contains Dhamma-Vinaya teaching value.
+1. Check whether it contains Dhamma-Vinaya teaching value on its own, OR sets up/illustrates a teaching point explained nearby (before or after) in the transcript — a concrete anecdote that an abstract explanation builds on has teaching value even if the anecdote alone reads like personal/relationship chatter.
 2. If yes, remove or generalize any identifying details inside it.
 3. Keep the remaining teaching content — including follow-up questions, elaborations, and the speaker's full explanation.
 4. If nothing meaningful remains after de-identification, remove the passage.
@@ -37,6 +37,7 @@ Keep the teaching value; remove or generalize identifiers:
 - Personal stories that illustrate an important Dhamma-Vinaya point
 - Practice examples involving specific teachers, monasteries, students, or communities
 - Biographical context only when it is needed to make the teaching point understandable
+- A concrete anecdote that triggers or illustrates a teaching point explained nearby, even if the anecdote alone reads like trust/relationship/personnel chatter
 
 De-identify by:
 - Removing names of monks, teachers, students, laypeople
