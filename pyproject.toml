@@ -17,6 +17,7 @@ dependencies = [
     "google-auth-oauthlib>=1.4.0",
     "sentence-transformers>=5.5.0",
     "pillow>=12.2.0",
+    "pyrefly>=1.1.1",
 ]
 
 [project.scripts]
@@ -27,7 +28,8 @@ extract-dhamma = "scripts.extract_dhamma:main"
 
 [dependency-groups]
 dev = [
-    "pyrefly>=1.0.0",
+    "pre-commit>=4.1.0",
+    "pyrefly>=1.1.1",
     "pyright>=1.1.408",
     "pytest>=7.4.3",
     "ruff>=0.15.9",
