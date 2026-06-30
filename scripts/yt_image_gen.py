@@ -1,6 +1,7 @@
 """Generates AI thumbnail images for Dhamma talks using OpenRouter FLUX."""
 
 import argparse
+import json
 import re
 import unicodedata
 from pathlib import Path
@@ -47,6 +48,9 @@ Output: one paragraph only, no preamble, no labels, no quotes.
 }
 
 HISTORY_PATH = Path("output/youtube_history.json")
+SUBJECTS_LOG_PATH = Path("output/thumbnail_subjects.json")
+SUBJECTS_ROLLING_WINDOW = 50
+SUBJECTS_AVOID_COUNT = 30
 MAX_LLM_ATTEMPTS = 3
 LLM_RETRY_DELAY_S = 3.0
 
@@ -112,12 +116,59 @@ def parse_review(review_path: Path) -> list[dict[str, str]]:
     return talks
 
 
+def _load_subjects() -> list[dict[str, str]]:
+    """Load existing thumbnail subjects from the rolling log."""
+    if not SUBJECTS_LOG_PATH.exists():
+        return []
+    try:
+        data: dict[str, object] = json.loads(
+            SUBJECTS_LOG_PATH.read_text(encoding="utf-8")
+        )
+        subjects = data.get("subjects", [])
+        return subjects if isinstance(subjects, list) else []
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return []
+
+
+def _save_subject(file_name: str, subject: str) -> None:
+    """Append a subject entry, keeping the rolling window size."""
+    subjects = _load_subjects()
+    subjects = [s for s in subjects if s.get("file") != file_name]
+    subjects.append({"file": file_name, "subject": subject})
+    if len(subjects) > SUBJECTS_ROLLING_WINDOW:
+        subjects = subjects[-SUBJECTS_ROLLING_WINDOW:]
+    SUBJECTS_LOG_PATH.write_text(
+        json.dumps({"subjects": subjects}, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def _extract_subject(prompt: str) -> str:
+    """Summarise the main visual subject of an image prompt in 3-6 words."""
+    result = generate_content(
+        f"In 3-6 words, what is the single main visual subject of this image description?\n\n{prompt[:400]}",
+        "Be extremely concise. Output only 3-6 words describing the dominant object or scene element. No punctuation, no explanation.",
+    )
+    return result.strip()
+
+
 def build_prompt(title: str, description: str, lang: str) -> str:
     """Ask LLM to generate a specific, evocative image prompt from the talk content."""
     pr.amber(f"    Building prompt for: {title}")
 
+    subjects = _load_subjects()
+    avoid_subjects = [s["subject"] for s in subjects[-SUBJECTS_AVOID_COUNT:]]
+    avoid_clause = ""
+    if avoid_subjects:
+        avoid_clause = (
+            "\n\nRECENTLY USED SUBJECTS — do NOT repeat any of these or close visual variants:\n"
+            + "\n".join(f"- {s}" for s in avoid_subjects)
+        )
+
     contents = f"Title: {title}\nDescription: {description}"
-    prompt = generate_content(contents, SYSTEM_INSTRUCTIONS[lang]).strip()
+    prompt = generate_content(
+        contents, SYSTEM_INSTRUCTIONS[lang] + avoid_clause
+    ).strip()
     return re.sub(r'^["\']|["\']$', "", prompt)
 
 
@@ -325,6 +376,11 @@ def main() -> int:
             )
             pr.green(f"    → {prompt[:100]}...")
             generate_image_with_retry(prompt, out_path, source)
+            try:
+                subject = _extract_subject(prompt)
+                _save_subject(f"{source}.jpg", subject)
+            except Exception:
+                pass  # subject tracking is best-effort
             if args.created_log:
                 with open(args.created_log, "a", encoding="utf-8") as log_f:
                     log_f.write(str(out_path) + "\n")
