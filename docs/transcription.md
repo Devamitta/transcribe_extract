@@ -11,7 +11,7 @@ Converts raw audio (MP3, WAV, M4A, QTA, MOV, etc.) into Markdown transcripts usi
 ### `scripts/cl/transcribe` — Unified CLI
 
 ```bash
-./scripts/cl/transcribe [folder_name|all] [--correct] [--context dhamma|sangha|interview|russian|vinaya]
+./scripts/cl/transcribe [folder_name|all] [--correct] [--slow] [--context dhamma|sangha|interview|russian|vinaya]
 ./scripts/cl/transcribe --help
 ```
 
@@ -19,6 +19,8 @@ The single entry point for transcription. It orchestrates the pipeline for one i
 - If run without `folder_name`:
     - If there are loose files directly in `input/` (not inside any subfolder), processes those: ingests to `output/audio/`, transcribes to `output/transcribed/` (context `dhamma`, unless overridden), and (with `--correct`) corrects to `output/corrected_pali/` — all at the root, not mirrored into a subfolder.
     - Otherwise, lists available subfolders in `input/` and shows usage instructions.
+- `--correct` runs Phase 3 (Pāli correction) using `scripts/correct_pali.py` after transcribing.
+- `--slow` switches transcription to the high-quality `mlx-community/whisper-large-v3` model and presents an interactive prompt to optionally delete an existing transcript (and its corrected version) to re-transcribe it, or transcribe only new files. Prohibited in `all` batch mode.
 - `--help` prints a description and the available flags, then exits.
 - Every run is logged to a timestamped file at `log/transcribe_<timestamp>.log`.
 - If run with `folder_name` (e.g. `sangha`, `my-special-talks`):
@@ -74,6 +76,7 @@ uv run python scripts/transcribe.py [options]
 | `--test-run` | off | Transcribe only the first file found. |
 | `--dry-run` | off | Print what would be transcribed; create output stubs for pipeline propagation. |
 | `--created-log <path>` | — | File path where created transcript paths are appended (one per line). Used internally by `scripts/cl/transcribe`. |
+| `--model <name>` | `mlx-community/whisper-large-v3-turbo` | MLX Whisper model repo to use for transcription. |
 
 ### Pali vocabulary contexts
 

@@ -23,6 +23,9 @@ Modes:
 
 Flags:
   --correct    Also run Phase 3 (Pali correction) after transcribing.
+  --slow       Use the large-v3 model (slower, higher quality). Prompts you to
+               pick an existing transcript to delete and re-transcribe, or 0 to
+               process only new files.
   --context <ctx>
                Pali vocabulary context: dhamma|sangha|interview|russian|vinaya. Overrides the
                context normally inferred from the folder name (default: dhamma).
@@ -34,6 +37,58 @@ and (with --correct) scripts/correct_pali.py.
 
 Every run is logged to log/transcribe_<timestamp>.log.
 EOF
+}
+
+slow_select() {
+    local tx_dir="$1"
+    local au_dir="$2"
+    SLOW_TARGET_TRANSCRIPT=""
+    SLOW_TARGET_AUDIO=""
+
+    if [ ! -d "$tx_dir" ]; then
+        echo "No existing transcripts — will process new files with large-v3."
+        return
+    fi
+
+    local files=()
+    local f
+    for f in "$tx_dir"/*.md; do
+        [ -f "$f" ] || continue
+        files+=("$(basename "$f" .md)")
+    done
+
+    local count=${#files[@]}
+    if [ "$count" -eq 0 ]; then
+        echo "No existing transcripts — will process new files with large-v3."
+        return
+    fi
+
+    echo "Existing transcripts:"
+    echo "  [0] Process new files only (no deletion)"
+    local i
+    for ((i=0; i<count; i++)); do
+        echo "  [$((i + 1))] ${files[i]}.md"
+    done
+
+    local choice=""
+    while true; do
+        printf "Select a file to delete and re-transcribe (0-%d): " "$count"
+        read -r choice
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 0 ] && [ "$choice" -le "$count" ]; then
+            break
+        fi
+        echo "Error: Invalid selection."
+    done
+
+    if [ "$choice" -eq 0 ]; then
+        SLOW_TARGET_TRANSCRIPT=""
+        SLOW_TARGET_AUDIO=""
+    else
+        local idx=$((choice - 1))
+        local stem="${files[idx]}"
+        SLOW_TARGET_TRANSCRIPT="$tx_dir/$stem.md"
+        SLOW_TARGET_AUDIO="$au_dir/$stem.mp3"
+    fi
 }
 
 for arg in "$@"; do
@@ -63,6 +118,7 @@ VALID_CONTEXTS=(sangha dhamma vinaya interview russian)
 
 DRY_RUN=0
 CORRECT=0
+SLOW=0
 CONTEXT_OVERRIDE=""
 ARGS=()
 while [ "$#" -gt 0 ]; do
@@ -73,6 +129,9 @@ while [ "$#" -gt 0 ]; do
             ;;
         --correct)
             CORRECT=1
+            ;;
+        --slow)
+            SLOW=1
             ;;
         --context)
             CONTEXT_OVERRIDE="$2"
@@ -134,12 +193,29 @@ run_folder() {
         context_tag="$CONTEXT_OVERRIDE"
     fi
 
+    if [ "$SLOW" -eq 1 ]; then
+        slow_select "output/transcribed/$folder" "output/audio/$folder"
+        if [ -n "$SLOW_TARGET_TRANSCRIPT" ]; then
+            rm -f "$SLOW_TARGET_TRANSCRIPT"
+            if [ "$CORRECT" -eq 1 ]; then
+                local stem
+                stem="$(basename "$SLOW_TARGET_TRANSCRIPT" .md)"
+                rm -f "output/corrected_pali/$folder/$stem.md"
+            fi
+        fi
+    fi
+
     echo ">>> Phase 1: Ingesting audio for '$folder' <<<"
     uv run python scripts/audio_ingest.py --folder "$folder" "$@"
     local exit_code=$?
     if [ $exit_code -ne 0 ]; then
         echo "Ingest failed with exit code $exit_code"
         return $exit_code
+    fi
+
+    local slow_model_args=()
+    if [ "$SLOW" -eq 1 ]; then
+        slow_model_args=(--model mlx-community/whisper-large-v3)
     fi
 
     echo ""
@@ -151,6 +227,7 @@ run_folder() {
         --output-dir "output/transcribed/$folder" \
         --context "$context_tag" \
         --created-log "$transcribe_log" \
+        "${slow_model_args[@]}" \
         "$@"; then
         echo "Transcription failed."
         rm -f "$transcribe_log"
@@ -194,12 +271,29 @@ run_root() {
         context_tag="$CONTEXT_OVERRIDE"
     fi
 
+    if [ "$SLOW" -eq 1 ]; then
+        slow_select "output/transcribed" "output/audio"
+        if [ -n "$SLOW_TARGET_TRANSCRIPT" ]; then
+            rm -f "$SLOW_TARGET_TRANSCRIPT"
+            if [ "$CORRECT" -eq 1 ]; then
+                local stem
+                stem="$(basename "$SLOW_TARGET_TRANSCRIPT" .md)"
+                rm -f "output/corrected_pali/$stem.md"
+            fi
+        fi
+    fi
+
     echo ">>> Phase 1: Ingesting audio from 'input/' (root) <<<"
     uv run python scripts/audio_ingest.py --folder "" "$@"
     local exit_code=$?
     if [ $exit_code -ne 0 ]; then
         echo "Ingest failed with exit code $exit_code"
         return $exit_code
+    fi
+
+    local slow_model_args=()
+    if [ "$SLOW" -eq 1 ]; then
+        slow_model_args=(--model mlx-community/whisper-large-v3)
     fi
 
     echo ""
@@ -211,6 +305,7 @@ run_root() {
         --output-dir "output/transcribed" \
         --context "$context_tag" \
         --created-log "$transcribe_log" \
+        "${slow_model_args[@]}" \
         "$@"; then
         echo "Transcription failed."
         rm -f "$transcribe_log"
@@ -251,6 +346,11 @@ run_root() {
 
     return $rc
 }
+
+if [ "$FOLDER" = "all" ] && [ "$SLOW" -eq 1 ]; then
+    echo "Error: --slow is not allowed when transcribing 'all' folders (the interactive picker doesn't compose with batch mode)."
+    exit 1
+fi
 
 if [ "$FOLDER" = "all" ]; then
     ALL_BATCH_FOLDERS=($(find input -maxdepth 1 -type d -not -path 'input' -not -name '.*' -not -name 'temp' -exec basename {} \; | sort))
