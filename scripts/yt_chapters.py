@@ -15,7 +15,12 @@ from tools.provider import (
     generate_with_timeout,
 )
 from tools.source_scope import read_source_filter, source_matches_filter
-from tools.uploader_common import find_path_by_normalized_name, minutes_to_hms
+from tools.uploader_common import (
+    find_path_by_normalized_name,
+    is_uploaded_in_history,
+    load_nested_history,
+    minutes_to_hms,
+)
 from tools.yt_chapters_merge import merge_close_chapters
 from tools.yt_chapters_retry import LLMRetryError, retry_llm_request
 from tools.yt_chapters_silence import (
@@ -31,6 +36,8 @@ from tools.yt_chapters_silence import (
     silence_histogram,
     snap_silences_to_transcript,
 )
+
+HISTORY_PATH = Path("output/youtube_history.json")
 
 SNAP_TOLERANCE_MINS = 0.75
 SILENCE_SNAP_TOLERANCE_MINS = 0.75
@@ -315,6 +322,7 @@ def generate_chapters(
     duration_mins: float = 0.0,
     content_type: ContentType = "talk",
     paragraphs: list[tuple[float, str]] | None = None,
+    attempt: int = 1,
 ) -> str | None:
     """Calls Gemini API to generate chapters from transcript."""
     if silence_pairs is not None:
@@ -328,6 +336,7 @@ def generate_chapters(
         contents=build_cacheable_contents(transcript),
         system_instruction=instruction,
         max_output_tokens=4096,
+        model_offset=attempt - 1,
     )
 
 
@@ -598,8 +607,14 @@ def main() -> None:
         action="store_true",
         help="Print what would be processed; skip API calls and review edits.",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Generate chapters even when YouTube history marks the video uploaded.",
+    )
     args = parser.parse_args()
     source_filter = read_source_filter(args.source_log)
+    history = load_nested_history(HISTORY_PATH, args.lang)
 
     debug_buffer: list[str] = []
 
@@ -658,6 +673,8 @@ def main() -> None:
         for f in md_files:
             nfc_name = unicodedata.normalize("NFC", f.name)
             if not source_matches_filter(nfc_name, source_filter):
+                continue
+            if not args.force and is_uploaded_in_history(history, f"{f.stem}.mp4"):
                 continue
             if not has_review_entry(review_text, nfc_name):
                 if args.folder:
@@ -759,6 +776,7 @@ def main() -> None:
                         contents=build_cacheable_contents(transcript),
                         system_instruction=instruction,
                         max_output_tokens=2048,
+                        model_offset=_attempt - 1,
                     ),
                     file_name=file_path.name,
                     action="chapter timestamping",
@@ -905,6 +923,7 @@ def main() -> None:
                     duration_mins,
                     content_type,
                     paragraphs=paragraphs,
+                    attempt=attempt,
                 )
 
             pr.bip()

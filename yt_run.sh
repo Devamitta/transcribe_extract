@@ -261,7 +261,7 @@ if [ "$FROM_EXPORT" -eq 0 ]; then
     --folder "$EFFECTIVE_FOLDER" \
     --created-log "$CHAPTERS_LOG" \
     $CHAPTER_SOURCE_LOG_FLAG \
-    $LIMIT_FLAG $DRY_RUN_FLAG
+    $LIMIT_FLAG $DRY_RUN_FLAG $FORCE_FLAG
 
   if [ "$DRY_RUN" -eq 0 ] && { [ -s "$METADATA_LOG" ] || [ -s "$CHAPTERS_LOG" ]; }; then
     echo ""

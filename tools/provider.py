@@ -97,6 +97,7 @@ def generate_content(
     system_instruction: str,
     max_output_tokens: int = 32768,
     temperature: float = 0.1,
+    model_offset: int = 0,
 ) -> str:
     """Generate content; raises Exception(status_message) on total provider failure."""
     active = PROVIDER if PROVIDER in _KNOWN_PROVIDERS else None
@@ -108,6 +109,7 @@ def generate_content(
         test_mode=TEST_MODE,
         cli_test_mode=CLI_TEST_MODE,
         active_provider=active,
+        model_offset=model_offset,
     )
     if response.content is None:
         raise Exception(response.status_message)
@@ -127,6 +129,7 @@ def generate_with_timeout(
     timeout: int = 120,
     max_output_tokens: int = 32768,
     temperature: float = 0.1,
+    model_offset: int = 0,
 ) -> str:
     """Hard-timeout wrapper around generate_content (default 120s).
 
@@ -139,6 +142,7 @@ def generate_with_timeout(
         system_instruction=system_instruction,
         max_output_tokens=max_output_tokens,
         temperature=temperature,
+        model_offset=model_offset,
     )
     try:
         return future.result(timeout=timeout)

@@ -249,11 +249,12 @@ class AIManager:
         system_instruction: str,
         max_output_tokens: int = 32768,
         temperature: float = 0.1,
+        skip_count: int = 0,
     ) -> AIResponse:
         """Walk a model list, falling through on failure. Returns AIResponse."""
         errors: list[str] = []
 
-        for entry in models:
+        for entry in models[skip_count:]:
             provider = entry.provider
             module = self._providers.get(provider) or self._lazy_import(provider)
             if module is None:
@@ -305,6 +306,7 @@ class AIManager:
         test_mode: bool = False,
         cli_test_mode: bool = False,
         active_provider: str | None = None,
+        model_offset: int = 0,
     ) -> AIResponse:
         """Make a request, walking the model list and falling through on failure.
 
@@ -335,6 +337,7 @@ class AIManager:
             system_instruction,
             max_output_tokens,
             temperature,
+            skip_count=model_offset,
         )
 
     def generate_pro(
