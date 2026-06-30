@@ -975,7 +975,6 @@ def main() -> None:
             pr.no(f"    {e}")
             if args.debug_log and debug_buffer:
                 _flush_debug_log(file_path, debug_buffer)
-            raise SystemExit(1) from e
         except Exception as e:
             pr.no(f"    Error on {file_path.name}: {e}")
             if args.debug_log and debug_buffer:
