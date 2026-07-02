@@ -215,7 +215,7 @@ run_folder() {
 
     local slow_model_args=()
     if [ "$SLOW" -eq 1 ]; then
-        slow_model_args=(--model mlx-community/whisper-large-v3)
+        slow_model_args=(--model mlx-community/whisper-large-v3-mlx)
     fi
 
     echo ""
@@ -293,7 +293,7 @@ run_root() {
 
     local slow_model_args=()
     if [ "$SLOW" -eq 1 ]; then
-        slow_model_args=(--model mlx-community/whisper-large-v3)
+        slow_model_args=(--model mlx-community/whisper-large-v3-mlx)
     fi
 
     echo ""
