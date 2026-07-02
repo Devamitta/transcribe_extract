@@ -463,6 +463,23 @@ def is_uploaded_in_history(history: dict[str, dict[str, Any]], final_name: str) 
     return get_uploaded_history_entry(history, final_name) is not None
 
 
+def is_stem_uploaded_in_history(history: dict[str, dict[str, Any]], stem: str) -> bool:
+    """True when any uploaded history key starts with stem (handles speaker-name suffix).
+
+    Covers the case where the transcript stem ("2021-11-06 - Title") has not been
+    renamed yet on this machine but the history key includes an appended speaker name
+    ("2021-11-06 - Title - Bhikkhu Devamitta.mp4").
+    """
+    target = normalize_text(stem).lower()
+    for key, entry in history.items():
+        if entry.get("status") != "uploaded":
+            continue
+        key_stem = normalize_text(Path(key).stem).lower()
+        if key_stem == target or key_stem.startswith(target + " -"):
+            return True
+    return False
+
+
 def get_uploaded_history_key_entry(
     history: dict[str, dict[str, Any]], key: str
 ) -> dict[str, Any] | None:

@@ -17,7 +17,7 @@ from tools.provider import (
 from tools.source_scope import read_source_filter, source_matches_filter
 from tools.uploader_common import (
     find_path_by_normalized_name,
-    is_uploaded_in_history,
+    is_stem_uploaded_in_history,
     load_nested_history,
     minutes_to_hms,
 )
@@ -674,7 +674,7 @@ def main() -> None:
             nfc_name = unicodedata.normalize("NFC", f.name)
             if not source_matches_filter(nfc_name, source_filter):
                 continue
-            if not args.force and is_uploaded_in_history(history, f"{f.stem}.mp4"):
+            if not args.force and is_stem_uploaded_in_history(history, f.stem):
                 continue
             if not has_review_entry(review_text, nfc_name):
                 if args.folder:
