@@ -52,7 +52,7 @@ This file is a rolling log of the main visual subject used in each generated You
 
 ## Notes
 
-- The file is maintained automatically by `scripts/yt_image_gen.py` for new generations (rolling window of 50 entries).
+- The file is maintained automatically by `scripts/yt_image_gen.py` for new generations.
 - For **existing images**, populate this file manually or via a vision agent scanning the `output/thumbnails/` folder.
-- Entries do not need to be in any particular order; only the most recent 30 are injected as "avoid" context.
+- Entries do not need to be in any particular order; all recorded subjects are injected as "avoid" context.
 - If an entry for a filename already exists it will be replaced, not duplicated.

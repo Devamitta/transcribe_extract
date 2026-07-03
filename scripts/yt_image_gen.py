@@ -49,8 +49,6 @@ Output: one paragraph only, no preamble, no labels, no quotes.
 
 HISTORY_PATH = Path("output/youtube_history.json")
 SUBJECTS_LOG_PATH = Path("output/thumbnail_subjects.json")
-SUBJECTS_ROLLING_WINDOW = 50
-SUBJECTS_AVOID_COUNT = 30
 MAX_LLM_ATTEMPTS = 3
 LLM_RETRY_DELAY_S = 3.0
 
@@ -131,12 +129,10 @@ def _load_subjects() -> list[dict[str, str]]:
 
 
 def _save_subject(file_name: str, subject: str) -> None:
-    """Append a subject entry, keeping the rolling window size."""
+    """Append a subject entry to the log."""
     subjects = _load_subjects()
     subjects = [s for s in subjects if s.get("file") != file_name]
     subjects.append({"file": file_name, "subject": subject})
-    if len(subjects) > SUBJECTS_ROLLING_WINDOW:
-        subjects = subjects[-SUBJECTS_ROLLING_WINDOW:]
     SUBJECTS_LOG_PATH.write_text(
         json.dumps({"subjects": subjects}, indent=2, ensure_ascii=False),
         encoding="utf-8",
@@ -157,11 +153,11 @@ def build_prompt(title: str, description: str, lang: str) -> str:
     pr.amber(f"    Building prompt for: {title}")
 
     subjects = _load_subjects()
-    avoid_subjects = [s["subject"] for s in subjects[-SUBJECTS_AVOID_COUNT:]]
+    avoid_subjects = [s["subject"] for s in subjects]
     avoid_clause = ""
     if avoid_subjects:
         avoid_clause = (
-            "\n\nRECENTLY USED SUBJECTS — do NOT repeat any of these or close visual variants:\n"
+            "\n\nPREVIOUSLY USED SUBJECTS — do NOT repeat any of these or close visual variants:\n"
             + "\n".join(f"- {s}" for s in avoid_subjects)
         )
 
