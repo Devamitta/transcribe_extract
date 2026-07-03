@@ -26,6 +26,10 @@ Flags:
   --slow       Use the large-v3 model (slower, higher quality). Prompts you to
                pick an existing transcript to delete and re-transcribe, or 0 to
                process only new files.
+  --clean      Delete existing output for the folder before running: output/audio/<folder>,
+               output/transcribed/<folder>, and (with --correct) output/corrected_pali/<folder>.
+               Requires a folder name; not allowed with 'all' or loose root files. With
+               --dry-run, logs what would be deleted instead of deleting.
   --context <ctx>
                Pali vocabulary context: dhamma|sangha|interview|russian|vinaya. Overrides the
                context normally inferred from the folder name (default: dhamma).
@@ -91,6 +95,34 @@ slow_select() {
     fi
 }
 
+clean_folder() {
+    local folder="$1"
+    local dirs=("output/audio/$folder" "output/transcribed/$folder")
+    if [ "$CORRECT" -eq 1 ]; then
+        dirs+=("output/corrected_pali/$folder")
+    fi
+
+    local existing=()
+    local d
+    for d in "${dirs[@]}"; do
+        [ -d "$d" ] && existing+=("$d")
+    done
+
+    if [ "$DRY_RUN" -eq 1 ]; then
+        if [ ${#existing[@]} -gt 0 ]; then
+            echo "[dry-run] Would remove contents of: ${existing[*]}"
+        fi
+        return 0
+    fi
+
+    for d in "${existing[@]}"; do
+        echo "Cleaning $d"
+        shopt -s dotglob
+        rm -rf "${d:?}"/*
+        shopt -u dotglob
+    done
+}
+
 for arg in "$@"; do
     if [ "$arg" = "--help" ] || [ "$arg" = "-h" ]; then
         print_help
@@ -119,6 +151,7 @@ VALID_CONTEXTS=(sangha dhamma vinaya interview russian)
 DRY_RUN=0
 CORRECT=0
 SLOW=0
+CLEAN=0
 CONTEXT_OVERRIDE=""
 ARGS=()
 while [ "$#" -gt 0 ]; do
@@ -132,6 +165,9 @@ while [ "$#" -gt 0 ]; do
             ;;
         --slow)
             SLOW=1
+            ;;
+        --clean)
+            CLEAN=1
             ;;
         --context)
             CONTEXT_OVERRIDE="$2"
@@ -191,6 +227,10 @@ run_folder() {
     done
     if [ -n "$CONTEXT_OVERRIDE" ]; then
         context_tag="$CONTEXT_OVERRIDE"
+    fi
+
+    if [ "$CLEAN" -eq 1 ]; then
+        clean_folder "$folder"
     fi
 
     if [ "$SLOW" -eq 1 ]; then
@@ -352,6 +392,11 @@ if [ "$FOLDER" = "all" ] && [ "$SLOW" -eq 1 ]; then
     exit 1
 fi
 
+if { [ "$FOLDER" = "all" ] || [ "$ROOT_MODE" -eq 1 ]; } && [ "$CLEAN" -eq 1 ]; then
+    echo "Error: --clean requires a specific folder name (e.g. 'sangha') — not allowed with 'all' or loose root files."
+    exit 1
+fi
+
 if [ "$FOLDER" = "all" ]; then
     ALL_BATCH_FOLDERS=($(find input -maxdepth 1 -type d -not -path 'input' -not -name '.*' -not -name 'temp' -exec basename {} \; | sort))
     ALL_BATCH_ROOT_FILES=($(find input -maxdepth 1 -type f -not -name '.*'))
@@ -369,7 +414,15 @@ if [ "$DRY_RUN" -eq 0 ]; then
         printf "⚠ Files in input/ (%s) will be converted to MP3, moved to output/audio/, and the originals removed. Copy anything you want to keep first. Press Enter to continue, or n to abort. " \
             "$( { [ ${#ALL_BATCH_ROOT_FILES[@]} -gt 0 ] && echo "loose root files"; printf '%s\n' "${ALL_BATCH_FOLDERS[@]}"; } | paste -sd ',' - )"
     else
-        printf "⚠ Files in input/%s/ will be converted to MP3, moved to output/audio/, and the originals removed. Copy anything you want to keep first. Press Enter to continue, or n to abort. " "$FOLDER"
+        CLEAN_MSG=""
+        if [ "$CLEAN" -eq 1 ]; then
+            CLEAN_MSG=" Existing output in output/audio/$FOLDER and output/transcribed/$FOLDER will also be deleted"
+            if [ "$CORRECT" -eq 1 ]; then
+                CLEAN_MSG="$CLEAN_MSG (and output/corrected_pali/$FOLDER, since --correct is set)"
+            fi
+            CLEAN_MSG="$CLEAN_MSG."
+        fi
+        printf "⚠ Files in input/%s/ will be converted to MP3, moved to output/audio/, and the originals removed.%s Copy anything you want to keep first. Press Enter to continue, or n to abort. " "$FOLDER" "$CLEAN_MSG"
     fi
     read -r _mm
     if [ "$_mm" = "n" ] || [ "$_mm" = "N" ]; then
