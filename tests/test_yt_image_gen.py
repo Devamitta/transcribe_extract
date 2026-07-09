@@ -175,3 +175,64 @@ def test_image_generation_treats_decomposed_thumbnail_as_existing(
     yt_image_gen.main()
 
     assert "Nothing to do." in capsys.readouterr().out
+
+
+def test_spare_image_matching_renames_and_skips_generation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    stem = "2026-06-01 - Карма и перерождение"
+    review_dir = tmp_path / "reviews"
+    thumbnail_dir = tmp_path / "output" / "thumbnails" / "russian"
+    review_dir.mkdir()
+    thumbnail_dir.mkdir(parents=True)
+
+    # Create the spare image in the thumbnails dir
+    (thumbnail_dir / "весы на столе.jpg").write_bytes(b"spare image")
+
+    # Create the review file matching this talk
+    (review_dir / "russian_review.md").write_text(
+        "\n".join(
+            [
+                "# Review",
+                "",
+                "---",
+                f"## Source: {stem}.md",
+                "**Recording Date:** 01-06-2026",
+                "**Approved:** yes",
+                "**Suggested Title:** Карма и перерождение",
+                "**Suggested Description:** Объясняется карма с использованием притчи о весах.",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    calls = []
+
+    def mock_generate_content(prompt: str, system: str = "") -> str:
+        calls.append((prompt, system))
+        # If prompt lists "весы на столе", return it to simulate matching
+        if "весы на столе" in prompt:
+            return "весы на столе"
+        return "NONE"
+
+    def fail_image_gen(*args: object, **kwargs: object) -> None:
+        raise AssertionError("Image generation should be skipped because of match")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys, "argv", ["yt_image_gen.py", "--lang", "ru", "--folder", "russian"]
+    )
+    monkeypatch.setattr(yt_image_gen, "generate_content", mock_generate_content)
+    monkeypatch.setattr(yt_image_gen, "generate_image", fail_image_gen)
+    monkeypatch.setattr(yt_image_gen, "load_nested_history", lambda path, lang: {})
+
+    result = yt_image_gen.main()
+
+    assert result == 0
+    # The spare image should have been renamed
+    target_path = thumbnail_dir / f"{stem}.jpg"
+    assert target_path.exists()
+    assert target_path.read_bytes() == b"spare image"
+    assert not (thumbnail_dir / "весы на столе.jpg").exists()

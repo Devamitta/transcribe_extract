@@ -102,10 +102,22 @@ def find_files_for_stem(stem: str, dirs: list[Path]) -> dict[str, list[Path]]:
 
 
 DATE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})")
+SPEAKER_SUFFIX_RE = re.compile(r" - [^-]+$")
+
+
+def _strip_date_and_speaker(stem: str) -> str:
+    """Remove YYYY-MM-DD prefix and trailing ' - SpeakerName' from a filename stem."""
+    m = DATE_RE.match(stem)
+    if not m:
+        return stem
+    rest = stem[m.end() :].lstrip(" -")
+    rest = SPEAKER_SUFFIX_RE.sub("", rest)
+    return rest.strip()
 
 
 def find_transcribed_date_groups(transcribed_dir: Path) -> dict[str, list[Path]]:
-    """Group .md files in transcribed_dir by YYYY-MM-DD prefix; return only groups with 2+."""
+    """Group .md files by YYYY-MM-DD prefix; return only groups with 2+ and at least
+    one pair whose titles (after stripping date and speaker) are similar."""
     groups: dict[str, list[Path]] = defaultdict(list)
     if not transcribed_dir.exists():
         return {}
@@ -114,7 +126,19 @@ def find_transcribed_date_groups(transcribed_dir: Path) -> dict[str, list[Path]]
             m = DATE_RE.match(f.name)
             if m:
                 groups[m.group(1)].append(f)
-    return {date: files for date, files in groups.items() if len(files) > 1}
+    result: dict[str, list[Path]] = {}
+    for date, files in groups.items():
+        if len(files) < 2:
+            continue
+        cores = [_strip_date_and_speaker(f.stem) for f in files]
+        has_similar = any(
+            title_similarity(cores[i], cores[j]) >= TITLE_SIMILARITY_THRESHOLD
+            for i in range(len(cores))
+            for j in range(i + 1, len(cores))
+        )
+        if has_similar:
+            result[date] = files
+    return result
 
 
 def find_files_for_date(date_iso: str, dirs: list[Path]) -> dict[str, list[Path]]:

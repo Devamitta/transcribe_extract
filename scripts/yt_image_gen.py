@@ -189,6 +189,64 @@ def _generate_image_response(prompt: str, out_path: Path) -> str:
     return "created"
 
 
+def get_spare_images(output_dir: Path) -> list[Path]:
+    """Get all spare thumbnail images (not starting with YYYY-MM-DD date pattern)."""
+    if not output_dir.exists():
+        return []
+    spare_images = []
+    # Date pattern: e.g. "2018-05-27 - "
+    date_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}\s*-\s*")
+    for f in output_dir.iterdir():
+        if f.is_file() and f.suffix.lower() == ".jpg" and not f.name.startswith("."):
+            if not date_pattern.match(f.name):
+                spare_images.append(f)
+    return sorted(spare_images, key=lambda x: x.name)
+
+
+def find_matching_spare_image(
+    title: str, description: str, available_spares: list[Path]
+) -> Path | None:
+    """Ask LLM to find if one of the spare images clearly matches the talk's theme/simile."""
+    if not available_spares:
+        return None
+
+    # Format the list of spare image names for the prompt
+    options = "\n".join(f"- {f.stem}" for f in available_spares)
+
+    prompt = (
+        f"Title: {title}\n"
+        f"Description: {description}\n\n"
+        f"Available image descriptions:\n{options}\n\n"
+        f"Identify if one of the available image descriptions above is a clear, direct, and specific match "
+        f"for the main metaphor, simile, object, or theme mentioned in the talk's title or description. "
+        f"For example, a talk mentioning 'притча о плоте' clearly matches 'бамбуковый плот у берега'. "
+        f"If there is a clear and strong match, output ONLY the exact matching name from the list, exactly as written, with no extra text. "
+        f"If there is no clear and specific match, or if you are unsure, output ONLY 'NONE'."
+    )
+
+    try:
+        response = generate_content(
+            prompt,
+            "You are a helpful assistant that matches talk descriptions to the most relevant image option. "
+            "Output only the exact matching item from the list or 'NONE'.",
+        ).strip()
+
+        if response == "NONE" or not response:
+            return None
+
+        # Match response to one of the available_spares (case-insensitive, normalized to NFC)
+        normalized_response = unicodedata.normalize("NFC", response.strip().lower())
+        for f in available_spares:
+            normalized_stem = unicodedata.normalize("NFC", f.stem.strip().lower())
+            if normalized_stem == normalized_response:
+                return f
+
+    except Exception as e:
+        pr.amber(f"    Warning: Spare image matching failed: {e}")
+
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate AI thumbnail images.")
     parser.add_argument(
@@ -320,6 +378,12 @@ def main() -> int:
     )
     created, skipped, errors = 0, 0, 0
 
+    # Load spare images for matching
+    spare_images_by_dir: dict[Path, list[Path]] = {}
+    for folder_name, output_dir, talk in pending_talks:
+        if output_dir not in spare_images_by_dir:
+            spare_images_by_dir[output_dir] = get_spare_images(output_dir)
+
     for folder_name, output_dir, talk in pending_talks:
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -331,6 +395,48 @@ def main() -> int:
         if out_path.exists() and not args.show_prompts:
             skipped += 1
             continue
+
+        matched_path = None
+        if output_dir in spare_images_by_dir:
+            available_spares = spare_images_by_dir[output_dir]
+            if available_spares and not args.show_prompts:
+                matched_path = find_matching_spare_image(
+                    title, description, available_spares
+                )
+                if matched_path:
+                    available_spares.remove(matched_path)
+                else:
+                    pr.amber(
+                        f"    No matching spare image for '{title}', generating new image"
+                    )
+
+        if matched_path:
+            if args.dry_run:
+                pr.white(
+                    f"  [DRY RUN] Found matching spare: {matched_path.name} → {out_path.name}"
+                )
+                if is_pipeline_dry_run():
+                    create_stub(out_path)
+                continue
+
+            try:
+                matched_path.rename(out_path)
+                pr.yes(
+                    f"    Matched and renamed spare: {matched_path.name} → {out_path.name}"
+                )
+                try:
+                    _save_subject(f"{source}.jpg", matched_path.stem)
+                except Exception:
+                    pass  # subject tracking is best-effort
+                if args.created_log:
+                    with open(args.created_log, "a", encoding="utf-8") as log_f:
+                        log_f.write(str(out_path) + "\n")
+                created += 1
+                continue
+            except Exception as e:
+                pr.no(f"    Failed to rename spare {matched_path.name}: {e}")
+                errors += 1
+                continue
 
         if args.dry_run:
             review_path_used = (

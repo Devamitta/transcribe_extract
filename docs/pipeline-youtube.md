@@ -224,6 +224,8 @@ uv run python scripts/yt_image_gen.py --lang ru|en [--folder <folder>] [--source
 
 Output: `output/thumbnails/<folder>/`
 
+**Spare Image Matching:** Before generating a new thumbnail, the script scans the target thumbnail folder (`output/thumbnails/<lang>/`) for spare/unattached images (filenames without a date prefix `YYYY-MM-DD - `). For each pending talk, it uses the LLM to check if one of these spare images clearly matches the talk's theme or simile. If a match is found, the spare image is renamed to the target talk name, and new image generation is skipped. If no match is found, a message is printed and a new image is generated. This helps consume and clean up unattached images and reduces LLM image API calls.
+
 The pipeline pauses here for visual review. Pressing `r` lists the files created in this image-generation pass and lets you remove selected numbers/ranges, or `all`; only removed images are regenerated because existing thumbnails are skipped. Pressing Enter continues.
 
 ### 3.3: Generate Cover Thumbnails (`--cover` only)
