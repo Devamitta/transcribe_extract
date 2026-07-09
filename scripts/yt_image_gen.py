@@ -3,6 +3,7 @@
 import argparse
 import json
 import re
+import shutil
 import unicodedata
 from pathlib import Path
 
@@ -247,6 +248,25 @@ def find_matching_spare_image(
     return None
 
 
+def _other_folder(folder_name: str) -> str:
+    return "russian" if folder_name == "english" else "english"
+
+
+def _duplicate_image_to_other_lang(
+    src_path: Path,
+    subject: str,
+    folder_name: str,
+) -> None:
+    """Copy a generated image to the other language folder with subject-based filename."""
+    other = _other_folder(folder_name)
+    other_dir = Path("output/thumbnails") / other
+    duplicate_name = sanitize_filename(subject) + ".jpg"
+    duplicate_path = other_dir / duplicate_name
+    other_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src_path, duplicate_path)
+    pr.yes(f"    Duplicated: {other}/{duplicate_name}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate AI thumbnail images.")
     parser.add_argument(
@@ -425,9 +445,11 @@ def main() -> int:
                     f"    Matched and renamed spare: {matched_path.name} → {out_path.name}"
                 )
                 try:
-                    _save_subject(f"{source}.jpg", matched_path.stem)
+                    _duplicate_image_to_other_lang(
+                        out_path, matched_path.stem, folder_name
+                    )
                 except Exception:
-                    pass  # subject tracking is best-effort
+                    pass  # duplication is best-effort
                 if args.created_log:
                     with open(args.created_log, "a", encoding="utf-8") as log_f:
                         log_f.write(str(out_path) + "\n")
@@ -478,11 +500,17 @@ def main() -> int:
             )
             pr.green(f"    → {prompt[:100]}...")
             generate_image_with_retry(prompt, out_path, source)
+            subject: str | None = None
             try:
                 subject = _extract_subject(prompt)
                 _save_subject(f"{source}.jpg", subject)
             except Exception:
                 pass  # subject tracking is best-effort
+            if subject:
+                try:
+                    _duplicate_image_to_other_lang(out_path, subject, folder_name)
+                except Exception:
+                    pass  # duplication is best-effort
             if args.created_log:
                 with open(args.created_log, "a", encoding="utf-8") as log_f:
                     log_f.write(str(out_path) + "\n")
