@@ -3,6 +3,8 @@
 import json
 import pickle
 import re
+import ssl
+import time as time_module
 import unicodedata
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -47,17 +49,42 @@ def execute_resumable_upload(
     progress_output: Callable[[str], None] = pr.white,
     show_speed: bool = False,
     clock: Callable[[], float] = monotonic,
+    max_retries: int = 5,
 ) -> dict[str, Any]:
-    """Run a resumable upload request and print percentage progress."""
+    """Run a resumable upload request and print percentage progress.
+
+    Automatically retries on transient network/SSL errors with exponential
+    backoff (5s, 10s, 20s, 40s, 80s).  Resumable uploads track progress
+    server-side, so retrying next_chunk() safely resumes where it left off.
+    """
     response: dict[str, Any] | None = None
     last_percent = -1
     last_uploaded_bytes = 0
     last_sample_time = clock()
     last_speed_bytes_per_second: float | None = None
     total_upload_size: int | None = None
+    retries = 0
+    delay = 5.0
 
     while response is None:
-        status, response = request.next_chunk()
+        try:
+            status, response = request.next_chunk()
+        except (
+            ssl.SSLError,
+            ConnectionError,
+            ConnectionResetError,
+            TimeoutError,
+            OSError,
+        ) as e:
+            retries += 1
+            if retries > max_retries:
+                raise
+            progress_output(
+                f"    Transient error (retry {retries}/{max_retries} in {delay:.0f}s): {e}"
+            )
+            time_module.sleep(delay)
+            delay *= 2
+            continue
         if status is None:
             continue
 

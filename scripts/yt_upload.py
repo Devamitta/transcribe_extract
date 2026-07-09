@@ -368,6 +368,7 @@ def main() -> None:
     youtube = get_google_client("youtube", "v3", token_path, SCOPES, CLIENT_SECRET)
     playlist_ids = list_channel_playlists(youtube)
 
+    failed: list[str] = []
     for path, meta, folder_name in to_upload:
         tags_str = meta.get("tags", "")
         desc = build_description(
@@ -441,8 +442,11 @@ def main() -> None:
             pr.yes(f"Uploaded to YouTube: {hist_key} (ID: {video_id})")
         except Exception as e:
             pr.no(f"Upload failed for {path.name}: {e}")
-            raise SystemExit(1)
+            failed.append(path.name)
+            continue
 
+    if failed:
+        pr.no(f"{len(failed)} upload(s) failed: {', '.join(failed)}")
     pr.green("Session complete.")
 
 
