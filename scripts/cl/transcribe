@@ -123,6 +123,52 @@ clean_folder() {
     done
 }
 
+copy_to_sangha_share() {
+    local files=("$@")
+
+    local share_dir="/Volumes/share1/Sharing between users/For A. Ariyadhammika/From Deva/S. Meetings"
+
+    if [ ! -d "/Volumes/share1" ]; then
+        echo "Error: Network share 'share1' is not mounted."
+        echo "Please mount it by opening 'share1' in Finder, then run again."
+        exit 1
+    fi
+
+    if [ ${#files[@]} -eq 0 ]; then
+        echo "No files to copy to sangha share."
+        return 0
+    fi
+
+    if [ "$DRY_RUN" -eq 1 ]; then
+        echo "[dry-run] Would copy ${#files[@]} file(s) to sangha share:"
+        local f
+        for f in "${files[@]}"; do
+            echo "  $f"
+        done
+        return 0
+    fi
+
+    mkdir -p "$share_dir"
+
+    local copied=0
+    local f
+    for f in "${files[@]}"; do
+        local src="output/audio/sangha/$f"
+        if [ -f "$src" ]; then
+            if cp -X "$src" "$share_dir/"; then
+                copied=$((copied + 1))
+            else
+                echo "Error: Failed to copy $f to sangha share."
+                exit 1
+            fi
+        else
+            echo "Warning: $f not found in output/audio/sangha/, skipping."
+        fi
+    done
+
+    echo "Copied $copied file(s) to sangha share."
+}
+
 for arg in "$@"; do
     if [ "$arg" = "--help" ] || [ "$arg" = "-h" ]; then
         print_help
@@ -245,12 +291,28 @@ run_folder() {
         fi
     fi
 
+    local sangha_files=()
+    if [ "$folder" = "sangha" ]; then
+        local f
+        for f in input/sangha/*; do
+            [ -f "$f" ] || continue
+            local stem
+            stem="$(basename "$f")"
+            stem="${stem%.*}"
+            sangha_files+=("${stem}.mp3")
+        done
+    fi
+
     echo ">>> Phase 1: Ingesting audio for '$folder' <<<"
     uv run python scripts/audio_ingest.py --folder "$folder" "$@"
     local exit_code=$?
     if [ $exit_code -ne 0 ]; then
         echo "Ingest failed with exit code $exit_code"
         return $exit_code
+    fi
+
+    if [ "$folder" = "sangha" ]; then
+        copy_to_sangha_share "${sangha_files[@]}"
     fi
 
     local slow_model_args=()
